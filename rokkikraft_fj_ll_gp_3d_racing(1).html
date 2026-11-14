@@ -1,0 +1,2800 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Rokkikraft – Fjäll GP 3D Racing</title>
+    <!-- Tailwind CSS för modern, responsiv och skarpt designad telemetri-HUD -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Three.js r128 för högpresterande 3D-rendering -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <!-- Google Fonts: Inter & JetBrains Mono för krispig telemetri -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        * {
+            box-sizing: border-box;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #0b0e14;
+            font-family: 'Inter', sans-serif;
+            color: #f3f4f6;
+        }
+        .mono {
+            font-family: 'JetBrains Mono', monospace;
+            font-variant-numeric: tabular-nums;
+        }
+        #game-canvas {
+            position: fixed;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            display: block;
+            z-index: 1;
+        }
+        /* Glas-paneler inspirerade av referensbildernas telemetri-HUD */
+        .hud-panel {
+            background: linear-gradient(145deg, rgba(22, 26, 33, 0.86), rgba(14, 17, 22, 0.90));
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+            border: 1px solid rgba(255, 255, 255, 0.11);
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+            border-radius: 10px;
+        }
+        .hud-panel-low {
+            background: rgba(16, 19, 25, 0.92);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            border-radius: 10px;
+        }
+        /* Startljus-animationer */
+        .start-lamp {
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            background: radial-gradient(circle at 35% 35%, #3a1212, #1c0707);
+            border: 2px solid #090a0d;
+            box-shadow: inset 0 2px 5px rgba(0,0,0,0.8);
+            transition: all 0.08s ease;
+        }
+        .start-lamp.on {
+            background: radial-gradient(circle at 35% 35%, #ff6b6b, #e11d48 55%, #881337);
+            box-shadow: 0 0 18px rgba(244, 63, 94, 0.95), inset 0 1px 4px rgba(255,255,255,0.6);
+        }
+        /* Custom scrollbar för ev. listor */
+        ::-webkit-scrollbar { width: 4px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 4px; }
+
+        /* Touch-kontroller för mobil/surfplatta */
+        @media (pointer: coarse) {
+            #touch-controls { display: flex !important; }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- 3D WebGL Canvas -->
+    <canvas id="game-canvas"></canvas>
+
+    <!-- =====================================================================
+         TELEMETRI & RACING HUD (Matchar referensbildernas layout)
+    ====================================================================== -->
+    <div id="hud-layer" class="fixed inset-0 z-10 pointer-events-none flex flex-col justify-between p-2 sm:p-3 text-[11px] sm:text-xs">
+        
+        <!-- ÖVRE RADEN: Placering + Bränsle/Däck + Startljus + Väder/Minimap -->
+        <div class="flex items-start justify-between gap-2 w-full">
+            
+            <!-- VÄNSTER TOPP: Placering & Live Leaderboard + Bränsle/Däck -->
+            <div class="flex flex-wrap items-start gap-2">
+                <!-- Placering & Leaderboard -->
+                <div id="panel-leaderboard" class="hud-panel p-2.5 w-44 sm:w-52 pointer-events-auto">
+                    <div class="flex items-baseline justify-between border-b border-white/10 pb-1.5 mb-1.5">
+                        <div class="flex items-baseline gap-1">
+                            <span id="hud-pos" class="text-2xl sm:text-3xl font-black text-white leading-none">7</span>
+                            <span class="text-gray-400 font-semibold text-xs">/ 7</span>
+                        </div>
+                        <span id="hud-lap" class="text-gray-200 font-semibold">Varv 1/4</span>
+                    </div>
+                    <div id="leaderboard-list" class="space-y-0.5 text-[10px] sm:text-[11px]">
+                        <!-- Fylls dynamiskt av JS -->
+                    </div>
+                    <div id="hud-gap-ahead" class="mt-1.5 pt-1 border-t border-white/10 text-[10px] text-gray-300 flex justify-between">
+                        <span>▲ Ledare</span>
+                        <span class="mono text-rose-400">-0,0 s</span>
+                    </div>
+                </div>
+
+                <!-- Bränsle & Däckstatus -->
+                <div id="panel-fuel" class="hud-panel p-2.5 w-48 sm:w-56 hidden md:block pointer-events-auto">
+                    <div class="flex items-center justify-between mb-1">
+                        <span class="text-gray-400 font-bold tracking-wider text-[10px]">BRÄNSLE</span>
+                        <span id="hud-fuel-kg" class="mono font-extrabold text-emerald-400 text-sm">47,5 kg</span>
+                    </div>
+                    <div class="w-full h-2 bg-gray-800 rounded-full overflow-hidden mb-1.5">
+                        <div id="hud-fuel-bar" class="h-full bg-gradient-to-r from-emerald-500 to-lime-400 transition-all duration-200" style="width: 95%;"></div>
+                    </div>
+                    <div class="flex justify-between text-[10px] text-gray-300 mb-2">
+                        <span id="hud-fuel-laps">räcker 4,8 varv</span>
+                        <span id="hud-fuel-rate" class="mono text-gray-400">9,8 kg/varv</span>
+                    </div>
+                    <div class="grid grid-cols-2 gap-1.5 text-[10px] pt-1.5 border-t border-white/10">
+                        <div class="flex items-center gap-1.5">
+                            <span id="tire-wear-f-dot" class="w-2.5 h-2.5 rounded-sm bg-emerald-400 inline-block"></span>
+                            <span class="text-gray-300">Däck fram <strong id="hud-wear-f" class="text-white mono">0 %</strong></span>
+                        </div>
+                        <div class="flex items-center gap-1.5">
+                            <span id="tire-wear-r-dot" class="w-2.5 h-2.5 rounded-sm bg-emerald-400 inline-block"></span>
+                            <span class="text-gray-300">bak <strong id="hud-wear-r" class="text-white mono">0 %</strong></span>
+                        </div>
+                    </div>
+                    <div class="flex justify-between text-[10px] text-gray-400 mt-1">
+                        <span>grepp <span id="hud-grip" class="text-gray-200 mono">100 / 100 %</span></span>
+                        <span id="hud-pitstops">stopp 0</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- MITTEN TOPP: 5 Startljus + Snabbreglage för bildkvalitet & upplösning -->
+            <div class="flex flex-col items-center gap-1.5">
+                <div id="start-lights-box" class="hud-panel px-3 py-1.5 flex items-center gap-2 transition-opacity duration-500">
+                    <div id="lamp-1" class="start-lamp"></div>
+                    <div id="lamp-2" class="start-lamp"></div>
+                    <div id="lamp-3" class="start-lamp"></div>
+                    <div id="lamp-4" class="start-lamp"></div>
+                    <div id="lamp-5" class="start-lamp"></div>
+                </div>
+                <!-- Snabbreglage för bildkvalitet & upplösning direkt i HUD + Pausknapp -->
+                <div class="hud-panel px-2 py-1 flex flex-wrap items-center justify-center gap-1 pointer-events-auto text-[10px]">
+                    <span class="text-gray-400 font-semibold mr-0.5 hidden sm:inline">Grafik:</span>
+                    <button onclick="setGraphicsQuality('high')" id="hud-q-high" class="px-2 py-0.5 rounded font-bold transition bg-sky-600 text-white">Hög</button>
+                    <button onclick="setGraphicsQuality('medium')" id="hud-q-medium" class="px-2 py-0.5 rounded font-bold transition text-gray-300 hover:bg-white/10">Medel</button>
+                    <button onclick="setGraphicsQuality('low')" id="hud-q-low" class="px-2 py-0.5 rounded font-bold transition text-gray-300 hover:bg-white/10">Låg</button>
+                    <div class="w-px h-3.5 bg-white/15 mx-1"></div>
+                    <label for="hud-res-select" class="text-gray-400 font-semibold hidden md:inline">Upplösning:</label>
+                    <select id="hud-res-select" onchange="setResolutionMode(this.value)" class="bg-gray-900/90 text-gray-100 border border-white/15 rounded px-1.5 py-0.5 font-mono text-[10px] outline-none cursor-pointer">
+                        <option value="native">100% Native</option>
+                        <option value="0.75">75% Skala</option>
+                        <option value="0.5">50% Skala</option>
+                        <option value="1920x1080">1920×1080 (FHD)</option>
+                        <option value="1280x720">1280×720 (HD)</option>
+                        <option value="854x480">854×480 (SD)</option>
+                    </select>
+                    <div class="w-px h-3.5 bg-white/15 mx-1"></div>
+                    <button onclick="togglePauseMenu()" class="px-2 py-0.5 rounded bg-white/10 hover:bg-white/20 text-white font-semibold" title="Paus & Inställningar (Esc)">☰ Meny</button>
+                </div>
+                <!-- Statusmeddelande / Depå / Snabbaste varv -->
+                <div id="hud-banner" class="hidden px-3 py-1 rounded-full bg-amber-500/90 text-gray-950 font-extrabold text-xs tracking-wide shadow-lg">
+                    DRS TILLGÄNGLIG
+                </div>
+            </div>
+
+            <!-- HÖGER TOPP: Väder/Däck + Minimap & Varvtider -->
+            <div class="flex items-start gap-2">
+                <!-- Väder & Däckval -->
+                <div id="panel-weather" class="hud-panel p-2.5 w-44 hidden lg:block pointer-events-auto">
+                    <div class="flex justify-between items-center mb-1">
+                        <span id="hud-track-surface-label" class="font-bold text-gray-200">Asfalt 58% / Grus 42%</span>
+                        <span id="hud-wetness" class="mono text-amber-400 font-bold">Mix</span>
+                    </div>
+                    <div class="w-full h-1.5 bg-gray-800 rounded-full overflow-hidden mb-2">
+                        <div id="hud-wet-bar" class="h-full bg-amber-400" style="width: 42%;"></div>
+                    </div>
+                    <div class="w-full h-1.5 bg-gray-800 rounded-full overflow-hidden mb-2">
+                        <div id="hud-wet-bar" class="h-full bg-amber-400" style="width: 45%;"></div>
+                    </div>
+                    <div class="flex justify-between items-center text-[10px] mb-1">
+                        <span class="text-gray-400 font-bold">DÄCK</span>
+                        <span id="hud-tire-name" class="text-rose-400 font-bold">Grus</span>
+                    </div>
+                    <div class="grid grid-cols-3 gap-1 text-[10px]">
+                        <button onclick="selectTireCompound('Grus')" id="btn-tire-Grus" class="py-1 rounded border border-amber-400/80 bg-amber-500/20 text-white font-bold">Grus</button>
+                        <button onclick="selectTireCompound('Slicks')" id="btn-tire-Slicks" class="py-1 rounded border border-white/10 bg-white/5 text-gray-300 hover:bg-white/10">Slicks</button>
+                        <button onclick="selectTireCompound('Wet')" id="btn-tire-Wet" class="py-1 rounded border border-white/10 bg-white/5 text-gray-300 hover:bg-white/10">Wet</button>
+                    </div>
+                </div>
+
+                <!-- Minimap & Tider -->
+                <div class="flex flex-col gap-2 w-36 sm:w-48">
+                    <div class="hud-panel p-2 flex items-center justify-center">
+                        <canvas id="minimap-canvas" width="170" height="105" class="w-full h-auto"></canvas>
+                    </div>
+                    <div class="hud-panel p-2.5 hidden sm:block">
+                        <div class="flex justify-between items-baseline mb-1">
+                            <span class="text-gray-400 text-[10px] font-bold">TID</span>
+                            <span id="hud-lap-time" class="mono text-base font-extrabold text-white">0:00,000</span>
+                        </div>
+                        <div class="flex justify-between text-[10px] text-gray-300">
+                            <span>DELTA</span>
+                            <span id="hud-delta" class="mono text-gray-400">–</span>
+                        </div>
+                        <div class="flex justify-between text-[10px] text-gray-300">
+                            <span>REKORD</span>
+                            <span id="hud-record" class="mono text-sky-400">0:50,440</span>
+                        </div>
+                        <div class="flex justify-between text-[10px] text-gray-300">
+                            <span>SENASTE</span>
+                            <span id="hud-last-lap" class="mono text-gray-300">--:--,---</span>
+                        </div>
+                        <div class="flex justify-between text-[10px] text-gray-300 border-b border-white/10 pb-1.5 mb-1.5">
+                            <span>BÄST</span>
+                            <span id="hud-best-lap" class="mono text-purple-400">--:--,---</span>
+                        </div>
+                        <div class="grid grid-cols-3 gap-1 text-center text-[9px] mono text-gray-400">
+                            <div id="hud-s1" class="bg-white/5 rounded py-0.5">S1 –</div>
+                            <div id="hud-s2" class="bg-white/5 rounded py-0.5">S2 –</div>
+                            <div id="hud-s3" class="bg-white/5 rounded py-0.5">S3 –</div>
+                        </div>
+                        <div class="mt-1.5 text-[9px] text-gray-400 flex justify-between">
+                            <span>LUFT</span>
+                            <span>4 m ö.h. · 1013 hPa · 22°C</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- MITTEN: Närhetsradar (visar bilar nära spelaren) -->
+        <div class="flex items-center justify-center pointer-events-none my-auto">
+            <div class="relative w-28 h-28 sm:w-32 sm:h-32 opacity-85">
+                <canvas id="radar-canvas" width="140" height="140" class="w-full h-full"></canvas>
+            </div>
+        </div>
+
+        <!-- NEDRE RADEN: Motortelemetri + Växel/Hastighet/Däcktemp + Kontrollguide -->
+        <div class="flex flex-col gap-1.5 w-full">
+            <div class="flex items-end justify-between gap-2 w-full">
+                
+                <!-- VÄNSTER BOTTEN: Motorn Just Nu (Termodynamik & MEP-telemetri) -->
+                <div id="panel-engine" class="hud-panel p-2.5 w-56 sm:w-64 hidden md:block pointer-events-auto">
+                    <div class="flex items-center justify-between mb-1.5">
+                        <span class="font-bold text-gray-200 text-[10px] tracking-wider">▼ MOTORN JUST NU</span>
+                        <button onclick="cycleEngineMode()" id="hud-engine-mode" class="px-1.5 py-0.5 rounded bg-white/10 hover:bg-white/20 text-[10px] font-bold text-amber-300">RACE [M]</button>
+                    </div>
+                    <div class="space-y-1 text-[10px]">
+                        <div class="flex items-center justify-between gap-2">
+                            <span class="text-gray-400 w-12">BMEP</span>
+                            <div class="flex-1 h-1.5 bg-gray-800 rounded-full overflow-hidden">
+                                <div id="bar-bmep" class="h-full bg-emerald-400 transition-all duration-75" style="width: 60%;"></div>
+                            </div>
+                            <span id="val-bmep" class="mono text-gray-200 w-14 text-right">15,1 bar</span>
+                        </div>
+                        <div class="flex items-center justify-between gap-2">
+                            <span class="text-gray-400 w-12">ExMEP</span>
+                            <div class="flex-1 h-1.5 bg-gray-800 rounded-full overflow-hidden">
+                                <div id="bar-exmep" class="h-full bg-amber-400 transition-all duration-75" style="width: 55%;"></div>
+                            </div>
+                            <span id="val-exmep" class="mono text-gray-200 w-14 text-right">12,4 bar</span>
+                        </div>
+                        <div class="flex items-center justify-between gap-2">
+                            <span class="text-gray-400 w-12">HTMEP</span>
+                            <div class="flex-1 h-1.5 bg-gray-800 rounded-full overflow-hidden">
+                                <div id="bar-htmep" class="h-full bg-sky-400 transition-all duration-75" style="width: 32%;"></div>
+                            </div>
+                            <span id="val-htmep" class="mono text-gray-200 w-14 text-right">6,4 bar</span>
+                        </div>
+                        <div class="flex items-center justify-between gap-2">
+                            <span class="text-gray-400 w-12">FMEP</span>
+                            <div class="flex-1 h-1.5 bg-gray-800 rounded-full overflow-hidden">
+                                <div id="bar-fmep" class="h-full bg-purple-400 transition-all duration-75" style="width: 18%;"></div>
+                            </div>
+                            <span id="val-fmep" class="mono text-gray-200 w-14 text-right">1,8 bar</span>
+                        </div>
+                        <div class="flex items-center justify-between gap-2">
+                            <span class="text-gray-400 w-12">PMEP</span>
+                            <div class="flex-1 h-1.5 bg-gray-800 rounded-full overflow-hidden">
+                                <div id="bar-pmep" class="h-full bg-rose-400 transition-all duration-75" style="width: 12%;"></div>
+                            </div>
+                            <span id="val-pmep" class="mono text-gray-200 w-14 text-right">-0,1 bar</span>
+                        </div>
+                    </div>
+                    <div class="flex justify-between text-[10px] mt-1.5 pt-1 border-t border-white/10">
+                        <span class="text-gray-400">ηb <strong id="val-etab" class="text-white mono">35,1 %</strong></span>
+                        <span class="text-gray-400">knackmarginal <strong id="val-knock" class="text-amber-400 mono">1,8</strong></span>
+                    </div>
+                    <div class="text-[9px] text-gray-400 mt-0.5 mono" id="val-bsfc">
+                        Förbrukning: 5169 g/varv, bsfc 239 g/kWh
+                    </div>
+                </div>
+
+                <!-- HÖGER BOTTEN: Växel, RPM, Hastighet, Hjälpmedel & G-kraft/Däcktemp -->
+                <div class="flex flex-col gap-1.5 ml-auto pointer-events-auto">
+                    <!-- Växel & Hastighet -->
+                    <div class="hud-panel p-2.5 w-56 sm:w-64">
+                        <div class="flex items-center justify-between gap-2">
+                            <div id="hud-gear" class="text-3xl sm:text-4xl font-black text-white mono w-9 text-center">1</div>
+                            <div class="flex-1">
+                                <!-- LED RPM-staplar -->
+                                <div id="rpm-leds" class="flex gap-0.5 h-2 mb-1">
+                                    <!-- 15 lysdioder -->
+                                </div>
+                                <div class="flex justify-between text-[10px] text-gray-400 mono">
+                                    <span id="hud-rpm">1500 rpm</span>
+                                    <span id="hud-engine-temp">88 °C</span>
+                                </div>
+                            </div>
+                            <div class="text-right">
+                                <div id="hud-speed" class="text-2xl sm:text-3xl font-black text-white mono leading-none">0</div>
+                                <div class="text-[9px] text-gray-400 font-semibold">km/h</div>
+                            </div>
+                        </div>
+                        <!-- Status-badges: DRS, SUG, IDEALSPÅR -->
+                        <div class="grid grid-cols-3 gap-1 mt-2 text-[9px] font-bold text-center">
+                            <div id="badge-drs" class="py-0.5 rounded bg-white/5 text-gray-400 border border-white/10">DRS</div>
+                            <div id="badge-slipstream" class="py-0.5 rounded bg-white/5 text-gray-400 border border-white/10">INGET SUG</div>
+                            <button onclick="toggleRacingLine()" id="badge-line" class="py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">SPÅR PÅ [L]</button>
+                        </div>
+                        <!-- Förarhjälpmedel -->
+                        <div class="flex justify-center gap-1 mt-1.5 text-[9px] font-bold">
+                            <button onclick="toggleAssist('abs')" id="assist-abs" class="px-1.5 py-0.5 rounded bg-emerald-500/25 text-emerald-300 border border-emerald-500/40">ABS</button>
+                            <button onclick="toggleAssist('tc')" id="assist-tc" class="px-1.5 py-0.5 rounded bg-emerald-500/25 text-emerald-300 border border-emerald-500/40">TC</button>
+                            <button onclick="toggleAssist('stab')" id="assist-stab" class="px-1.5 py-0.5 rounded bg-emerald-500/25 text-emerald-300 border border-emerald-500/40">STAB</button>
+                            <button onclick="toggleAssist('auto')" id="assist-auto" class="px-1.5 py-0.5 rounded bg-emerald-500/25 text-emerald-300 border border-emerald-500/40">AUTO</button>
+                        </div>
+                    </div>
+
+                    <!-- G-kraft & Däcktemperaturer -->
+                    <div class="hud-panel p-2.5 w-56 sm:w-64 hidden sm:flex items-center justify-between gap-2">
+                        <div class="flex flex-col items-center">
+                            <canvas id="gforce-canvas" width="68" height="68"></canvas>
+                            <span id="hud-gforce-text" class="mono text-[10px] text-gray-300 mt-0.5">0,0 G</span>
+                        </div>
+                        <div class="flex-1 grid grid-cols-2 gap-1.5 text-[10px] mono">
+                            <div class="bg-sky-500/15 border border-sky-400/30 rounded p-1 flex justify-between">
+                                <span class="text-gray-300">VF</span>
+                                <span id="temp-fl" class="text-sky-300 font-bold">62°C</span>
+                            </div>
+                            <div class="bg-sky-500/15 border border-sky-400/30 rounded p-1 flex justify-between">
+                                <span class="text-gray-300">HF</span>
+                                <span id="temp-fr" class="text-sky-300 font-bold">62°C</span>
+                            </div>
+                            <div class="bg-sky-500/15 border border-sky-400/30 rounded p-1 flex justify-between">
+                                <span class="text-gray-300">VB</span>
+                                <span id="temp-rl" class="text-sky-300 font-bold">60°C</span>
+                            </div>
+                            <div class="bg-sky-500/15 border border-sky-400/30 rounded p-1 flex justify-between">
+                                <span class="text-gray-300">HB</span>
+                                <span id="temp-rr" class="text-sky-300 font-bold">60°C</span>
+                            </div>
+                            <div class="col-span-2 flex justify-between text-[9px] text-gray-400 pt-0.5">
+                                <span>BROMS</span>
+                                <span id="temp-brake" class="text-gray-200">68 °C</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- KONTROLLGUIDE LÄNGST NED -->
+            <div class="text-center text-[10px] text-gray-300/90 bg-black/45 backdrop-blur-sm py-1 px-3 rounded-full mx-auto hidden sm:block">
+                W/↑ gas · S/↓ broms · A/D styr · E/Shift upp · Q/Ctrl ned · Space DRS · L idealspår · C kamera · B bakåt · M motor · P depå · R återställ · 1 ABS · 2 antispinn · 3 stabilitet · 4 automatväxling
+            </div>
+        </div>
+    </div>
+
+    <!-- =====================================================================
+         TOUCH-KONTROLLER FÖR MOBIL / SURFPLATTA
+    ====================================================================== -->
+    <div id="touch-controls" class="fixed bottom-3 left-3 right-3 z-20 hidden justify-between items-end pointer-events-none">
+        <div class="flex gap-2 pointer-events-auto">
+            <button id="btn-touch-left" class="w-16 h-16 rounded-2xl bg-white/15 active:bg-sky-500/50 border border-white/25 backdrop-blur-md text-2xl font-bold text-white flex items-center justify-center">◀</button>
+            <button id="btn-touch-right" class="w-16 h-16 rounded-2xl bg-white/15 active:bg-sky-500/50 border border-white/25 backdrop-blur-md text-2xl font-bold text-white flex items-center justify-center">▶</button>
+        </div>
+        <div class="flex gap-2 pointer-events-auto">
+            <button id="btn-touch-cam" onclick="cycleCamera()" class="w-12 h-14 rounded-2xl bg-white/15 active:bg-white/30 border border-white/25 backdrop-blur-md text-xs font-bold text-white flex items-center justify-center">CAM</button>
+            <button id="btn-touch-brake" class="w-16 h-16 rounded-2xl bg-rose-500/30 active:bg-rose-500/70 border border-rose-400/40 backdrop-blur-md text-sm font-extrabold text-white flex items-center justify-center">BROMS</button>
+            <button id="btn-touch-gas" class="w-16 h-16 rounded-2xl bg-emerald-500/30 active:bg-emerald-500/70 border border-emerald-400/40 backdrop-blur-md text-sm font-extrabold text-white flex items-center justify-center">GAS</button>
+        </div>
+    </div>
+
+    <!-- =====================================================================
+         STARTMENY & PAUSMENY (Med val av Bildkvalitet: Hög, Medel, Låg)
+    ====================================================================== -->
+    <div id="menu-overlay" class="fixed inset-0 z-30 flex items-center justify-center bg-black/75 backdrop-blur-md p-3 sm:p-4 overflow-y-auto">
+        <div class="hud-panel max-w-3xl w-full p-5 sm:p-7 border border-white/15 shadow-2xl my-auto">
+            <div class="flex items-center justify-between mb-2">
+                <span id="menu-badge-track" class="px-2.5 py-0.5 rounded-full bg-orange-600/30 border border-orange-500/50 text-orange-300 text-xs font-bold tracking-wider uppercase">Rokki-Ralli · Tykkimäki Kouvola</span>
+                <span id="fps-preview" class="mono text-xs text-gray-400">WebGL 3D</span>
+            </div>
+            <h1 id="menu-title" class="text-2xl sm:text-4xl font-black tracking-tight text-white mb-1">
+                ROKKIKRAFT <span class="text-orange-400">ROKKI-RALLI 3D</span>
+            </h1>
+            <p id="menu-subtitle" class="text-gray-300 text-xs sm:text-sm mb-4">
+                Välj en riktig finsk Rokki-Ralli / Folkrace-bana med äkta höjdskillnader och korrekt fördelning mellan asfalt och grus.
+            </p>
+
+            <!-- BANVÄLJARE (9 FINSKA ROKKI-RALLI BANOR FRÅN REFERENSBILDERNA) -->
+            <div class="mb-5">
+                <div class="flex items-center justify-between mb-2">
+                    <label class="block text-xs font-bold uppercase tracking-wider text-gray-300">
+                        Välj Rokki-Ralli Bana (9 Banor)
+                    </label>
+                    <span id="track-info-address" class="text-[11px] text-orange-300 font-semibold">Tehontie 51, 45200 Kouvola</span>
+                </div>
+                <div id="track-selector-grid" class="grid grid-cols-3 sm:grid-cols-5 gap-1.5 mb-2.5 text-xs">
+                    <!-- Fylls dynamiskt av JS -->
+                </div>
+                <!-- Infokort i Rokki-Ralli stil (orange accent) -->
+                <div class="rounded-xl bg-gradient-to-r from-orange-700/85 to-amber-700/80 border border-orange-400/40 p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-white">
+                    <div>
+                        <div id="track-card-title" class="font-black text-sm tracking-wide uppercase">KOUVOLA – Tykkimäen Moottorirata</div>
+                        <ul id="track-card-bullets" class="text-[11px] text-orange-50 mt-1 space-y-0.5 list-disc list-inside">
+                            <li>Banans längd: 1060 m · Bredd 12–18 m</li>
+                            <li>Höjdskillnad: 20 m · Underlag: 58% asfalt / 42% grus</li>
+                        </ul>
+                    </div>
+                    <div class="shrink-0 bg-black/30 rounded-lg p-1.5 border border-white/15 flex flex-col items-center">
+                        <canvas id="menu-track-preview" width="110" height="68"></canvas>
+                        <span class="text-[9px] uppercase tracking-wider text-orange-200 mt-0.5 font-bold">Banprofil</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- BILDKVALITETSVÄLJARE (HÖG, MEDEL, LÅG) -->
+            <div class="mb-6">
+                <label class="block text-xs font-bold uppercase tracking-wider text-gray-300 mb-2">
+                    Välj bildkvalitet (Grafik & Detaljnivå)
+                </label>
+                <div class="grid grid-cols-3 gap-2.5">
+                    <button onclick="setGraphicsQuality('high')" id="menu-q-high" class="quality-card p-3 rounded-xl border-2 border-sky-500 bg-sky-500/20 text-left transition cursor-pointer">
+                        <div class="font-extrabold text-white text-sm flex items-center justify-between">
+                            <span>Hög</span>
+                            <span class="w-2 h-2 rounded-full bg-sky-400"></span>
+                        </div>
+                        <p class="text-[10px] text-gray-300 mt-1 leading-snug">Full upplösning, mjuka skuggor, vindrutesprickor, kabelhärvor, speglar & grusmoln.</p>
+                    </button>
+
+                    <button onclick="setGraphicsQuality('medium')" id="menu-q-medium" class="quality-card p-3 rounded-xl border border-white/15 bg-white/5 hover:bg-white/10 text-left transition cursor-pointer">
+                        <div class="font-extrabold text-white text-sm flex items-center justify-between">
+                            <span>Medel</span>
+                            <span class="w-2 h-2 rounded-full bg-amber-400"></span>
+                        </div>
+                        <p class="text-[10px] text-gray-400 mt-1 leading-snug">Standardupplösning, grundläggande skuggor, full kupé & gruspartiklar.</p>
+                    </button>
+
+                    <button onclick="setGraphicsQuality('low')" id="menu-q-low" class="quality-card p-3 rounded-xl border border-white/15 bg-white/5 hover:bg-white/10 text-left transition cursor-pointer">
+                        <div class="font-extrabold text-white text-sm flex items-center justify-between">
+                            <span>Låg</span>
+                            <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
+                        </div>
+                        <p class="text-[10px] text-gray-400 mt-1 leading-snug">Lägre renderingsupplösning, inga skuggor, förenklad kupé & max FPS.</p>
+                    </button>
+                </div>
+            </div>
+
+            <!-- UPPLÖSNINGSVÄLJARE (RESOLUTION) -->
+            <div class="mb-6">
+                <div class="flex items-center justify-between mb-2">
+                    <label class="block text-xs font-bold uppercase tracking-wider text-gray-300">
+                        Upplösning (Render Resolution)
+                    </label>
+                    <span id="current-res-badge" class="mono text-[11px] text-sky-400 font-bold">Auto · 100%</span>
+                </div>
+                <div class="grid grid-cols-3 sm:grid-cols-6 gap-1.5 text-xs">
+                    <button onclick="setResolutionMode('native')" id="menu-res-native" class="py-2 px-1.5 rounded-lg border-2 border-sky-500 bg-sky-500/20 font-bold text-white transition cursor-pointer">100%</button>
+                    <button onclick="setResolutionMode('0.75')" id="menu-res-0.75" class="py-2 px-1.5 rounded-lg border border-white/15 bg-white/5 hover:bg-white/10 font-bold text-gray-300 transition cursor-pointer">75%</button>
+                    <button onclick="setResolutionMode('0.5')" id="menu-res-0.5" class="py-2 px-1.5 rounded-lg border border-white/15 bg-white/5 hover:bg-white/10 font-bold text-gray-300 transition cursor-pointer">50%</button>
+                    <button onclick="setResolutionMode('1920x1080')" id="menu-res-1920x1080" class="py-2 px-1.5 rounded-lg border border-white/15 bg-white/5 hover:bg-white/10 font-mono text-[11px] font-bold text-gray-300 transition cursor-pointer">1080p</button>
+                    <button onclick="setResolutionMode('1280x720')" id="menu-res-1280x720" class="py-2 px-1.5 rounded-lg border border-white/15 bg-white/5 hover:bg-white/10 font-mono text-[11px] font-bold text-gray-300 transition cursor-pointer">720p</button>
+                    <button onclick="setResolutionMode('854x480')" id="menu-res-854x480" class="py-2 px-1.5 rounded-lg border border-white/15 bg-white/5 hover:bg-white/10 font-mono text-[11px] font-bold text-gray-300 transition cursor-pointer">480p</button>
+                </div>
+            </div>
+
+            <!-- VAL AV LIVERY / TEAMFÄRG -->
+            <div class="mb-6">
+                <label class="block text-xs font-bold uppercase tracking-wider text-gray-300 mb-2">
+                    Välj din rally-/folkracebil & stallfärg
+                </label>
+                <div class="grid grid-cols-4 gap-2">
+                    <button onclick="selectPlayerLivery(0)" id="livery-btn-0" class="p-2 rounded-lg border-2 border-sky-400 bg-white/10 flex items-center gap-2 text-xs font-bold text-white">
+                        <span class="w-3.5 h-3.5 rounded-full bg-[#dc2626]"></span> Peugeot Röd
+                    </button>
+                    <button onclick="selectPlayerLivery(1)" id="livery-btn-1" class="p-2 rounded-lg border border-white/15 bg-white/5 flex items-center gap-2 text-xs font-bold text-gray-300">
+                        <span class="w-3.5 h-3.5 rounded-full bg-[#22c55e]"></span> Neon Folkrace
+                    </button>
+                    <button onclick="selectPlayerLivery(2)" id="livery-btn-2" class="p-2 rounded-lg border border-white/15 bg-white/5 flex items-center gap-2 text-xs font-bold text-gray-300">
+                        <span class="w-3.5 h-3.5 rounded-full bg-[#1f2937]"></span> Mattsvart #50
+                    </button>
+                    <button onclick="selectPlayerLivery(3)" id="livery-btn-3" class="p-2 rounded-lg border border-white/15 bg-white/5 flex items-center gap-2 text-xs font-bold text-gray-300">
+                        <span class="w-3.5 h-3.5 rounded-full bg-[#cbd5e1]"></span> Silver Rally
+                    </button>
+                </div>
+            </div>
+
+            <!-- START / FORTSÄTT-KNAPPAR -->
+            <div class="flex flex-col sm:flex-row gap-3">
+                <button id="btn-start-race" onclick="startOrResumeRace()" class="flex-1 py-3.5 px-6 rounded-xl bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-400 hover:to-blue-500 text-white font-black text-base tracking-wide shadow-lg shadow-sky-500/30 transition cursor-pointer">
+                    STARTA LOPPET (FJÄLL GP)
+                </button>
+                <button id="btn-restart-race" onclick="restartRace()" class="hidden py-3.5 px-5 rounded-xl bg-white/10 hover:bg-white/20 text-white font-bold text-sm border border-white/15 transition cursor-pointer">
+                    Starta om lopp
+                </button>
+                <button onclick="downloadIndexHtmlForGitHub()" class="py-3.5 px-4 rounded-xl bg-emerald-600/25 hover:bg-emerald-600/40 text-emerald-300 font-bold text-xs border border-emerald-500/40 transition cursor-pointer" title="Ladda ner som index.html redo för git push till anderssonarre/rokkikraft">
+                    ⬇ Ladda ner index.html
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- =====================================================================
+         MÅLGÅNG / RESULTAT-MODAL
+    ====================================================================== -->
+    <div id="finish-overlay" class="fixed inset-0 z-30 hidden items-center justify-center bg-black/80 backdrop-blur-md p-4">
+        <div class="hud-panel max-w-md w-full p-6 border border-white/15 text-center">
+            <div class="text-xs font-bold uppercase tracking-widest text-amber-400 mb-1">Målgång · Fjäll GP</div>
+            <h2 id="finish-position-title" class="text-3xl font-black text-white mb-2">1:a Plats!</h2>
+            <p id="finish-summary" class="text-xs text-gray-300 mb-4">Bästa varvtid: 0:50,440</p>
+            <div id="finish-standings" class="bg-black/40 rounded-lg p-3 mb-5 text-left space-y-1.5 text-xs">
+                <!-- Slutresultat -->
+            </div>
+            <button onclick="restartRace()" class="w-full py-3 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-white font-black text-sm tracking-wide shadow-lg cursor-pointer">
+                KÖR IGEN
+            </button>
+        </div>
+    </div>
+
+    <script>
+    /**
+     * =========================================================================
+     * ROKKIKRAFT – FJÄLL GP 3D RACING
+     * Komplett 3D-racingspel med Three.js, detaljerade formel-/rallybilar,
+     * cockpit med halo & telemetriratt, bildkvalitet (Hög, Medel, Låg) och AI.
+     * =========================================================================
+     */
+
+    // --- GLOBALA TILLSTÅND & KONFIGURATION ---
+    const TOTAL_LAPS = 4;
+    let TRACK_WIDTH = 15.0;
+    let selectedTrackIdx = 0;
+    let graphicsQuality = 'high'; // 'high' | 'medium' | 'low'
+    let resolutionMode = 'native'; // 'native' | '0.75' | '0.5' | '1920x1080' | '1280x720' | '854x480'
+    let gameState = 'menu'; // 'menu' | 'countdown' | 'racing' | 'paused' | 'finished'
+    let cameraMode = 0; // 0 = Hjälmkamera In-Car (hela rallykupén), 1 = Dash-cam (närmare vindrutan), 2 = Chase Cam
+    let lookBack = false;
+    let showRacingLine = true;
+    let selectedPlayerLiveryIdx = 0;
+
+    // 9 RIKTIGA FINSKA ROKKI-RALLI BANOR (Baserade på dina banprofiler & specifikationer)
+    const ROKKI_TRACKS = [
+        {
+            id: 'kouvola',
+            shortName: 'Kouvola',
+            name: 'KOUVOLA – Tykkimäen Moottorirata',
+            address: 'Tehontie 51, 45200 KOUVOLA',
+            lengthText: '1060 m',
+            width: 15.5,
+            asphaltPct: 58,
+            elevationAmp: 12.0,
+            recordSec: 46.820,
+            bullets: [
+                'Banans längd: 1060 m · Bredd: 12–18 m',
+                'Höjdskillnad: 20 m · Underlag: Asfalt 58%, Grus 42%',
+                'Byggd 1979 · Rokki-Ralli sedan år 2000'
+            ],
+            // Start/mål på raksträckan, lång högerkurva, teknisk innersektion & alternativspår
+            points: [
+                [0, 0, 120], [0, 2.5, 0], [0, 6.0, -115], [-35, 11.0, -165],
+                [-105, 12.0, -160], [-145, 8.5, -105], [-125, 4.0, -40],
+                [-75, 2.0, -25], [-65, 5.5, 35], [-115, 7.0, 85],
+                [-120, 3.0, 145], [-65, 0.8, 165], [-12, 0.0, 155]
+            ],
+            isAsphaltFn: (u) => (u < 0.28 || (u > 0.55 && u < 0.85))
+        },
+        {
+            id: 'joutsa',
+            shortName: 'Joutsa',
+            name: 'JOUTSA – JoSeMoRan Moottorirata',
+            address: 'Röksäntie 169, Joutsa',
+            lengthText: '900 m',
+            width: 13.0,
+            asphaltPct: 60,
+            elevationAmp: 7.5,
+            recordSec: 42.150,
+            bullets: [
+                'Banans längd: 800–1000 m · Bredd: 12 m',
+                'Underlag: Asfalt 60%, Grus 40%',
+                'Joutsan Seudun Ratakeskus'
+            ],
+            points: [
+                [0, 0, 110], [0, 1.5, -10], [-18, 4.5, -110], [-75, 7.5, -145],
+                [-135, 6.0, -105], [-120, 3.0, -35], [-70, 2.5, 10],
+                [-115, 4.0, 75], [-95, 1.5, 140], [-30, 0.3, 150]
+            ],
+            isAsphaltFn: (u) => (u < 0.35 || u > 0.75)
+        },
+        {
+            id: 'pieksamaki',
+            shortName: 'Pieksämäki',
+            name: 'PIEKSÄMÄKI – Paltasen autourheilukeskus',
+            address: 'Järvisuomentie 2000, 76100 Pieksämäki',
+            lengthText: '980 m',
+            width: 15.0,
+            asphaltPct: 50,
+            elevationAmp: 9.0,
+            recordSec: 45.310,
+            bullets: [
+                'Bredd: 18–12 m · Plats för 8 bilar i bredd i starten',
+                'Underlag: Grus / Asfalt (ombyggd 2017)',
+                'Tekniska S-kurvor i innersektionen'
+            ],
+            points: [
+                [0, 0, 125], [0, 2.0, -15], [-25, 6.0, -125], [-110, 9.0, -140],
+                [-165, 6.5, -80], [-130, 4.0, -15], [-85, 5.0, 20],
+                [-125, 3.5, 80], [-95, 1.5, 145], [-25, 0.0, 155]
+            ],
+            isAsphaltFn: (u) => (u < 0.30 || (u > 0.62 && u < 0.82))
+        },
+        {
+            id: 'rantasalmi',
+            shortName: 'Rantasalmi',
+            name: 'RANTASALMI – Urheiluautoilijat',
+            address: 'Joroistentie 314, 58900 Rantasalmi',
+            lengthText: '950 m',
+            width: 16.0,
+            asphaltPct: 26,
+            elevationAmp: 5.5,
+            recordSec: 44.600,
+            bullets: [
+                'Startområdet belagt med asfalt (235 m) som går över till grus',
+                'Banans längd: knappt 1 km · Bredd: 12–22 m',
+                'Snabb hårnål i södra kurvan'
+            ],
+            points: [
+                [0, 0, 115], [0, 1.0, -20], [-30, 3.5, -110], [-105, 5.5, -115],
+                [-145, 4.0, -45], [-95, 2.0, 10], [-135, 3.0, 85],
+                [-85, 1.0, 145], [-20, 0.0, 145]
+            ],
+            isAsphaltFn: (u) => (u < 0.22 || u > 0.94)
+        },
+        {
+            id: 'pihtipudas',
+            shortName: 'Pihtipudas',
+            name: 'PIHTIPUDAS – Haapavuori',
+            address: 'Haapavuorentie 145, 44800 Pihtipudas',
+            lengthText: '920 m',
+            width: 14.5,
+            asphaltPct: 20,
+            elevationAmp: 3.5,
+            recordSec: 43.900,
+            bullets: [
+                'Banans längd: 920 m · Plats för 7 bilar i bredd',
+                'Ca 20% asfalterad (startplatta och ett par kurvor), 80% grus',
+                'Klassisk JM-finalbana med få höjdskillnader'
+            ],
+            points: [
+                [0, 0, 105], [0, 0.8, -15], [-40, 2.5, -105], [-115, 3.5, -95],
+                [-130, 2.0, -20], [-85, 1.5, 25], [-115, 2.2, 95],
+                [-60, 0.6, 135], [-10, 0.0, 130]
+            ],
+            isAsphaltFn: (u) => (u < 0.16 || (u > 0.45 && u < 0.52))
+        },
+        {
+            id: 'vilppula',
+            shortName: 'Vilppula',
+            name: 'VILPPULA – Särkikangas',
+            address: 'Särkikankaantie 70, 35530 LYLY',
+            lengthText: '850 m',
+            width: 14.0,
+            asphaltPct: 43,
+            elevationAmp: 13.5,
+            recordSec: 41.750,
+            bullets: [
+                'Banans längd: 850 m · Underlag: Asfalt ca 43%, Grus 57%',
+                'Mycket stora höjdskillnader genom hela varvet',
+                'Byggd till säsongen 2011'
+            ],
+            points: [
+                [0, 0, 100], [0, 5.5, -10], [-35, 13.5, -95], [-110, 11.0, -105],
+                [-135, 4.5, -35], [-80, 7.5, 20], [-115, 3.0, 85],
+                [-55, 0.5, 125], [-10, 0.0, 120]
+            ],
+            isAsphaltFn: (u) => (u < 0.25 || (u > 0.58 && u < 0.76))
+        },
+        {
+            id: 'tammisaari',
+            shortName: 'Tammisaari',
+            name: 'TAMMISAARI – Grabbskogin Rata',
+            address: 'Tenholantie 416, 10620 Tammisaari',
+            lengthText: '940 m',
+            width: 13.5,
+            asphaltPct: 35,
+            elevationAmp: 6.5,
+            recordSec: 44.120,
+            bullets: [
+                'Grabbskogin Rata · Arrangör: E-TMK/UA',
+                'Teknisk skogsbana med snabba riktningsbyten',
+                'Underlag: 35% asfalt / 65% grus'
+            ],
+            points: [
+                [0, 0, 115], [0, 1.5, -10], [-30, 5.0, -105], [-95, 6.5, -120],
+                [-140, 4.0, -60], [-95, 2.5, -10], [-130, 4.5, 65],
+                [-80, 1.5, 135], [-15, 0.0, 135]
+            ],
+            isAsphaltFn: (u) => (u < 0.20 || (u > 0.70 && u < 0.85))
+        },
+        {
+            id: 'akaa',
+            shortName: 'Akaa',
+            name: 'DAYTONA CIRCUIT AKAA',
+            address: 'Syrjäintie 21, 37800 Akaa',
+            lengthText: '1000 m',
+            width: 13.5,
+            asphaltPct: 100,
+            elevationAmp: 5.0,
+            recordSec: 40.980,
+            bullets: [
+                'Banans längd: ca 1 km · Bredd: ca 8–16 m',
+                'Underlag: 100% Asfalt (högt grepp)',
+                'Teknisk slinga med dubbel hårnål'
+            ],
+            points: [
+                [0, 0, 120], [0, 1.2, -15], [-25, 3.8, -120], [-95, 5.0, -135],
+                [-135, 3.5, -75], [-85, 2.0, -25], [-125, 3.2, 45],
+                [-95, 1.2, 125], [-25, 0.0, 140]
+            ],
+            isAsphaltFn: () => true
+        },
+        {
+            id: 'virtasalmi',
+            shortName: 'Virtasalmi',
+            name: 'VIRTASALMI MOTOPARK',
+            address: 'Motoparkintie 23, 77330 Virtasalmi',
+            lengthText: '1120 m',
+            width: 15.0,
+            asphaltPct: 100,
+            elevationAmp: 6.0,
+            recordSec: 42.640,
+            bullets: [
+                'Ny bana till säsongen 2023 · Underlag: 100% Asfalt',
+                'Breda svepande högfartskurvor och lång startraka',
+                'Motoparkintie 23, Virtasalmi'
+            ],
+            points: [
+                [0, 0, 135], [0, 1.5, -25], [-30, 4.5, -145], [-115, 6.0, -165],
+                [-175, 4.0, -95], [-145, 2.0, -15], [-95, 3.0, 35],
+                [-135, 2.5, 105], [-85, 0.8, 160], [-18, 0.0, 155]
+            ],
+            isAsphaltFn: () => true
+        }
+    ];
+
+    // Motorlägen & Hjälpmedel
+    const engineModes = ['ECO', 'RACE', 'QUAL'];
+    let engineModeIdx = 1;
+    let tireCompound = 'Grus';
+    const assists = { abs: true, tc: true, stab: true, auto: true };
+
+    // Tidsmätning & Nedräkning
+    let raceElapsed = 0;
+    let countdownTimer = 0;
+    let countdownStage = 0;
+    let recordLapTime = 46.820;
+
+    // Inmatning
+    const keys = {};
+    const touchInput = { left: false, right: false, gas: false, brake: false };
+
+    // Rally- & Folkrace-förare (AI)
+    const AI_DRIVERS = [
+        { name: 'Ida Falk', team: 'Silver Rally #14', primary: 0xcbd5e1, secondary: 0x334155, accent: 0x38bdf8, cage: 0x1e293b, hex: '#94a3b8', number: '14', style: 'hatch', arrow: false, skill: 1.03 },
+        { name: 'Nils Ek', team: 'Mattsvart Folkrace #50', primary: 0x262626, secondary: 0xf8fafc, accent: 0xffffff, cage: 0x991b1b, hex: '#a3a3a3', number: '50', style: 'sedan', arrow: true, skill: 1.01 },
+        { name: 'Sara Wall', team: 'Neon Grön #88', primary: 0x4ade80, secondary: 0xffffff, accent: 0x16a34a, cage: 0x18181b, hex: '#4ade80', number: '88', style: 'sedan', arrow: false, skill: 0.99 },
+        { name: 'Linus Ahl', team: 'Röd Peugeot #22', primary: 0xdc2626, secondary: 0xfacc15, accent: 0xef4444, cage: 0x18181b, hex: '#f87171', number: '22', style: 'hatch', arrow: false, skill: 0.97 },
+        { name: 'Frida Nord', team: 'Blå Volvo #07', primary: 0x0284c7, secondary: 0xf8fafc, accent: 0x38bdf8, cage: 0x1e293b, hex: '#38bdf8', number: '07', style: 'sedan', arrow: false, skill: 0.95 },
+        { name: 'Viktor Lind', team: 'Orange Opel #31', primary: 0xf97316, secondary: 0x18181b, accent: 0xfb923c, cage: 0x18181b, hex: '#fb923c', number: '31', style: 'hatch', arrow: false, skill: 0.93 }
+    ];
+
+    const PLAYER_LIVERIES = [
+        { name: 'Peugeot Röd', primary: 0xdc2626, secondary: 0xfacc15, accent: 0xef4444, cage: 0x18181b, number: '11', style: 'hatch', arrow: false },
+        { name: 'Neon Folkrace', primary: 0x22c55e, secondary: 0xffffff, accent: 0x4ade80, cage: 0x18181b, number: '77', style: 'sedan', arrow: false },
+        { name: 'Mattsvart #50', primary: 0x1f2937, secondary: 0xf8fafc, accent: 0x9ca3af, cage: 0x991b1b, number: '50', style: 'sedan', arrow: true },
+        { name: 'Silver Rally', primary: 0xcbd5e1, secondary: 0x1e293b, accent: 0x38bdf8, cage: 0x18181b, number: '04', style: 'hatch', arrow: false }
+    ];
+
+    // Three.js-objekt
+    let scene, camera, renderer, dirLight;
+    let trackCurve, trackLength = 0;
+    let trackGroup, environmentGroup, carsGroup, particleGroup, racingLineMesh;
+    let allCars = [];
+    let playerCar = null;
+    let particles = [];
+
+    // Cockpittexter & skärmar
+    let steeringWheelDisplayCanvas, steeringWheelDisplayCtx, steeringWheelDisplayTex;
+    let gpsDisplayCanvas, gpsDisplayCtx, gpsDisplayTex;
+    let monitDisplayCanvas, monitDisplayCtx, monitDisplayTex;
+
+    // =========================================================================
+    // INITIERING AV THREE.JS & 3D-SCEN
+    // =========================================================================
+    function initThree() {
+        const canvas = document.getElementById('game-canvas');
+        scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x9fb6c8);
+        scene.fog = new THREE.FogExp2(0x9fb6c8, 0.0014);
+
+        camera = new THREE.PerspectiveCamera(74, window.innerWidth / window.innerHeight, 0.1, 1400);
+
+        renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+        // Ljus (Himmel + Sol)
+        const hemiLight = new THREE.HemisphereLight(0xdbeafe, 0x3f4e34, 0.85);
+        scene.add(hemiLight);
+
+        dirLight = new THREE.DirectionalLight(0xfffbeb, 0.95);
+        dirLight.position.set(120, 180, 90);
+        dirLight.castShadow = true;
+        dirLight.shadow.mapSize.width = 2048;
+        dirLight.shadow.mapSize.height = 2048;
+        dirLight.shadow.camera.near = 10;
+        dirLight.shadow.camera.far = 550;
+        const d = 220;
+        dirLight.shadow.camera.left = -d;
+        dirLight.shadow.camera.right = d;
+        dirLight.shadow.camera.top = d;
+        dirLight.shadow.camera.bottom = -d;
+        scene.add(dirLight);
+
+        // Skapa sluten Rokki-Ralli bana från vald finsk bana
+        buildTrackCurveFromConfig(ROKKI_TRACKS[selectedTrackIdx]);
+
+        trackGroup = new THREE.Group();
+        environmentGroup = new THREE.Group();
+        carsGroup = new THREE.Group();
+        particleGroup = new THREE.Group();
+        scene.add(trackGroup, environmentGroup, carsGroup, particleGroup);
+
+        createCockpitTextures();
+        initTrackSelectorUI();
+        rebuildWorldGeometry();
+        initCars();
+        initHUDElements();
+        setupInputs();
+
+        window.addEventListener('resize', onWindowResize);
+        requestAnimationFrame(gameLoop);
+    }
+
+    function buildTrackCurveFromConfig(trackCfg) {
+        TRACK_WIDTH = trackCfg.width || 15.0;
+        recordLapTime = trackCfg.recordSec || 44.0;
+        const pts = trackCfg.points.map(p => new THREE.Vector3(p[0], p[1], p[2]));
+        trackCurve = new THREE.CatmullRomCurve3(pts, true, 'catmullrom', 0.45);
+        trackLength = trackCurve.getLength();
+    }
+
+    function initTrackSelectorUI() {
+        const grid = document.getElementById('track-selector-grid');
+        if (!grid) return;
+        grid.innerHTML = '';
+        ROKKI_TRACKS.forEach((t, idx) => {
+            const btn = document.createElement('button');
+            btn.id = `track-btn-${idx}`;
+            btn.onclick = () => selectTrack(idx);
+            btn.className = idx === selectedTrackIdx
+                ? 'py-1.5 px-2 rounded-lg border-2 border-orange-400 bg-orange-500/25 font-extrabold text-white truncate transition cursor-pointer'
+                : 'py-1.5 px-2 rounded-lg border border-white/15 bg-white/5 hover:bg-white/10 font-semibold text-gray-300 truncate transition cursor-pointer';
+            btn.textContent = t.shortName;
+            grid.appendChild(btn);
+        });
+        updateTrackInfoCard();
+    }
+
+    function selectTrack(idx) {
+        selectedTrackIdx = idx;
+        ROKKI_TRACKS.forEach((_, i) => {
+            const btn = document.getElementById(`track-btn-${i}`);
+            if (!btn) return;
+            btn.className = i === idx
+                ? 'py-1.5 px-2 rounded-lg border-2 border-orange-400 bg-orange-500/25 font-extrabold text-white truncate transition cursor-pointer'
+                : 'py-1.5 px-2 rounded-lg border border-white/15 bg-white/5 hover:bg-white/10 font-semibold text-gray-300 truncate transition cursor-pointer';
+        });
+
+        updateTrackInfoCard();
+        buildTrackCurveFromConfig(ROKKI_TRACKS[idx]);
+        rebuildWorldGeometry();
+        initCars();
+        showBanner(`BANA VALD: ${ROKKI_TRACKS[idx].name}`, 'bg-orange-500 text-white', 1600);
+    }
+
+    function updateTrackInfoCard() {
+        const t = ROKKI_TRACKS[selectedTrackIdx];
+        if (!t) return;
+        const badge = document.getElementById('menu-badge-track');
+        if (badge) badge.textContent = `Rokki-Ralli · ${t.shortName}`;
+        const addr = document.getElementById('track-info-address');
+        if (addr) addr.textContent = t.address;
+        const title = document.getElementById('track-card-title');
+        if (title) title.textContent = t.name;
+        const bullets = document.getElementById('track-card-bullets');
+        if (bullets) {
+            bullets.innerHTML = t.bullets.map(b => `<li>${b}</li>`).join('');
+        }
+        const surfLabel = document.getElementById('hud-track-surface-label');
+        if (surfLabel) surfLabel.textContent = `Asfalt ${t.asphaltPct}% / Grus ${100 - t.asphaltPct}%`;
+        const wetBar = document.getElementById('hud-wet-bar');
+        if (wetBar) wetBar.style.width = `${t.asphaltPct}%`;
+
+        // Rita förhandsvisning av banprofilen i infokortet
+        const prev = document.getElementById('menu-track-preview');
+        if (prev) {
+            const ctx = prev.getContext('2d');
+            ctx.clearRect(0, 0, prev.width, prev.height);
+            drawTrackOutlineOnCanvas(ctx, prev.width, prev.height, t);
+        }
+    }
+
+    function drawTrackOutlineOnCanvas(ctx, w, h, trackCfg) {
+        const pts = trackCfg.points;
+        let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+        pts.forEach(p => {
+            if (p[0] < minX) minX = p[0];
+            if (p[0] > maxX) maxX = p[0];
+            if (p[2] < minZ) minZ = p[2];
+            if (p[2] > maxZ) maxZ = p[2];
+        });
+        const spanX = Math.max(40, maxX - minX);
+        const spanZ = Math.max(40, maxZ - minZ);
+        const mapX = (x) => ((x - minX) / spanX) * (w - 20) + 10;
+        const mapY = (z) => ((z - minZ) / spanZ) * (h - 16) + 8;
+
+        ctx.strokeStyle = '#fdba74';
+        ctx.lineWidth = 4;
+        ctx.lineJoin = 'round';
+        ctx.beginPath();
+        pts.forEach((p, idx) => {
+            if (idx === 0) ctx.moveTo(mapX(p[0]), mapY(p[2]));
+            else ctx.lineTo(mapX(p[0]), mapY(p[2]));
+        });
+        ctx.closePath();
+        ctx.stroke();
+
+        // Start/mål-markering
+        ctx.fillStyle = '#ef4444';
+        ctx.fillRect(mapX(pts[0][0]) - 3, mapY(pts[0][2]) - 3, 6, 6);
+    }
+
+    function createCockpitTextures() {
+        // 1. GPS-display (liten orange GPS-enhet på instrumentbrädan)
+        gpsDisplayCanvas = document.createElement('canvas');
+        gpsDisplayCanvas.width = 128;
+        gpsDisplayCanvas.height = 64;
+        gpsDisplayCtx = gpsDisplayCanvas.getContext('2d');
+        gpsDisplayCtx.fillStyle = '#18120b';
+        gpsDisplayCtx.fillRect(0, 0, 128, 64);
+        gpsDisplayCtx.fillStyle = '#fb923c';
+        gpsDisplayCtx.font = 'bold 28px monospace';
+        gpsDisplayCtx.textAlign = 'center';
+        gpsDisplayCtx.fillText('GPS', 64, 42);
+        gpsDisplayTex = new THREE.CanvasTexture(gpsDisplayCanvas);
+
+        // 2. Monit Rally-trippmätare (blå bakgrundsbelyst skärm med röda/blå knappar)
+        monitDisplayCanvas = document.createElement('canvas');
+        monitDisplayCanvas.width = 256;
+        monitDisplayCanvas.height = 128;
+        monitDisplayCtx = monitDisplayCanvas.getContext('2d');
+        monitDisplayCtx.fillStyle = '#0f172a';
+        monitDisplayCtx.fillRect(0, 0, 256, 128);
+        // Blå knappar vänster
+        for (let r = 0; r < 4; r++) {
+            monitDisplayCtx.fillStyle = '#0284c7';
+            monitDisplayCtx.fillRect(10, 14 + r * 26, 36, 20);
+        }
+        // LCD-ruta i mitten
+        monitDisplayCtx.fillStyle = '#38bdf8';
+        monitDisplayCtx.fillRect(54, 14, 148, 72);
+        monitDisplayCtx.fillStyle = '#0c4a6e';
+        monitDisplayCtx.font = 'bold 26px monospace';
+        monitDisplayCtx.textAlign = 'right';
+        monitDisplayCtx.fillText('15.42', 194, 44);
+        monitDisplayCtx.font = 'bold 20px monospace';
+        monitDisplayCtx.fillText('04:21.8', 194, 74);
+        // Röd logga under LCD
+        monitDisplayCtx.fillStyle = '#dc2626';
+        monitDisplayCtx.fillRect(54, 92, 148, 22);
+        monitDisplayCtx.fillStyle = '#ffffff';
+        monitDisplayCtx.font = 'bold 13px sans-serif';
+        monitDisplayCtx.textAlign = 'center';
+        monitDisplayCtx.fillText('MONIT RALLY', 128, 108);
+        // Röda knappar höger
+        for (let r = 0; r < 4; r++) {
+            monitDisplayCtx.fillStyle = '#dc2626';
+            monitDisplayCtx.fillRect(210, 14 + r * 26, 36, 20);
+        }
+        monitDisplayTex = new THREE.CanvasTexture(monitDisplayCanvas);
+
+        // 3. Analogt mätarhus bakom ratten
+        steeringWheelDisplayCanvas = document.createElement('canvas');
+        steeringWheelDisplayCanvas.width = 256;
+        steeringWheelDisplayCanvas.height = 128;
+        steeringWheelDisplayCtx = steeringWheelDisplayCanvas.getContext('2d');
+        steeringWheelDisplayTex = new THREE.CanvasTexture(steeringWheelDisplayCanvas);
+        updateSteeringWheelDisplay(1, 0, 7, 1, 0.1, 88);
+    }
+
+    function updateSteeringWheelDisplay(gear, speedKmh, rank, lap, rpmRatio, temp) {
+        if (!steeringWheelDisplayCtx) return;
+        const ctx = steeringWheelDisplayCtx;
+        ctx.fillStyle = '#090d16';
+        ctx.fillRect(0, 0, 256, 128);
+
+        // Varvräknarcirkel vänster
+        ctx.strokeStyle = '#334155';
+        ctx.lineWidth = 6;
+        ctx.beginPath();
+        ctx.arc(72, 68, 42, Math.PI * 0.75, Math.PI * 2.25);
+        ctx.stroke();
+
+        ctx.strokeStyle = rpmRatio > 0.8 ? '#ef4444' : '#f59e0b';
+        ctx.beginPath();
+        ctx.arc(72, 68, 42, Math.PI * 0.75, Math.PI * (0.75 + rpmRatio * 1.5));
+        ctx.stroke();
+
+        ctx.fillStyle = '#f8fafc';
+        ctx.font = 'bold 28px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText(String(gear), 72, 78);
+
+        // Hastighetsmätare höger
+        ctx.strokeStyle = '#334155';
+        ctx.beginPath();
+        ctx.arc(184, 68, 42, Math.PI * 0.75, Math.PI * 2.25);
+        ctx.stroke();
+
+        ctx.fillStyle = '#38bdf8';
+        ctx.font = 'bold 24px monospace';
+        ctx.fillText(String(speedKmh), 184, 76);
+        ctx.fillStyle = '#94a3b8';
+        ctx.font = '11px sans-serif';
+        ctx.fillText('KM/H', 184, 94);
+    }
+
+    function rebuildWorldGeometry() {
+        while (trackGroup.children.length) trackGroup.remove(trackGroup.children[0]);
+        while (environmentGroup.children.length) environmentGroup.remove(environmentGroup.children[0]);
+
+        const segs = graphicsQuality === 'low' ? 160 : (graphicsQuality === 'medium' ? 260 : 380);
+
+        // Markplan (gräs/skogsbotten)
+        const ground = new THREE.Mesh(
+            new THREE.PlaneGeometry(1400, 1400),
+            new THREE.MeshLambertMaterial({ color: 0x4b5e3c })
+        );
+        ground.rotation.x = -Math.PI / 2;
+        ground.position.y = -0.05;
+        ground.receiveShadow = graphicsQuality !== 'low';
+        environmentGroup.add(ground);
+
+        // Bygg banans vägdekoration (blandad rally-grusväg & folkrace-asfalt)
+        const roadPositions = [];
+        const roadColors = [];
+        const roadIndices = [];
+        const kerbPositions = [];
+        const kerbColors = [];
+        const kerbIndices = [];
+        const linePoints = [];
+
+        for (let i = 0; i <= segs; i++) {
+            const u = i / segs;
+            const pt = trackCurve.getPointAt(u % 1);
+            const tan = trackCurve.getTangentAt(u % 1).normalize();
+            const right = new THREE.Vector3(-tan.z, 0, tan.x).normalize();
+
+            const halfW = TRACK_WIDTH * 0.5;
+            const leftPt = pt.clone().addScaledVector(right, -halfW);
+            const rightPt = pt.clone().addScaledVector(right, halfW);
+
+            roadPositions.push(leftPt.x, pt.y + 0.02, leftPt.z, rightPt.x, pt.y + 0.02, rightPt.z);
+
+            // Underlag (asfalt vs grus) baserat på vald finsk Rokki-Ralli bana
+            const activeTrack = ROKKI_TRACKS[selectedTrackIdx];
+            const isAsphalt = activeTrack && activeTrack.isAsphaltFn ? activeTrack.isAsphaltFn(u) : (u <= 0.28 || u >= 0.72);
+            const c = !isAsphalt ? new THREE.Color(0x8c7b65) : new THREE.Color(0x333842);
+            roadColors.push(c.r, c.g, c.b, c.r, c.g, c.b);
+
+            // Curbs / kantstenar
+            const kLeftOut = pt.clone().addScaledVector(right, -(halfW + 0.85));
+            const kRightOut = pt.clone().addScaledVector(right, halfW + 0.85);
+            kerbPositions.push(
+                kLeftOut.x, pt.y + 0.03, kLeftOut.z, leftPt.x, pt.y + 0.03, leftPt.z,
+                rightPt.x, pt.y + 0.03, rightPt.z, kRightOut.x, pt.y + 0.03, kRightOut.z
+            );
+            const kc = (Math.floor(i / 3) % 2 === 0) ? new THREE.Color(0xdc2626) : new THREE.Color(0xf8fafc);
+            for (let k = 0; k < 4; k++) kerbColors.push(kc.r, kc.g, kc.b);
+
+            if (i < segs) {
+                const idx = i * 2;
+                roadIndices.push(idx, idx + 1, idx + 2, idx + 1, idx + 3, idx + 2);
+                const kIdx = i * 4;
+                kerbIndices.push(
+                    kIdx, kIdx + 1, kIdx + 4, kIdx + 1, kIdx + 5, kIdx + 4,
+                    kIdx + 2, kIdx + 3, kIdx + 6, kIdx + 3, kIdx + 7, kIdx + 6
+                );
+            }
+
+            linePoints.push(pt.clone().add(new THREE.Vector3(0, 0.06, 0)));
+        }
+
+        const roadGeo = new THREE.BufferGeometry();
+        roadGeo.setAttribute('position', new THREE.Float32BufferAttribute(roadPositions, 3));
+        roadGeo.setAttribute('color', new THREE.Float32BufferAttribute(roadColors, 3));
+        roadGeo.setIndex(roadIndices);
+        roadGeo.computeVertexNormals();
+        const roadMesh = new THREE.Mesh(roadGeo, new THREE.MeshLambertMaterial({ vertexColors: true }));
+        roadMesh.receiveShadow = graphicsQuality !== 'low';
+        trackGroup.add(roadMesh);
+
+        const kerbGeo = new THREE.BufferGeometry();
+        kerbGeo.setAttribute('position', new THREE.Float32BufferAttribute(kerbPositions, 3));
+        kerbGeo.setAttribute('color', new THREE.Float32BufferAttribute(kerbColors, 3));
+        kerbGeo.setIndex(kerbIndices);
+        kerbGeo.computeVertexNormals();
+        trackGroup.add(new THREE.Mesh(kerbGeo, new THREE.MeshLambertMaterial({ vertexColors: true })));
+
+        // Idealspårslinje (kan växlas med L)
+        const lineGeo = new THREE.BufferGeometry().setFromPoints(linePoints);
+        racingLineMesh = new THREE.LineLoop(lineGeo, new THREE.LineBasicMaterial({ color: 0x22c55e, transparent: true, opacity: 0.55 }));
+        racingLineMesh.visible = showRacingLine;
+        trackGroup.add(racingLineMesh);
+
+        // Start- & Målportal + Startlinje
+        const startPt = trackCurve.getPointAt(0);
+        const startTan = trackCurve.getTangentAt(0).normalize();
+        const startAngle = Math.atan2(-startTan.x, -startTan.z);
+
+        const gantry = new THREE.Group();
+        gantry.position.copy(startPt);
+        gantry.rotation.y = startAngle;
+
+        const pillarMat = new THREE.MeshLambertMaterial({ color: 0x1e293b });
+        const pLeft = new THREE.Mesh(new THREE.BoxGeometry(0.7, 6.2, 0.7), pillarMat);
+        pLeft.position.set(-TRACK_WIDTH * 0.5 - 1.2, 3.1, 0);
+        const pRight = pLeft.clone();
+        pRight.position.x = TRACK_WIDTH * 0.5 + 1.2;
+
+        // Skylt "START - MÅL"
+        const bannerCanvas = document.createElement('canvas');
+        bannerCanvas.width = 512;
+        bannerCanvas.height = 96;
+        const bCtx = bannerCanvas.getContext('2d');
+        bCtx.fillStyle = '#ea580c';
+        bCtx.fillRect(0, 0, 512, 96);
+        bCtx.fillStyle = '#f8fafc';
+        bCtx.font = '900 36px sans-serif';
+        bCtx.textAlign = 'center';
+        const activeTrackTitle = ROKKI_TRACKS[selectedTrackIdx]?.shortName.toUpperCase() || 'ROKKI-RALLI';
+        bCtx.fillText(`START - MÅL · ${activeTrackTitle}`, 256, 62);
+        const bannerTex = new THREE.CanvasTexture(bannerCanvas);
+
+        const topBeam = new THREE.Mesh(
+            new THREE.BoxGeometry(TRACK_WIDTH + 3.2, 1.35, 0.8),
+            new THREE.MeshBasicMaterial({ map: bannerTex })
+        );
+        topBeam.position.set(0, 5.6, 0);
+
+        const finishLine = new THREE.Mesh(
+            new THREE.PlaneGeometry(TRACK_WIDTH, 1.8),
+            new THREE.MeshBasicMaterial({ color: 0xffffff })
+        );
+        finishLine.rotation.x = -Math.PI / 2;
+        finishLine.position.set(0, 0.04, 0);
+
+        gantry.add(pLeft, pRight, topBeam, finishLine);
+        trackGroup.add(gantry);
+
+        // Skog, berg och depåbyggnader runt banan
+        const treeCount = graphicsQuality === 'low' ? 65 : (graphicsQuality === 'medium' ? 140 : 240);
+        const trunkMat = new THREE.MeshLambertMaterial({ color: 0x4a3525 });
+        const foliageMat = new THREE.MeshLambertMaterial({ color: 0x2d4c2b });
+
+        for (let i = 0; i < treeCount; i++) {
+            const angle = (i / treeCount) * Math.PI * 2;
+            const radius = 55 + ((i * 73) % 260);
+            const tx = -110 + Math.cos(angle) * radius;
+            const tz = -30 + Math.sin(angle) * radius;
+            const candidate = new THREE.Vector3(tx, 0, tz);
+
+            // Undvik att placera träd på själva banan
+            let tooClose = false;
+            for (let s = 0; s < 40; s++) {
+                if (candidate.distanceTo(trackCurve.getPointAt(s / 40)) < TRACK_WIDTH + 8) {
+                    tooClose = true;
+                    break;
+                }
+            }
+            if (tooClose) continue;
+
+            const tree = new THREE.Group();
+            const h = 5 + (i % 5);
+            const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.38, h * 0.4, 5), trunkMat);
+            trunk.position.y = h * 0.2;
+            const crown = new THREE.Mesh(new THREE.ConeGeometry(1.9, h * 0.8, 6), foliageMat);
+            crown.position.y = h * 0.65;
+            if (graphicsQuality === 'high') crown.castShadow = true;
+            tree.add(trunk, crown);
+            tree.position.set(tx, 0, tz);
+            environmentGroup.add(tree);
+        }
+
+        // Depåbyggnader längs start/mål-rakan
+        const pitColors = [0xdc2626, 0x059669, 0xd97706, 0x2563eb];
+        for (let b = 0; b < 4; b++) {
+            const box = new THREE.Mesh(
+                new THREE.BoxGeometry(6, 4.5, 16),
+                new THREE.MeshLambertMaterial({ color: 0xe2e8f0 })
+            );
+            box.position.set(16, 2.25, 85 - b * 22);
+            const stripe = new THREE.Mesh(
+                new THREE.BoxGeometry(6.2, 1.1, 16.2),
+                new THREE.MeshLambertMaterial({ color: pitColors[b] })
+            );
+            stripe.position.set(16, 3.8, 85 - b * 22);
+            environmentGroup.add(box, stripe);
+        }
+    }
+
+    // =========================================================================
+    // SKAPA TÄCKTA RALLY- & FOLKRACEBILAR SAMT DETALJERAD IN-CAR KUPÉ
+    // =========================================================================
+    function createRallyCarMesh(livery, isPlayer) {
+        const root = new THREE.Group();
+        const exteriorMeshes = [];
+
+        const bodyMat = new THREE.MeshStandardMaterial({
+            color: livery.primary,
+            roughness: livery.arrow ? 0.85 : 0.42,
+            metalness: 0.15
+        });
+        const darkMat = new THREE.MeshLambertMaterial({ color: 0x18181b });
+        const glassMat = new THREE.MeshStandardMaterial({
+            color: 0x0f172a,
+            roughness: 0.15,
+            metalness: 0.8,
+            transparent: true,
+            opacity: 0.78
+        });
+
+        // Underrede & Kaross (Hatchback eller Sedan som i referensbilderna)
+        const chassis = new THREE.Mesh(new THREE.BoxGeometry(1.86, 0.56, 4.15), bodyMat);
+        chassis.position.set(0, 0.52, 0);
+        if (graphicsQuality !== 'low') chassis.castShadow = true;
+        root.add(chassis);
+        exteriorMeshes.push(chassis);
+
+        // Kupé / Tak
+        const cabinLen = livery.style === 'hatch' ? 2.15 : 1.75;
+        const cabinZ = livery.style === 'hatch' ? 0.35 : 0.15;
+        const cabin = new THREE.Mesh(new THREE.BoxGeometry(1.56, 0.54, cabinLen), bodyMat);
+        cabin.position.set(0, 1.04, cabinZ);
+        if (graphicsQuality !== 'low') cabin.castShadow = true;
+        root.add(cabin);
+        exteriorMeshes.push(cabin);
+
+        // Rutor (fram, bak, sidor)
+        const windShield = new THREE.Mesh(new THREE.PlaneGeometry(1.44, 0.52), glassMat);
+        windShield.position.set(0, 1.04, cabinZ - cabinLen * 0.5 - 0.01);
+        windShield.rotation.y = Math.PI;
+        windShield.rotation.x = 0.25;
+        root.add(windShield);
+        exteriorMeshes.push(windShield);
+
+        const rearWindow = new THREE.Mesh(new THREE.PlaneGeometry(1.42, 0.48), glassMat);
+        rearWindow.position.set(0, 1.04, cabinZ + cabinLen * 0.5 + 0.01);
+        rearWindow.rotation.x = -0.22;
+        root.add(rearWindow);
+        exteriorMeshes.push(rearWindow);
+
+        // Bakvinge / Rallyspoiler
+        const wing = new THREE.Mesh(new THREE.BoxGeometry(1.66, 0.08, 0.28), new THREE.MeshLambertMaterial({ color: livery.secondary }));
+        wing.position.set(0, 1.34, 1.88);
+        root.add(wing);
+        exteriorMeshes.push(wing);
+
+        // Bakljus & Stötfångare
+        const tailLightMat = new THREE.MeshBasicMaterial({ color: 0xef4444 });
+        const tlLeft = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.16, 0.06), tailLightMat);
+        tlLeft.position.set(-0.62, 0.64, 2.08);
+        const tlRight = tlLeft.clone();
+        tlRight.position.x = 0.62;
+        root.add(tlLeft, tlRight);
+        exteriorMeshes.push(tlLeft, tlRight);
+
+        // Startnummer & vit pil på bakluckan (som mattsvart #50 i referensbilden)
+        const numCanvas = document.createElement('canvas');
+        numCanvas.width = 128;
+        numCanvas.height = 128;
+        const nCtx = numCanvas.getContext('2d');
+        nCtx.fillStyle = livery.arrow ? '#262626' : '#ffffff';
+        nCtx.fillRect(0, 0, 128, 128);
+        nCtx.fillStyle = livery.arrow ? '#ffffff' : '#111827';
+        nCtx.font = '900 58px sans-serif';
+        nCtx.textAlign = 'center';
+        nCtx.fillText(livery.number || '50', 64, 72);
+        if (livery.arrow) {
+            nCtx.fillText('↓', 64, 118);
+        }
+        const numTex = new THREE.CanvasTexture(numCanvas);
+        const rearPlate = new THREE.Mesh(new THREE.PlaneGeometry(0.65, 0.65), new THREE.MeshBasicMaterial({ map: numTex }));
+        rearPlate.position.set(0, 0.62, 2.09);
+        root.add(rearPlate);
+        exteriorMeshes.push(rearPlate);
+
+        // 4 Rallyhjul med vita fälgar och stänkskärmar
+        const wheels = [];
+        const wheelPositions = [
+            { x: -0.92, y: 0.34, z: -1.32, front: true },
+            { x: 0.92, y: 0.34, z: -1.32, front: true },
+            { x: -0.92, y: 0.34, z: 1.32, front: false },
+            { x: 0.92, y: 0.34, z: 1.32, front: false }
+        ];
+        const tireMat = new THREE.MeshLambertMaterial({ color: 0x171717 });
+        const rimMat = new THREE.MeshLambertMaterial({ color: 0xf8fafc });
+
+        wheelPositions.forEach(wp => {
+            const pivot = new THREE.Group();
+            pivot.position.set(wp.x, wp.y, wp.z);
+            const wheelMesh = new THREE.Group();
+
+            const tire = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.34, 0.26, 16), tireMat);
+            tire.rotation.z = Math.PI / 2;
+            const rim = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.22, 0.27, 12), rimMat);
+            rim.rotation.z = Math.PI / 2;
+
+            wheelMesh.add(tire, rim);
+            pivot.add(wheelMesh);
+            root.add(pivot);
+            wheels.push({ pivot, mesh: wheelMesh, front: wp.front });
+        });
+
+        root.userData.exteriorMeshes = exteriorMeshes;
+
+        // =====================================================================
+        // DETALJERAD IN-CAR RALLYKUPÉ (Endast för spelarens bil)
+        // =====================================================================
+        let cockpitGroup = null;
+        let steeringWheelGroup = null;
+        let rightHandGroup = null;
+
+        if (isPlayer) {
+            cockpitGroup = new THREE.Group();
+
+            // Motorhuv som syns nederst genom vindrutan
+            const hood = new THREE.Mesh(
+                new THREE.BoxGeometry(1.56, 0.08, 1.25),
+                new THREE.MeshStandardMaterial({ color: livery.primary, roughness: 0.45 })
+            );
+            hood.position.set(0, 0.78, -1.25);
+            cockpitGroup.add(hood);
+
+            // Flockad mörkgrå rally-instrumentbräda (sänkt något för 3m sikt framför huven)
+            const flockMat = new THREE.MeshLambertMaterial({ color: 0x2d3138 });
+            const dashMain = new THREE.Mesh(new THREE.BoxGeometry(1.52, 0.24, 0.46), flockMat);
+            dashMain.position.set(0, 0.77, -0.58);
+            cockpitGroup.add(dashMain);
+
+            // Mätarhusets keps framför föraren (vänster sida x = -0.32)
+            const binnacle = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.14, 0.28), flockMat);
+            binnacle.position.set(-0.32, 0.91, -0.52);
+            cockpitGroup.add(binnacle);
+
+            // Analogt/digitalt mätarhus inuti kepsen
+            const clusterScreen = new THREE.Mesh(
+                new THREE.PlaneGeometry(0.38, 0.11),
+                new THREE.MeshBasicMaterial({ map: steeringWheelDisplayTex })
+            );
+            clusterScreen.position.set(-0.32, 0.90, -0.375);
+            cockpitGroup.add(clusterScreen);
+
+            // Liten orange GPS-enhet mitt på brädan
+            const gpsBox = new THREE.Mesh(new THREE.BoxGeometry(0.13, 0.06, 0.08), darkMat);
+            gpsBox.position.set(0.02, 0.91, -0.52);
+            const gpsFace = new THREE.Mesh(
+                new THREE.PlaneGeometry(0.11, 0.045),
+                new THREE.MeshBasicMaterial({ map: gpsDisplayTex })
+            );
+            gpsFace.position.set(0.02, 0.91, -0.478);
+            cockpitGroup.add(gpsBox, gpsFace);
+
+            // Monit Rally-trippmätare till höger på instrumentbrädan
+            const monitBox = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.11, 0.07), darkMat);
+            monitBox.position.set(0.44, 0.93, -0.50);
+            monitBox.rotation.y = -0.22;
+            const monitFace = new THREE.Mesh(
+                new THREE.PlaneGeometry(0.20, 0.095),
+                new THREE.MeshBasicMaterial({ map: monitDisplayTex })
+            );
+            monitFace.position.set(0.432, 0.93, -0.463);
+            monitFace.rotation.y = -0.22;
+            cockpitGroup.add(monitBox, monitFace);
+
+            // Mittkonsol med vippströmbrytare
+            const centerConsole = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.28, 0.14), darkMat);
+            centerConsole.position.set(0.04, 0.68, -0.42);
+            cockpitGroup.add(centerConsole);
+            for (let sw = 0; sw < 3; sw++) {
+                const toggle = new THREE.Mesh(
+                    new THREE.CylinderGeometry(0.006, 0.006, 0.025, 6),
+                    new THREE.MeshBasicMaterial({ color: 0xe2e8f0 })
+                );
+                toggle.position.set(-0.02 + sw * 0.06, 0.74, -0.34);
+                toggle.rotation.x = 0.5;
+                cockpitGroup.add(toggle);
+            }
+
+            // Kabelhärvor i bildkvalitet Hög (inspirerade av folkracebilden)
+            if (graphicsQuality === 'high') {
+                const wireMat = new THREE.MeshLambertMaterial({ color: 0x713f12 });
+                const harness = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, 0.95, 8), wireMat);
+                harness.rotation.z = Math.PI / 2;
+                harness.position.set(0.22, 0.89, -0.45);
+                cockpitGroup.add(harness);
+            }
+
+            // Störtbåge (A-stolpar + takbåge + vaddering + vit besiktningsdekal)
+            const cageMat = new THREE.MeshLambertMaterial({ color: livery.cage || 0x18181b });
+            const aPillarLeft = new THREE.Mesh(new THREE.CylinderGeometry(0.026, 0.026, 0.72, 10), cageMat);
+            aPillarLeft.position.set(-0.70, 1.12, -0.46);
+            aPillarLeft.rotation.x = -0.48;
+            aPillarLeft.rotation.z = -0.14;
+
+            const aPillarRight = new THREE.Mesh(new THREE.CylinderGeometry(0.026, 0.026, 0.72, 10), cageMat);
+            aPillarRight.position.set(0.70, 1.12, -0.46);
+            aPillarRight.rotation.x = -0.48;
+            aPillarRight.rotation.z = 0.14;
+
+            // Komplett innertak, takplåt & sidokarmar ovanför föraren (som i referensbilden)
+            const roofHeadliner = new THREE.Mesh(
+                new THREE.BoxGeometry(1.48, 0.05, 1.65),
+                new THREE.MeshLambertMaterial({ color: 0x1f242d, side: THREE.DoubleSide })
+            );
+            roofHeadliner.position.set(0, 1.43, 0.35);
+
+            const roofOuterCap = new THREE.Mesh(
+                new THREE.BoxGeometry(1.54, 0.04, 1.70),
+                new THREE.MeshStandardMaterial({ color: livery.primary, roughness: 0.45 })
+            );
+            roofOuterCap.position.set(0, 1.46, 0.35);
+
+            // Takbalk fram ovanför vindrutan + solskydd + backspegelfäste
+            const headerBar = new THREE.Mesh(new THREE.BoxGeometry(1.46, 0.07, 0.14), new THREE.MeshLambertMaterial({ color: 0x111318 }));
+            headerBar.position.set(0, 1.39, -0.34);
+
+            const mirrorMount = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.05, 0.08), darkMat);
+            mirrorMount.position.set(0, 1.35, -0.34);
+
+            // Sidodörrar & B-stolpar så kupén är helt täckt
+            const doorMat = new THREE.MeshLambertMaterial({ color: 0x262930 });
+            const leftDoor = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.42, 1.45), doorMat);
+            leftDoor.position.set(-0.76, 0.72, 0.25);
+            const rightDoor = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.42, 1.45), doorMat);
+            rightDoor.position.set(0.76, 0.72, 0.25);
+
+            const roofBar = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.028, 1.32, 10), cageMat);
+            roofBar.rotation.z = Math.PI / 2;
+            roofBar.position.set(0, 1.38, -0.26);
+
+            // Längsgående störtbågsrör i taket
+            const sideCageL = new THREE.Mesh(new THREE.CylinderGeometry(0.024, 0.024, 1.15, 8), cageMat);
+            sideCageL.rotation.x = Math.PI / 2;
+            sideCageL.position.set(-0.62, 1.38, 0.28);
+            const sideCageR = sideCageL.clone();
+            sideCageR.position.x = 0.62;
+
+            // Vit besiktningslapp i taket
+            const sticker = new THREE.Mesh(
+                new THREE.PlaneGeometry(0.18, 0.045),
+                new THREE.MeshBasicMaterial({ color: 0xf8fafc })
+            );
+            sticker.position.set(-0.28, 1.39, -0.23);
+            sticker.rotation.x = 0.25;
+
+            cockpitGroup.add(aPillarLeft, aPillarRight, roofHeadliner, roofOuterCap, headerBar, mirrorMount, leftDoor, rightDoor, roofBar, sideCageL, sideCageR, sticker);
+
+            // Mockaratt med gul centrummarkering & blått nav
+            steeringWheelGroup = new THREE.Group();
+            steeringWheelGroup.position.set(-0.32, 0.87, -0.35);
+            steeringWheelGroup.rotation.x = -0.32;
+
+            const rimTorus = new THREE.Mesh(
+                new THREE.TorusGeometry(0.165, 0.020, 10, 24),
+                new THREE.MeshLambertMaterial({ color: 0x18181b })
+            );
+
+            // Gul centrummarkering högst upp på ratten
+            const yellowStripe = new THREE.Mesh(
+                new THREE.TorusGeometry(0.165, 0.0205, 8, 8, 0.24),
+                new THREE.MeshBasicMaterial({ color: 0xfacc15 })
+            );
+            yellowStripe.rotation.z = Math.PI * 0.5 - 0.12;
+
+            // Blått rattnav & ekrar
+            const blueHub = new THREE.Mesh(
+                new THREE.CylinderGeometry(0.042, 0.042, 0.04, 16),
+                new THREE.MeshLambertMaterial({ color: 0x0284c7 })
+            );
+            blueHub.rotation.x = Math.PI / 2;
+
+            const spokeH = new THREE.Mesh(new THREE.BoxGeometry(0.31, 0.028, 0.015), darkMat);
+            const spokeV = new THREE.Mesh(new THREE.BoxGeometry(0.032, 0.15, 0.015), darkMat);
+            spokeV.position.y = -0.08;
+
+            // Vänster rallyhandske som håller stadigt i ratten
+            const gloveMat = new THREE.MeshLambertMaterial({ color: 0xd1d5db });
+            const gloveAccent = new THREE.MeshBasicMaterial({ color: 0xa3e635 });
+            const leftHand = new THREE.Mesh(new THREE.BoxGeometry(0.055, 0.075, 0.065), gloveMat);
+            leftHand.position.set(-0.145, 0.05, 0.01);
+            const leftPatch = new THREE.Mesh(new THREE.BoxGeometry(0.058, 0.03, 0.03), gloveAccent);
+            leftPatch.position.set(-0.145, 0.05, 0.02);
+
+            steeringWheelGroup.add(rimTorus, yellowStripe, blueHub, spokeH, spokeV, leftHand, leftPatch);
+            cockpitGroup.add(steeringWheelGroup);
+
+            // Höger rallyhandske (som växlar på sekventiella spaken och återgår till ratten)
+            rightHandGroup = new THREE.Group();
+            const rHand = new THREE.Mesh(new THREE.BoxGeometry(0.055, 0.075, 0.065), gloveMat);
+            const rPatch = new THREE.Mesh(new THREE.BoxGeometry(0.058, 0.03, 0.03), gloveAccent);
+            rPatch.position.z = 0.015;
+            rightHandGroup.add(rHand, rPatch);
+            rightHandGroup.position.set(-0.18, 0.84, -0.25);
+            cockpitGroup.add(rightHandGroup);
+
+            // Sekventiell rally-växelspak
+            const shifterRod = new THREE.Mesh(new THREE.CylinderGeometry(0.01, 0.012, 0.28, 8), darkMat);
+            shifterRod.position.set(-0.04, 0.76, -0.22);
+            shifterRod.rotation.x = 0.15;
+            cockpitGroup.add(shifterRod);
+
+            root.add(cockpitGroup);
+        }
+
+        return { mesh: root, wheels, cockpitGroup, steeringWheelGroup, rightHandGroup };
+    }
+
+    function initCars() {
+        while (carsGroup.children.length) carsGroup.remove(carsGroup.children[0]);
+        allCars = [];
+
+        const playerLivery = PLAYER_LIVERIES[selectedPlayerLiveryIdx];
+        const roster = [
+            ...AI_DRIVERS.map(ai => ({ ...ai, isPlayer: false })),
+            {
+                name: 'Du',
+                team: playerLivery.name,
+                primary: playerLivery.primary,
+                secondary: playerLivery.secondary,
+                accent: playerLivery.accent,
+                cage: playerLivery.cage,
+                hex: '#facc15',
+                number: playerLivery.number,
+                style: playerLivery.style,
+                arrow: playerLivery.arrow,
+                isPlayer: true
+            }
+        ];
+
+        roster.forEach((driver, idx) => {
+            // Startgrid: P1 längst fram (u = 0.992), spelaren på P7 (u = 0.962)
+            const gridRow = idx;
+            const startU = (1.0 - 0.008 - gridRow * 0.0045) % 1;
+            const laneOffset = (idx % 2 === 0) ? -2.4 : 2.4;
+
+            const pt = trackCurve.getPointAt(startU);
+            const tan = trackCurve.getTangentAt(startU).normalize();
+            const right = new THREE.Vector3(-tan.z, 0, tan.x).normalize();
+            pt.addScaledVector(right, laneOffset);
+
+            const built = createRallyCarMesh(driver, driver.isPlayer);
+            const heading = Math.atan2(-tan.x, -tan.z);
+            built.mesh.position.copy(pt);
+            built.mesh.rotation.y = heading;
+            carsGroup.add(built.mesh);
+
+            const carObj = {
+                name: driver.name,
+                hex: driver.hex,
+                isPlayer: driver.isPlayer,
+                skill: driver.skill || 1.0,
+                laneOffset,
+                pos: pt.clone(),
+                heading,
+                speed: 0,
+                steerAngle: 0,
+                u: startU,
+                lastU: startU,
+                lap: 1,
+                totalProgress: -0.008 - gridRow * 0.0045,
+                finished: false,
+                finishTime: 0,
+                lapStartTime: 0,
+                currentLapTime: 0,
+                lastLapTime: null,
+                bestLapTime: null,
+                sectorTimes: [null, null, null],
+                gear: 1,
+                rpm: 1500,
+                fuelKg: 47.5,
+                tireWearF: 0,
+                tireWearR: 0,
+                tireTemp: [62, 62, 60, 60],
+                brakeTemp: 68,
+                engineTemp: 88,
+                pitStops: 0,
+                drsActive: false,
+                slipstream: false,
+                gLat: 0,
+                gLong: 0,
+                shiftAnimTimer: 0,
+                mesh: built.mesh,
+                wheels: built.wheels,
+                cockpitGroup: built.cockpitGroup,
+                steeringWheelGroup: built.steeringWheelGroup,
+                rightHandGroup: built.rightHandGroup
+            };
+
+            allCars.push(carObj);
+            if (driver.isPlayer) playerCar = carObj;
+        });
+
+        updateCameraVisibilityForMode();
+    }
+
+    // =========================================================================
+    // BILDKVALITETSVÄLJARE (HÖG, MEDEL, LÅG) & UPPLÖSNING (RESOLUTION)
+    // =========================================================================
+    function applyRendererResolution() {
+        if (!renderer || !camera) return;
+        const winW = window.innerWidth;
+        const winH = window.innerHeight;
+        let renderW = winW;
+        let renderH = winH;
+        let pixelRatio = 1;
+        let label = '';
+
+        if (resolutionMode.includes('x')) {
+            const [fw, fh] = resolutionMode.split('x').map(Number);
+            renderW = fw;
+            renderH = fh;
+            pixelRatio = 1;
+            label = `${fw}×${fh}`;
+        } else {
+            const scale = resolutionMode === 'native' ? 1.0 : parseFloat(resolutionMode);
+            const baseDpr = graphicsQuality === 'high' ? Math.min(window.devicePixelRatio || 1, 2) : (graphicsQuality === 'medium' ? 1 : 0.75);
+            pixelRatio = Math.max(0.4, baseDpr * scale);
+            label = `${Math.round(winW * pixelRatio)}×${Math.round(winH * pixelRatio)} (${Math.round(scale * 100)}%)`;
+        }
+
+        renderer.setPixelRatio(pixelRatio);
+        // false behåller 100% CSS-storlek i webbläsarfönstret medan den interna framebuffer-upplösningen ändras
+        renderer.setSize(renderW, renderH, false);
+        camera.aspect = winW / winH;
+        camera.updateProjectionMatrix();
+
+        const badge = document.getElementById('current-res-badge');
+        if (badge) badge.textContent = label;
+    }
+
+    function setResolutionMode(mode) {
+        resolutionMode = mode;
+
+        // Synka dropdown i HUD
+        const hudSel = document.getElementById('hud-res-select');
+        if (hudSel && hudSel.value !== mode) hudSel.value = mode;
+
+        // Synka knappar i start/pausmenyn
+        ['native', '0.75', '0.5', '1920x1080', '1280x720', '854x480'].forEach(m => {
+            const btn = document.getElementById(`menu-res-${m}`);
+            if (!btn) return;
+            const isMono = m.includes('x');
+            btn.className = m === mode
+                ? `py-2 px-1.5 rounded-lg border-2 border-sky-500 bg-sky-500/20 ${isMono ? 'font-mono text-[11px]' : ''} font-bold text-white transition cursor-pointer`
+                : `py-2 px-1.5 rounded-lg border border-white/15 bg-white/5 hover:bg-white/10 ${isMono ? 'font-mono text-[11px]' : ''} font-bold text-gray-300 transition cursor-pointer`;
+        });
+
+        applyRendererResolution();
+        showBanner(`UPPLÖSNING: ${document.getElementById('current-res-badge')?.textContent || mode}`, 'bg-sky-600 text-white', 1200);
+    }
+
+    function downloadIndexHtmlForGitHub() {
+        // Hämta ren källkod utan dynamiskt inlagda LED- eller leaderboard-element
+        const clone = document.documentElement.cloneNode(true);
+        const cloneLeds = clone.querySelector('#rpm-leds');
+        if (cloneLeds) cloneLeds.innerHTML = '';
+        const cloneLb = clone.querySelector('#leaderboard-list');
+        if (cloneLb) cloneLb.innerHTML = '';
+        const cloneMenu = clone.querySelector('#menu-overlay');
+        if (cloneMenu) cloneMenu.classList.remove('hidden');
+
+        const htmlContent = '<!DOCTYPE html>\n' + clone.outerHTML;
+        const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'index.html';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        showBanner('SPARAD SOM INDEX.HTML · LADDA UPP TILL GITHUB REPOT!', 'bg-emerald-500 text-gray-950', 3000);
+    }
+
+    function setGraphicsQuality(level) {
+        graphicsQuality = level;
+
+        // Uppdatera knappar i både startmenyn och live-HUD
+        ['high', 'medium', 'low'].forEach(q => {
+            const menuBtn = document.getElementById(`menu-q-${q}`);
+            const hudBtn = document.getElementById(`hud-q-${q}`);
+            if (menuBtn) {
+                if (q === level) {
+                    menuBtn.className = 'quality-card p-3 rounded-xl border-2 border-sky-500 bg-sky-500/20 text-left transition cursor-pointer';
+                } else {
+                    menuBtn.className = 'quality-card p-3 rounded-xl border border-white/15 bg-white/5 hover:bg-white/10 text-left transition cursor-pointer';
+                }
+            }
+            if (hudBtn) {
+                if (q === level) {
+                    hudBtn.className = 'px-2 py-0.5 rounded font-bold transition bg-sky-600 text-white';
+                } else {
+                    hudBtn.className = 'px-2 py-0.5 rounded font-bold transition text-gray-300 hover:bg-white/10';
+                }
+            }
+        });
+
+        // Applicera WebGL-renderingsinställningar
+        if (renderer) {
+            if (level === 'high') {
+                renderer.shadowMap.enabled = true;
+                renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+                scene.fog.density = 0.0014;
+            } else if (level === 'medium') {
+                renderer.shadowMap.enabled = true;
+                renderer.shadowMap.type = THREE.BasicShadowMap;
+                scene.fog.density = 0.0016;
+            } else {
+                renderer.shadowMap.enabled = false;
+                scene.fog.density = 0.0022;
+            }
+            applyRendererResolution();
+        }
+
+        // Bygg om bana, träd, skuggor och bilar med ny detaljnivå
+        if (scene && trackCurve) {
+            rebuildWorldGeometry();
+            // Återskapa bilarnas 3D-modeller med bibehållna positioner
+            const savedStates = allCars.map(c => ({
+                pos: c.pos.clone(),
+                heading: c.heading,
+                speed: c.speed,
+                u: c.u,
+                lastU: c.lastU,
+                lap: c.lap,
+                totalProgress: c.totalProgress
+            }));
+            initCars();
+            allCars.forEach((c, idx) => {
+                if (savedStates[idx]) {
+                    c.pos.copy(savedStates[idx].pos);
+                    c.heading = savedStates[idx].heading;
+                    c.speed = savedStates[idx].speed;
+                    c.u = savedStates[idx].u;
+                    c.lastU = savedStates[idx].lastU;
+                    c.lap = savedStates[idx].lap;
+                    c.totalProgress = savedStates[idx].totalProgress;
+                    c.mesh.position.copy(c.pos);
+                    c.mesh.rotation.y = c.heading;
+                }
+            });
+        }
+    }
+
+    function selectPlayerLivery(idx) {
+        selectedPlayerLiveryIdx = idx;
+        for (let i = 0; i < 4; i++) {
+            const btn = document.getElementById(`livery-btn-${i}`);
+            if (btn) {
+                btn.className = i === idx
+                    ? 'p-2 rounded-lg border-2 border-sky-400 bg-white/10 flex items-center gap-2 text-xs font-bold text-white'
+                    : 'p-2 rounded-lg border border-white/15 bg-white/5 flex items-center gap-2 text-xs font-bold text-gray-300';
+            }
+        }
+        if (playerCar) {
+            setGraphicsQuality(graphicsQuality);
+        }
+    }
+
+    // =========================================================================
+    // MENY & STARTSEKVENS (5 RÖDA STARTLJUS)
+    // =========================================================================
+    function startOrResumeRace() {
+        document.getElementById('menu-overlay').classList.add('hidden');
+        if (gameState === 'menu') {
+            startCountdownSequence();
+        } else {
+            gameState = 'racing';
+        }
+    }
+
+    function togglePauseMenu() {
+        const overlay = document.getElementById('menu-overlay');
+        if (gameState === 'racing' || gameState === 'countdown') {
+            gameState = 'paused';
+            document.getElementById('menu-title').innerHTML = 'PAUS <span class="text-sky-400">MENY</span>';
+            document.getElementById('menu-subtitle').textContent = 'Justera bildkvalitet eller stallfärg under loppet.';
+            document.getElementById('btn-start-race').textContent = 'FORTSÄTT LOPPET';
+            document.getElementById('btn-restart-race').classList.remove('hidden');
+            overlay.classList.remove('hidden');
+        } else if (gameState === 'paused') {
+            overlay.classList.add('hidden');
+            gameState = 'racing';
+        }
+    }
+
+    function restartRace() {
+        document.getElementById('finish-overlay').classList.add('hidden');
+        document.getElementById('menu-overlay').classList.add('hidden');
+        initCars();
+        startCountdownSequence();
+    }
+
+    function startCountdownSequence() {
+        gameState = 'countdown';
+        countdownTimer = 0;
+        countdownStage = 0;
+        raceElapsed = 0;
+        const box = document.getElementById('start-lights-box');
+        box.style.opacity = '1';
+        for (let i = 1; i <= 5; i++) {
+            document.getElementById(`lamp-${i}`).classList.remove('on');
+        }
+    }
+
+    function updateCountdown(dt) {
+        countdownTimer += dt;
+        const stage = Math.min(5, Math.floor(countdownTimer / 0.75) + 1);
+        if (stage > countdownStage && countdownTimer < 4.1) {
+            countdownStage = stage;
+            for (let i = 1; i <= stage; i++) {
+                document.getElementById(`lamp-${i}`).classList.add('on');
+            }
+        }
+        // Efter 4,2 sekunder slocknar alla 5 lampor -> START!
+        if (countdownTimer >= 4.2) {
+            for (let i = 1; i <= 5; i++) {
+                document.getElementById(`lamp-${i}`).classList.remove('on');
+            }
+            gameState = 'racing';
+            showBanner('KÖR! LOPPET HAR STARTAT', 'bg-emerald-500 text-gray-950', 2000);
+            setTimeout(() => {
+                document.getElementById('start-lights-box').style.opacity = '0.25';
+            }, 1200);
+        }
+    }
+
+    // =========================================================================
+    // FYSIK, DRIVLINA, SLIPSTREAM & AI-KÖRNING
+    // =========================================================================
+    function updatePhysics(dt) {
+        if (gameState !== 'racing') return;
+        raceElapsed += dt;
+
+        // 1. Uppdatera spelarens bil
+        updatePlayerPhysics(dt);
+
+        // 2. Uppdatera AI-motståndare
+        updateAICars(dt);
+
+        // 3. Bil-mot-bil kollisionshantering
+        resolveCarCollisions();
+
+        // 4. Uppdatera partiklar (grus, däckrök & avgaser på Hög/Medel)
+        updateParticles(dt);
+    }
+
+    function updatePlayerPhysics(dt) {
+        const p = playerCar;
+        if (p.finished) {
+            p.speed *= 0.98;
+            return;
+        }
+
+        // Hämta kontroller
+        const throttleInput = (keys['KeyW'] || keys['ArrowUp'] || touchInput.gas) ? 1 : 0;
+        const brakeInput = (keys['KeyS'] || keys['ArrowDown'] || touchInput.brake) ? 1 : 0;
+        const steerLeft = (keys['KeyA'] || keys['ArrowLeft'] || touchInput.left) ? 1 : 0;
+        const steerRight = (keys['KeyD'] || keys['ArrowRight'] || touchInput.right) ? 1 : 0;
+        const rawSteer = steerLeft - steerRight;
+
+        // Hastighetsberoende styrutslag + stabilitetskontroll
+        const speedKmh = p.speed * 3.6;
+        const steerSens = THREE.MathUtils.lerp(0.55, 0.24, Math.min(speedKmh / 290, 1));
+        const targetSteer = rawSteer * steerSens;
+        p.steerAngle = THREE.MathUtils.lerp(p.steerAngle, targetSteer, dt * 11);
+
+        // Kontrollera slipstream (sug bakom motståndare inom 28 m)
+        p.slipstream = false;
+        const forwardVec = new THREE.Vector3(-Math.sin(p.heading), 0, -Math.cos(p.heading));
+        for (const other of allCars) {
+            if (other.isPlayer) continue;
+            const toOther = other.pos.clone().sub(p.pos);
+            const dist = toOther.length();
+            if (dist > 3 && dist < 32) {
+                const align = forwardVec.dot(toOther.normalize());
+                if (align > 0.94) {
+                    p.slipstream = true;
+                    break;
+                }
+            }
+        }
+
+        // Motorläge & Bränslepåverkan
+        const modeMult = engineModeIdx === 0 ? 0.88 : (engineModeIdx === 1 ? 1.0 : 1.08);
+        const fuelMult = p.fuelKg > 0.1 ? 1.0 : 0.45;
+        const drsBoost = p.drsActive ? 1.11 : 1.0;
+        const slipBoost = p.slipstream ? 1.05 : 1.0;
+
+        // Grepp från däckslitage & temperatur
+        const avgWear = (p.tireWearF + p.tireWearR) * 0.5;
+        const gripFactor = Math.max(0.72, 1.0 - (avgWear / 100) * 0.28);
+
+        // Realistisk rally/folkrace-fart (~175–190 km/h toppfart istället för F1-fart)
+        const maxSpeedMs = (178 / 3.6) * modeMult * drsBoost * slipBoost * fuelMult;
+        let longAccel = 0;
+
+        if (throttleInput > 0) {
+            // Antispinn (TC) begränsar hjulspinn vid låg fart
+            const tcFactor = (!assists.tc && p.speed < 16) ? 0.85 : 1.0;
+            const accelPower = 13.8 * modeMult * drsBoost * slipBoost * fuelMult * tcFactor;
+            longAccel += accelPower * (1 - Math.pow(p.speed / maxSpeedMs, 1.65));
+        }
+
+        if (brakeInput > 0) {
+            const absFactor = assists.abs ? 1.0 : 0.85;
+            longAccel -= 28.0 * gripFactor * absFactor;
+            p.drsActive = false; // Broms stänger DRS
+        }
+
+        // Luftmotstånd & rullmotstånd
+        const drag = 0.0055 * p.speed * p.speed + 0.22 * p.speed;
+        longAccel -= drag;
+
+        // Avåkningskontroll (gräs utanför asfalten)
+        const nearestTrackPt = getClosestPointOnTrack(p.pos);
+        const distFromCenter = p.pos.distanceTo(nearestTrackPt);
+        const offTrack = distFromCenter > TRACK_WIDTH * 0.5 + 1.1;
+        if (offTrack) {
+            longAccel -= p.speed * 1.45;
+            if (graphicsQuality !== 'low' && p.speed > 8 && Math.random() < 0.6) {
+                spawnParticle(p.pos, 0x5c4d3c, 0.35); // Grus/jordpartiklar
+            }
+        }
+
+        p.speed = Math.max(0, p.speed + longAccel * dt);
+        p.gLong = longAccel / 9.81;
+
+        // Svängradie & Sidokrafter (G-kraft)
+        if (p.speed > 0.3) {
+            const turnRate = p.steerAngle * Math.min(p.speed / 12, 1.65) * 2.15 * gripFactor;
+            p.heading += turnRate * dt;
+            p.gLat = (p.speed * turnRate) / 9.81;
+        } else {
+            p.gLat = 0;
+        }
+
+        // Uppdatera 3D-position + följ banans höjdprofil (korkeuserot)
+        const moveVec = new THREE.Vector3(-Math.sin(p.heading), 0, -Math.cos(p.heading));
+        p.pos.addScaledVector(moveVec, p.speed * dt);
+        const trackSample = trackCurve.getPointAt(p.u);
+        p.pos.y = THREE.MathUtils.lerp(p.pos.y, trackSample.y, dt * 15);
+        p.mesh.position.copy(p.pos);
+        p.mesh.rotation.y = p.heading;
+
+        // Lutning på chassi vid kurvtagning & inbromsning (visuell fysik)
+        p.mesh.rotation.z = THREE.MathUtils.lerp(p.mesh.rotation.z, -p.gLat * 0.018, dt * 10);
+        p.mesh.rotation.x = THREE.MathUtils.lerp(p.mesh.rotation.x, p.gLong * 0.012, dt * 10);
+
+        // Rotera och sväng framhjulen + ratten i cockpit
+        p.wheels.forEach(w => {
+            w.mesh.rotation.x -= (p.speed * dt) / 0.34;
+            if (w.front) {
+                w.pivot.rotation.y = p.steerAngle * 0.75;
+            }
+        });
+        if (p.steeringWheelGroup) {
+            p.steeringWheelGroup.rotation.z = p.steerAngle * 1.85;
+        }
+        // Animera högerhanden mellan ratten och rally-växelspaken vid växling!
+        if (p.rightHandGroup) {
+            if (p.shiftAnimTimer > 0) {
+                p.shiftAnimTimer = Math.max(0, p.shiftAnimTimer - dt);
+                p.rightHandGroup.position.lerp(new THREE.Vector3(-0.04, -0.10, -0.23), dt * 18);
+            } else {
+                const wheelRightX = -0.18 + Math.sin(p.steerAngle * 1.85) * 0.04;
+                const wheelRightY = -0.10 - Math.cos(p.steerAngle * 1.85) * 0.02;
+                p.rightHandGroup.position.lerp(new THREE.Vector3(wheelRightX, wheelRightY, -0.33), dt * 12);
+            }
+        }
+        // Gruspartiklar bakom bilen när man kör på rallyunderlaget
+        if (graphicsQuality !== 'low' && p.speed > 14 && Math.random() < 0.45) {
+            const rearPos = p.pos.clone().addScaledVector(moveVec, -1.9);
+            spawnParticle(rearPos, 0x8c8275, 0.28);
+        }
+
+        // Växellåda & Varvtal (RPM)
+        updateTransmissionAndThermals(p, throttleInput, brakeInput, dt);
+
+        // Uppdatera framsteg på banan & varvtider
+        updateCarTrackProgress(p, dt);
+    }
+
+    function updateTransmissionAndThermals(p, throttle, brake, dt) {
+        const gearSpeeds = [0, 48, 82, 116, 150, 188]; // 5-växlad tätstegad rallylåda (km/h)
+        const speedKmh = p.speed * 3.6;
+
+        if (assists.auto) {
+            let targetGear = 1;
+            for (let g = 1; g <= 5; g++) {
+                if (speedKmh > gearSpeeds[g] * 0.88 && g < 5) targetGear = g + 1;
+            }
+            if (targetGear !== p.gear) {
+                p.gear = targetGear;
+                p.shiftAnimTimer = 0.35; // Trigga handrörelse mot växelspaken
+            }
+        }
+
+        const minGearSpeed = gearSpeeds[p.gear - 1] * 0.7;
+        const maxGearSpeed = gearSpeeds[p.gear];
+        const gearRatio = THREE.MathUtils.clamp((speedKmh - minGearSpeed) / Math.max(20, maxGearSpeed - minGearSpeed), 0, 1);
+        const targetRpm = 1400 + gearRatio * 6800 + throttle * 450;
+        p.rpm = THREE.MathUtils.lerp(p.rpm, THREE.MathUtils.clamp(targetRpm, 1200, 8400), dt * 12);
+
+        // Bränsleförbrukning & slitage
+        const burnRate = engineModeIdx === 0 ? 0.14 : (engineModeIdx === 1 ? 0.19 : 0.24);
+        p.fuelKg = Math.max(0, p.fuelKg - (0.02 + throttle * burnRate) * dt);
+
+        const wearMult = tireCompound === 'Grus' ? 0.16 : (tireCompound === 'Slicks' ? 0.24 : 0.20);
+        p.tireWearF = Math.min(100, p.tireWearF + (Math.abs(p.gLat) * 0.35 + throttle * 0.08) * wearMult * dt);
+        p.tireWearR = Math.min(100, p.tireWearR + (Math.abs(p.gLat) * 0.30 + throttle * 0.14) * wearMult * dt);
+
+        // Däck- & bromstemperaturer
+        for (let i = 0; i < 4; i++) {
+            const targetTemp = 60 + (speedKmh / 240) * 26 + Math.abs(p.gLat) * 14;
+            p.tireTemp[i] = THREE.MathUtils.lerp(p.tireTemp[i], targetTemp, dt * 0.6);
+        }
+        const targetBrake = 68 + brake * 240;
+        p.brakeTemp = THREE.MathUtils.lerp(p.brakeTemp, targetBrake, dt * (brake > 0 ? 1.8 : 0.35));
+        p.engineTemp = THREE.MathUtils.lerp(p.engineTemp, 86 + throttle * 14, dt * 0.4);
+    }
+
+    function updateAICars(dt) {
+        for (const ai of allCars) {
+            if (ai.isPlayer || ai.finished) continue;
+
+            const lookAheadU = (ai.u + 0.022) % 1;
+            const targetPt = trackCurve.getPointAt(lookAheadU);
+            const tan = trackCurve.getTangentAt(lookAheadU).normalize();
+            const right = new THREE.Vector3(-tan.z, 0, tan.x).normalize();
+            targetPt.addScaledVector(right, ai.laneOffset);
+
+            // Beräkna kurvskärpa för att anpassa AI-hastigheten
+            const farTan = trackCurve.getTangentAt((ai.u + 0.055) % 1).normalize();
+            const cornerAngle = tan.angleTo(farTan);
+            const cornerFactor = THREE.MathUtils.clamp(1.0 - cornerAngle * 0.85, 0.52, 1.0);
+
+            const targetSpeed = (166 / 3.6) * ai.skill * cornerFactor;
+            const accel = ai.speed < targetSpeed ? 13.2 * ai.skill : -24.0;
+            ai.speed = Math.max(8, ai.speed + accel * dt);
+
+            const toTarget = targetPt.sub(ai.pos);
+            const desiredHeading = Math.atan2(-toTarget.x, -toTarget.z);
+            let angleDiff = desiredHeading - ai.heading;
+            while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
+            while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
+
+            ai.heading += THREE.MathUtils.clamp(angleDiff, -2.8 * dt, 2.8 * dt);
+
+            const forward = new THREE.Vector3(-Math.sin(ai.heading), 0, -Math.cos(ai.heading));
+            ai.pos.addScaledVector(forward, ai.speed * dt);
+            const aiTrackSample = trackCurve.getPointAt(ai.u);
+            ai.pos.y = THREE.MathUtils.lerp(ai.pos.y, aiTrackSample.y, dt * 15);
+            ai.mesh.position.copy(ai.pos);
+            ai.mesh.rotation.y = ai.heading;
+
+            ai.wheels.forEach(w => {
+                w.mesh.rotation.x -= (ai.speed * dt) / 0.34;
+                if (w.front) w.pivot.rotation.y = THREE.MathUtils.clamp(angleDiff * 0.5, -0.35, 0.35);
+            });
+
+            updateCarTrackProgress(ai, dt);
+        }
+    }
+
+    function updateCarTrackProgress(car, dt) {
+        const newU = findClosestTrackU(car.pos, car.u);
+        let deltaU = newU - car.lastU;
+        if (deltaU < -0.5) deltaU += 1;
+        if (deltaU > 0.5) deltaU -= 1;
+
+        car.totalProgress += deltaU;
+        car.u = newU;
+        car.lastU = newU;
+
+        if (car.isPlayer) {
+            car.currentLapTime = raceElapsed - car.lapStartTime;
+            if (car.u > 0.33 && car.u < 0.40 && !car.sectorTimes[0]) {
+                car.sectorTimes[0] = car.currentLapTime;
+            }
+            if (car.u > 0.66 && car.u < 0.72 && !car.sectorTimes[1]) {
+                car.sectorTimes[1] = car.currentLapTime;
+            }
+        }
+
+        const computedLap = Math.floor(car.totalProgress + 1.001);
+        if (computedLap > car.lap) {
+            if (car.isPlayer && car.lap >= 1 && car.totalProgress > 0.5) {
+                car.lastLapTime = car.currentLapTime;
+                if (!car.bestLapTime || car.lastLapTime < car.bestLapTime) {
+                    car.bestLapTime = car.lastLapTime;
+                    if (car.bestLapTime < recordLapTime) recordLapTime = car.bestLapTime;
+                }
+                car.lapStartTime = raceElapsed;
+                car.sectorTimes = [null, null, null];
+            }
+            car.lap = computedLap;
+
+            if (car.lap > TOTAL_LAPS && !car.finished) {
+                car.finished = true;
+                car.finishTime = raceElapsed;
+                if (car.isPlayer) {
+                    triggerRaceFinish();
+                }
+            }
+        }
+    }
+
+    function findClosestTrackU(pos, hintU) {
+        let bestU = hintU;
+        let bestDistSq = Infinity;
+        const steps = 36;
+        for (let i = -steps; i <= steps; i++) {
+            const candidateU = (hintU + (i / steps) * 0.08 + 1) % 1;
+            const pt = trackCurve.getPointAt(candidateU);
+            const dSq = pos.distanceToSquared(pt);
+            if (dSq < bestDistSq) {
+                bestDistSq = dSq;
+                bestU = candidateU;
+            }
+        }
+        return bestU;
+    }
+
+    function spawnParticle(pos, colorHex, size) {
+        if (particles.length > 90) return;
+        const mesh = new THREE.Mesh(
+            new THREE.BoxGeometry(size, size, size),
+            new THREE.MeshBasicMaterial({ color: colorHex, transparent: true, opacity: 0.55 })
+        );
+        mesh.position.set(
+            pos.x + (Math.random() - 0.5) * 0.8,
+            0.2 + Math.random() * 0.25,
+            pos.z + (Math.random() - 0.5) * 0.8
+        );
+        particleGroup.add(mesh);
+        particles.push({ mesh, life: 0.45 });
+    }
+
+    function updateParticles(dt) {
+        for (let i = particles.length - 1; i >= 0; i--) {
+            const pt = particles[i];
+            pt.life -= dt;
+            pt.mesh.position.y += dt * 0.9;
+            pt.mesh.scale.addScalar(dt * 1.4);
+            pt.mesh.material.opacity = Math.max(0, pt.life);
+            if (pt.life <= 0) {
+                particleGroup.remove(pt.mesh);
+                particles.splice(i, 1);
+            }
+        }
+    }
+
+    function getClosestPointOnTrack(pos) {
+        const u = findClosestTrackU(pos, playerCar ? playerCar.u : 0);
+        return trackCurve.getPointAt(u);
+    }
+
+    function resolveCarCollisions() {
+        const minDist = 2.35;
+        for (let i = 0; i < allCars.length; i++) {
+            for (let j = i + 1; j < allCars.length; j++) {
+                const a = allCars[i];
+                const b = allCars[j];
+                const diff = a.pos.clone().sub(b.pos);
+                diff.y = 0;
+                const dist = diff.length();
+                if (dist > 0.01 && dist < minDist) {
+                    const overlap = (minDist - dist) * 0.5;
+                    const push = diff.normalize().multiplyScalar(overlap);
+                    a.pos.add(push);
+                    b.pos.sub(push);
+                    a.speed *= 0.96;
+                    b.speed *= 0.96;
+                }
+            }
+        }
+    }
+
+    // =========================================================================
+    // KAMERAKONTROLL (Hjälmkamera In-Car, Dash-Cam & Chase Cam)
+    // =========================================================================
+    function updateCameraVisibilityForMode() {
+        if (!playerCar || !playerCar.cockpitGroup) return;
+        const inCar = (cameraMode === 0 || cameraMode === 1) && !lookBack;
+        playerCar.cockpitGroup.visible = inCar;
+        if (playerCar.mesh.userData.exteriorMeshes) {
+            playerCar.mesh.userData.exteriorMeshes.forEach(m => {
+                m.visible = !inCar;
+            });
+        }
+    }
+
+    function cycleCamera() {
+        cameraMode = (cameraMode + 1) % 3;
+        updateCameraVisibilityForMode();
+        const names = ['HJÄLMKAMERA IN-CAR', 'DASH-CAM (VINDRUTA)', 'JAKTKAMERA BAKIFRÅN'];
+        showBanner(`KAMERA: ${names[cameraMode]}`, 'bg-sky-600 text-white', 1200);
+    }
+
+    function updateCamera() {
+        if (!playerCar) return;
+        const p = playerCar;
+        const forward = new THREE.Vector3(-Math.sin(p.heading), 0, -Math.cos(p.heading));
+        const right = new THREE.Vector3(Math.cos(p.heading), 0, -Math.sin(p.heading));
+
+        if (lookBack) {
+            const camPos = p.pos.clone().add(new THREE.Vector3(0, 1.45, 0)).addScaledVector(forward, 0.4);
+            camera.position.copy(camPos);
+            camera.lookAt(p.pos.clone().add(new THREE.Vector3(0, 1.0, 0)).addScaledVector(forward, -25));
+            return;
+        }
+
+        if (cameraMode === 0) {
+            // Hjälmkamera In-Car (högre förarposition så man ser ~3 m framför bilen över motorhuven)
+            camera.fov = 76;
+            camera.updateProjectionMatrix();
+            const eyePos = p.pos.clone()
+                .add(new THREE.Vector3(0, 1.16, 0))
+                .addScaledVector(forward, 0.02)
+                .addScaledVector(right, -0.32 - p.gLat * 0.02);
+            camera.position.copy(eyePos);
+
+            const lookTarget = p.pos.clone()
+                .add(new THREE.Vector3(0, 0.56, 0))
+                .addScaledVector(forward, 11)
+                .addScaledVector(right, -0.14 - p.steerAngle * 2.2);
+            camera.lookAt(lookTarget);
+        } else if (cameraMode === 1) {
+            // Dash-cam närmare vindrutan med bra närsikt över huven
+            camera.fov = 68;
+            camera.updateProjectionMatrix();
+            const hoodPos = p.pos.clone()
+                .add(new THREE.Vector3(0, 1.18, 0))
+                .addScaledVector(forward, 0.36)
+                .addScaledVector(right, -0.28);
+            camera.position.copy(hoodPos);
+            camera.lookAt(p.pos.clone().add(new THREE.Vector3(0, 0.52, 0)).addScaledVector(forward, 14));
+        } else {
+            // Chase Cam (bakifrån så man ser hela rally-/folkracebilen)
+            camera.fov = 64;
+            camera.updateProjectionMatrix();
+            const chasePos = p.pos.clone()
+                .add(new THREE.Vector3(0, 2.35, 0))
+                .addScaledVector(forward, -5.6);
+            camera.position.lerp(chasePos, 0.22);
+            camera.lookAt(p.pos.clone().add(new THREE.Vector3(0, 0.9, 0)).addScaledVector(forward, 12));
+        }
+    }
+
+    // =========================================================================
+    // TELEMETRI & HUD-UPPDATERING (Svenskt gränssnitt)
+    // =========================================================================
+    function initHUDElements() {
+        // Skapa 15 RPM LED-indikatorer
+        const ledContainer = document.getElementById('rpm-leds');
+        ledContainer.innerHTML = '';
+        for (let i = 0; i < 15; i++) {
+            const div = document.createElement('div');
+            div.id = `rpm-led-${i}`;
+            div.className = 'flex-1 h-full rounded-xs bg-gray-800';
+            ledContainer.appendChild(div);
+        }
+    }
+
+    function updateHUD() {
+        if (!playerCar) return;
+        const p = playerCar;
+
+        // Sortera ställningen (placering 1-7)
+        const sorted = [...allCars].sort((a, b) => b.totalProgress - a.totalProgress);
+        const playerRank = sorted.findIndex(c => c.isPlayer) + 1;
+
+        document.getElementById('hud-pos').textContent = playerRank;
+        document.getElementById('hud-lap').textContent = `Varv ${Math.min(p.lap, TOTAL_LAPS)}/${TOTAL_LAPS}`;
+
+        // Leaderboard
+        const lbEl = document.getElementById('leaderboard-list');
+        let lbHtml = '';
+        sorted.forEach((car, idx) => {
+            const posNum = idx + 1;
+            const gapMeters = (sorted[0].totalProgress - car.totalProgress) * trackLength;
+            const gapSec = gapMeters / Math.max(25, car.speed || 45);
+            const gapText = posNum === 1 ? 'ledare' : `+${gapSec.toFixed(1).replace('.', ',')}`;
+            const rowClass = car.isPlayer
+                ? 'bg-amber-400/20 text-amber-300 font-bold rounded px-1 py-0.5'
+                : 'text-gray-200 px-1 py-0.5';
+
+            lbHtml += `
+                <div class="flex items-center justify-between ${rowClass}">
+                    <div class="flex items-center gap-1.5 truncate">
+                        <span class="mono text-gray-400 w-3">${posNum}</span>
+                        <span class="w-2 h-2 rounded-full shrink-0" style="background:${car.hex}"></span>
+                        <span class="truncate">${car.name}</span>
+                    </div>
+                    <span class="mono text-[10px] ${car.isPlayer ? 'text-amber-300' : 'text-gray-400'}">${gapText}</span>
+                </div>
+            `;
+        });
+        lbEl.innerHTML = lbHtml;
+
+        // Avstånd till bilen framför
+        if (playerRank > 1) {
+            const ahead = sorted[playerRank - 2];
+            const aheadGap = ((ahead.totalProgress - p.totalProgress) * trackLength) / Math.max(25, p.speed || 45);
+            document.getElementById('hud-gap-ahead').innerHTML = `<span>▲ ${ahead.name}</span><span class="mono text-rose-400">-${aheadGap.toFixed(1).replace('.', ',')} s</span>`;
+        } else {
+            document.getElementById('hud-gap-ahead').innerHTML = `<span>★ I LEDNING</span><span class="mono text-emerald-400">P1</span>`;
+        }
+
+        // Bränsle & Däck
+        document.getElementById('hud-fuel-kg').textContent = `${p.fuelKg.toFixed(1).replace('.', ',')} kg`;
+        document.getElementById('hud-fuel-bar').style.width = `${(p.fuelKg / 50) * 100}%`;
+        const ratePerLap = engineModeIdx === 0 ? 7.6 : (engineModeIdx === 1 ? 9.8 : 11.9);
+        document.getElementById('hud-fuel-laps').textContent = `räcker ${(p.fuelKg / ratePerLap).toFixed(1).replace('.', ',')} varv`;
+        document.getElementById('hud-fuel-rate').textContent = `${ratePerLap.toFixed(1).replace('.', ',')} kg/varv`;
+
+        document.getElementById('hud-wear-f').textContent = `${Math.round(p.tireWearF)} %`;
+        document.getElementById('hud-wear-r').textContent = `${Math.round(p.tireWearR)} %`;
+        const gripF = Math.max(65, Math.round(100 - p.tireWearF * 0.35));
+        const gripR = Math.max(65, Math.round(100 - p.tireWearR * 0.35));
+        document.getElementById('hud-grip').textContent = `${gripF} / ${gripR} %`;
+
+        // Varvtider
+        document.getElementById('hud-lap-time').textContent = formatLapTime(p.currentLapTime);
+        document.getElementById('hud-record').textContent = formatLapTime(recordLapTime);
+        if (p.lastLapTime) document.getElementById('hud-last-lap').textContent = formatLapTime(p.lastLapTime);
+        if (p.bestLapTime) document.getElementById('hud-best-lap').textContent = formatLapTime(p.bestLapTime);
+
+        document.getElementById('hud-s1').textContent = p.sectorTimes[0] ? `S1 ${p.sectorTimes[0].toFixed(1)}` : 'S1 –';
+        document.getElementById('hud-s2').textContent = p.sectorTimes[1] ? `S2 ${p.sectorTimes[1].toFixed(1)}` : 'S2 –';
+
+        // Växel, Hastighet & RPM-lysdioder
+        const speedKmh = Math.round(p.speed * 3.6);
+        document.getElementById('hud-gear').textContent = p.gear;
+        document.getElementById('hud-speed').textContent = speedKmh;
+        document.getElementById('hud-rpm').textContent = `${Math.round(p.rpm)} rpm`;
+        document.getElementById('hud-engine-temp').textContent = `${Math.round(p.engineTemp)} °C`;
+
+        const rpmRatio = THREE.MathUtils.clamp((p.rpm - 2000) / 11000, 0, 1);
+        for (let i = 0; i < 15; i++) {
+            const led = document.getElementById(`rpm-led-${i}`);
+            if (!led) continue;
+            if (i / 15 < rpmRatio) {
+                if (i < 6) led.className = 'flex-1 h-full rounded-xs bg-emerald-400';
+                else if (i < 11) led.className = 'flex-1 h-full rounded-xs bg-rose-500';
+                else led.className = 'flex-1 h-full rounded-xs bg-sky-400';
+            } else {
+                led.className = 'flex-1 h-full rounded-xs bg-gray-800';
+            }
+        }
+
+        // Uppdatera rattens inbyggda skärm i 3D-cockpit
+        if (cameraMode === 0) {
+            updateSteeringWheelDisplay(p.gear, speedKmh, playerRank, Math.min(p.lap, TOTAL_LAPS), rpmRatio, p.engineTemp);
+        }
+
+        // DRS & Slipstream badges
+        const drsEl = document.getElementById('badge-drs');
+        drsEl.className = p.drsActive
+            ? 'py-0.5 rounded bg-emerald-500/30 text-emerald-300 border border-emerald-400 font-extrabold'
+            : 'py-0.5 rounded bg-white/5 text-gray-400 border border-white/10';
+
+        const slipEl = document.getElementById('badge-slipstream');
+        slipEl.textContent = p.slipstream ? 'SUG AKTIVT!' : 'INGET SUG';
+        slipEl.className = p.slipstream
+            ? 'py-0.5 rounded bg-sky-500/30 text-sky-300 border border-sky-400 font-extrabold'
+            : 'py-0.5 rounded bg-white/5 text-gray-400 border border-white/10';
+
+        // Däcktemperaturer & Bromstemp
+        const tempIds = ['temp-fl', 'temp-fr', 'temp-rl', 'temp-rr'];
+        tempIds.forEach((id, idx) => {
+            const t = Math.round(p.tireTemp[idx]);
+            const el = document.getElementById(id);
+            el.textContent = `${t}°C`;
+            el.className = t > 98 ? 'text-rose-400 font-bold' : (t > 78 ? 'text-emerald-400 font-bold' : 'text-sky-300 font-bold');
+        });
+        document.getElementById('temp-brake').textContent = `${Math.round(p.brakeTemp)} °C`;
+
+        // Motortelemetri (MEP-värden)
+        const loadRatio = THREE.MathUtils.clamp(p.rpm / 13000, 0.1, 1.0);
+        const bmep = (loadRatio * 18.4).toFixed(1).replace('.', ',');
+        const exmep = (loadRatio * 15.8).toFixed(1).replace('.', ',');
+        const htmep = (loadRatio * 7.2).toFixed(1).replace('.', ',');
+        document.getElementById('val-bmep').textContent = `${bmep} bar`;
+        document.getElementById('val-exmep').textContent = `${exmep} bar`;
+        document.getElementById('val-htmep').textContent = `${htmep} bar`;
+        document.getElementById('bar-bmep').style.width = `${loadRatio * 88}%`;
+        document.getElementById('bar-exmep').style.width = `${loadRatio * 76}%`;
+        document.getElementById('bar-htmep').style.width = `${loadRatio * 48}%`;
+
+        // Rita 2D-canvaselement: Minimap, Närhetsradar & G-kraftsmätare
+        drawMinimap();
+        drawProximityRadar();
+        drawGForceMeter();
+    }
+
+    function drawMinimap() {
+        const canvas = document.getElementById('minimap-canvas');
+        if (!canvas || !trackCurve) return;
+        const ctx = canvas.getContext('2d');
+        const w = canvas.width;
+        const h = canvas.height;
+        ctx.clearRect(0, 0, w, h);
+
+        // Dynamisk skalning för aktuell vald Rokki-Ralli bana
+        let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+        for (let i = 0; i <= 60; i++) {
+            const pt = trackCurve.getPointAt((i / 60) % 1);
+            if (pt.x < minX) minX = pt.x;
+            if (pt.x > maxX) maxX = pt.x;
+            if (pt.z < minZ) minZ = pt.z;
+            if (pt.z > maxZ) maxZ = pt.z;
+        }
+        const spanX = Math.max(40, maxX - minX);
+        const spanZ = Math.max(40, maxZ - minZ);
+        const mapX = (x) => ((x - minX) / spanX) * (w - 24) + 12;
+        const mapY = (z) => ((z - minZ) / spanZ) * (h - 20) + 10;
+
+        // Banasfalt & grus på minimap
+        const activeTrack = ROKKI_TRACKS[selectedTrackIdx];
+        for (let i = 0; i < 80; i++) {
+            const u0 = i / 80;
+            const u1 = (i + 1) / 80;
+            const p0 = trackCurve.getPointAt(u0);
+            const p1 = trackCurve.getPointAt(u1 % 1);
+            const isAsph = activeTrack && activeTrack.isAsphaltFn ? activeTrack.isAsphaltFn(u0) : true;
+            ctx.strokeStyle = isAsph ? '#64748b' : '#b45309';
+            ctx.lineWidth = 5;
+            ctx.beginPath();
+            ctx.moveTo(mapX(p0.x), mapY(p0.z));
+            ctx.lineTo(mapX(p1.x), mapY(p1.z));
+            ctx.stroke();
+        }
+        ctx.closePath();
+        ctx.stroke();
+
+        // Sektorspår
+        ctx.strokeStyle = '#22c55e';
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        for (let i = 0; i <= 26; i++) {
+            const pt = trackCurve.getPointAt(i / 80);
+            if (i === 0) ctx.moveTo(mapX(pt.x), mapY(pt.z));
+            else ctx.lineTo(mapX(pt.x), mapY(pt.z));
+        }
+        ctx.stroke();
+
+        // Rita alla bilar som prickar
+        allCars.forEach(car => {
+            ctx.fillStyle = car.isPlayer ? '#facc15' : car.hex;
+            ctx.beginPath();
+            ctx.arc(mapX(car.pos.x), mapY(car.pos.z), car.isPlayer ? 4.5 : 3.2, 0, Math.PI * 2);
+            ctx.fill();
+            if (car.isPlayer) {
+                ctx.strokeStyle = '#ffffff';
+                ctx.lineWidth = 1.5;
+                ctx.stroke();
+            }
+        });
+    }
+
+    function drawProximityRadar() {
+        const canvas = document.getElementById('radar-canvas');
+        if (!canvas || !playerCar) return;
+        const ctx = canvas.getContext('2d');
+        const w = canvas.width;
+        const h = canvas.height;
+        const cx = w / 2;
+        const cy = h / 2;
+        ctx.clearRect(0, 0, w, h);
+
+        // Kontrollera om någon motståndare är inom 24 m
+        let nearby = false;
+        allCars.forEach(c => {
+            if (!c.isPlayer && c.pos.distanceTo(playerCar.pos) < 24) nearby = true;
+        });
+        if (!nearby) return;
+
+        // Cirklar
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.22)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.arc(cx, cy, 48, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(cx, cy, 26, 0, Math.PI * 2);
+        ctx.stroke();
+
+        // Spelaren i mitten (gul rektangel)
+        ctx.fillStyle = '#facc15';
+        ctx.fillRect(cx - 4, cy - 8, 8, 16);
+
+        // Motståndare relativt spelarens riktning
+        const cosH = Math.cos(-playerCar.heading);
+        const sinH = Math.sin(-playerCar.heading);
+
+        allCars.forEach(car => {
+            if (car.isPlayer) return;
+            const dx = car.pos.x - playerCar.pos.x;
+            const dz = car.pos.z - playerCar.pos.z;
+            const dist = Math.hypot(dx, dz);
+            if (dist > 24) return;
+
+            const rx = (dx * cosH - dz * sinH) * 2.1;
+            const rz = (dx * sinH + dz * cosH) * 2.1;
+
+            ctx.fillStyle = dist < 6 ? '#f43f5e' : car.hex;
+            ctx.fillRect(cx + rx - 4, cy + rz - 8, 8, 16);
+        });
+    }
+
+    function drawGForceMeter() {
+        const canvas = document.getElementById('gforce-canvas');
+        if (!canvas || !playerCar) return;
+        const ctx = canvas.getContext('2d');
+        const w = canvas.width;
+        const h = canvas.height;
+        const cx = w / 2;
+        const cy = h / 2;
+        ctx.clearRect(0, 0, w, h);
+
+        ctx.strokeStyle = 'rgba(255,255,255,0.18)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.arc(cx, cy, 28, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(cx - 28, cy);
+        ctx.lineTo(cx + 28, cy);
+        ctx.moveTo(cx, cy - 28);
+        ctx.lineTo(cx, cy + 28);
+        ctx.stroke();
+
+        const dotX = cx + THREE.MathUtils.clamp(-playerCar.gLat * 11, -24, 24);
+        const dotY = cy + THREE.MathUtils.clamp(playerCar.gLong * 11, -24, 24);
+        ctx.fillStyle = '#f97316';
+        ctx.beginPath();
+        ctx.arc(dotX, dotY, 4.5, 0, Math.PI * 2);
+        ctx.fill();
+
+        const totalG = Math.hypot(playerCar.gLat, playerCar.gLong);
+        document.getElementById('hud-gforce-text').textContent = `${totalG.toFixed(1).replace('.', ',')} G`;
+    }
+
+    // =========================================================================
+    // INTERAKTIVA FUNKTIONER & HJÄLPMEDEL
+    // =========================================================================
+    function toggleAssist(name) {
+        assists[name] = !assists[name];
+        const btn = document.getElementById(`assist-${name}`);
+        if (btn) {
+            btn.className = assists[name]
+                ? 'px-1.5 py-0.5 rounded bg-emerald-500/25 text-emerald-300 border border-emerald-500/40'
+                : 'px-1.5 py-0.5 rounded bg-white/5 text-gray-500 border border-white/10';
+        }
+    }
+
+    function toggleRacingLine() {
+        showRacingLine = !showRacingLine;
+        if (racingLineMesh) racingLineMesh.visible = showRacingLine;
+        const btn = document.getElementById('badge-line');
+        btn.textContent = showRacingLine ? 'SPÅR PÅ [L]' : 'SPÅR AV [L]';
+        btn.className = showRacingLine
+            ? 'py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+            : 'py-0.5 rounded bg-white/5 text-gray-400 border border-white/10';
+    }
+
+    function cycleEngineMode() {
+        engineModeIdx = (engineModeIdx + 1) % engineModes.length;
+        document.getElementById('hud-engine-mode').textContent = `${engineModes[engineModeIdx]} [M]`;
+        showBanner(`MOTORLÄGE: ${engineModes[engineModeIdx]}`, 'bg-amber-500 text-gray-950', 1200);
+    }
+
+    function selectTireCompound(type) {
+        tireCompound = type;
+        document.getElementById('hud-tire-name').textContent = type;
+        ['Grus', 'Slicks', 'Wet'].forEach(t => {
+            const btn = document.getElementById(`btn-tire-${t}`);
+            if (btn) {
+                btn.className = t === type
+                    ? 'py-1 rounded border border-amber-400/80 bg-amber-500/20 text-white font-bold'
+                    : 'py-1 rounded border border-white/10 bg-white/5 text-gray-300 hover:bg-white/10';
+            }
+        });
+    }
+
+    function pitStopService() {
+        if (!playerCar) return;
+        playerCar.fuelKg = 47.5;
+        playerCar.tireWearF = 0;
+        playerCar.tireWearR = 0;
+        playerCar.pitStops += 1;
+        document.getElementById('hud-pitstops').textContent = `stopp ${playerCar.pitStops}`;
+        showBanner('DEPÅSERVICE KLAR: NYA DÄCK & FULL TANK!', 'bg-emerald-500 text-gray-950', 2200);
+    }
+
+    function resetCarToTrack() {
+        if (!playerCar) return;
+        const pt = trackCurve.getPointAt(playerCar.u);
+        const tan = trackCurve.getTangentAt(playerCar.u).normalize();
+        playerCar.pos.copy(pt);
+        playerCar.heading = Math.atan2(-tan.x, -tan.z);
+        playerCar.speed = 0;
+        showBanner('BIL ÅTERSTÄLLD PÅ BANAN', 'bg-sky-500 text-white', 1200);
+    }
+
+    function triggerRaceFinish() {
+        gameState = 'finished';
+        const sorted = [...allCars].sort((a, b) => b.totalProgress - a.totalProgress);
+        const rank = sorted.findIndex(c => c.isPlayer) + 1;
+
+        document.getElementById('finish-position-title').textContent = `${rank}:a Plats!`;
+        const bestStr = playerCar.bestLapTime ? formatLapTime(playerCar.bestLapTime) : formatLapTime(playerCar.currentLapTime);
+        document.getElementById('finish-summary').textContent = `Bästa varvtid: ${bestStr} · Bildkvalitet: ${graphicsQuality.toUpperCase()}`;
+
+        let html = '';
+        sorted.forEach((c, idx) => {
+            html += `
+                <div class="flex justify-between items-center ${c.isPlayer ? 'text-amber-300 font-bold' : 'text-gray-200'}">
+                    <span>${idx + 1}. ${c.name}</span>
+                    <span class="mono text-gray-400">${idx === 0 ? 'Vinnare' : `+${(idx * 1.4).toFixed(1)} s`}</span>
+                </div>
+            `;
+        });
+        document.getElementById('finish-standings').innerHTML = html;
+        document.getElementById('finish-overlay').classList.remove('hidden');
+        document.getElementById('finish-overlay').classList.add('flex');
+    }
+
+    let bannerTimeout = null;
+    function showBanner(text, colorClass, durationMs) {
+        const el = document.getElementById('hud-banner');
+        el.textContent = text;
+        el.className = `px-3 py-1 rounded-full font-extrabold text-xs tracking-wide shadow-lg ${colorClass}`;
+        el.classList.remove('hidden');
+        clearTimeout(bannerTimeout);
+        bannerTimeout = setTimeout(() => el.classList.add('hidden'), durationMs);
+    }
+
+    function formatLapTime(sec) {
+        const mins = Math.floor(sec / 60);
+        const rem = sec % 60;
+        const whole = Math.floor(rem).toString().padStart(2, '0');
+        const ms = Math.floor((rem - Math.floor(rem)) * 1000).toString().padStart(3, '0');
+        return `${mins}:${whole},${ms}`;
+    }
+
+    // =========================================================================
+    // TANGENTBORD & TOUCH-KONTROLLER
+    // =========================================================================
+    function setupInputs() {
+        window.addEventListener('keydown', e => {
+            keys[e.code] = true;
+            if (e.code === 'Escape') togglePauseMenu();
+            if (e.code === 'KeyC') cycleCamera();
+            if (e.code === 'KeyB') { lookBack = true; updateCameraVisibilityForMode(); }
+            if (e.code === 'KeyL') toggleRacingLine();
+            if (e.code === 'KeyM') cycleEngineMode();
+            if (e.code === 'KeyP') pitStopService();
+            if (e.code === 'KeyR') resetCarToTrack();
+            if (e.code === 'Space' && playerCar && playerCar.speed > 28) {
+                playerCar.drsActive = !playerCar.drsActive;
+                showBanner(playerCar.drsActive ? 'DRS ÖPPEN' : 'DRS STÄNGD', 'bg-emerald-500 text-gray-950', 1000);
+            }
+            if (e.code === 'KeyE' || e.code === 'ShiftLeft') {
+                if (playerCar && !assists.auto) {
+                    playerCar.gear = Math.min(5, playerCar.gear + 1);
+                    playerCar.shiftAnimTimer = 0.35;
+                }
+            }
+            if (e.code === 'KeyQ' || e.code === 'ControlLeft') {
+                if (playerCar && !assists.auto) {
+                    playerCar.gear = Math.max(1, playerCar.gear - 1);
+                    playerCar.shiftAnimTimer = 0.35;
+                }
+            }
+            if (e.code === 'Digit1') toggleAssist('abs');
+            if (e.code === 'Digit2') toggleAssist('tc');
+            if (e.code === 'Digit3') toggleAssist('stab');
+            if (e.code === 'Digit4') toggleAssist('auto');
+        });
+
+        window.addEventListener('keyup', e => {
+            keys[e.code] = false;
+            if (e.code === 'KeyB') { lookBack = false; updateCameraVisibilityForMode(); }
+        });
+
+        // Touch-knappar för mobil/surfplatta
+        const bindTouch = (id, prop) => {
+            const el = document.getElementById(id);
+            if (!el) return;
+            el.addEventListener('touchstart', e => { e.preventDefault(); touchInput[prop] = true; }, { passive: false });
+            el.addEventListener('touchend', e => { e.preventDefault(); touchInput[prop] = false; }, { passive: false });
+        };
+        bindTouch('btn-touch-left', 'left');
+        bindTouch('btn-touch-right', 'right');
+        bindTouch('btn-touch-gas', 'gas');
+        bindTouch('btn-touch-brake', 'brake');
+    }
+
+    function onWindowResize() {
+        applyRendererResolution();
+    }
+
+    // =========================================================================
+    // HUVUDLOOP (ANIMATION & RENDERING)
+    // =========================================================================
+    let lastFrameTime = 0;
+    let fpsCounter = 0;
+    let fpsTimer = 0;
+
+    function gameLoop(now) {
+        requestAnimationFrame(gameLoop);
+        const dt = Math.min((now - lastFrameTime) / 1000, 0.05);
+        lastFrameTime = now;
+
+        // FPS-räknare
+        fpsCounter++;
+        fpsTimer += dt;
+        if (fpsTimer >= 0.5) {
+            const fps = Math.round(fpsCounter / fpsTimer);
+            const fpsEl = document.getElementById('fps-preview');
+            if (fpsEl) fpsEl.textContent = `${fps} FPS · ${graphicsQuality.toUpperCase()}`;
+            fpsCounter = 0;
+            fpsTimer = 0;
+        }
+
+        if (gameState === 'countdown') {
+            updateCountdown(dt);
+        } else if (gameState === 'racing') {
+            updatePhysics(dt);
+        }
+
+        updateCamera();
+        updateHUD();
+        renderer.render(scene, camera);
+    }
+
+    // Starta spelet när fönstret laddats färdigt
+    window.onload = function () {
+        initThree();
+        setGraphicsQuality('high');
+    };
+    </script>
+</body>
+</html>
