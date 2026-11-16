@@ -7,6 +7,7 @@ import { Race, fmtTime, accel0100 } from './race.js';
 import { CAM_NAMES, DEFAULT_CAM } from './race.js';
 import { newTask, checkTask } from './dyno.js';
 import { Room, makeCode, cleanCode } from './net.js';
+import { ACTIONS, binds, getPad, padName, isWheel, captureNext } from './input.js';
 
 const app = () => document.getElementById('app');
 const eur = v => fmt(Math.round(v)) + ' €';
@@ -785,11 +786,38 @@ function settings() {
   <section class="panel"><h2>Grafik</h2><div class="row">${[['hog', 'Hög'], ['lag', 'Låg']].map(q => `<button class="chip s ${st.quality === q[0] ? 'on' : ''}" data-act="quality" data-arg="${q[0]}">${q[1]}</button>`).join('')}</div><p class="dim">Låg ger färre träd, inga skuggor och grövre terräng – bra på äldre telefoner.</p></section>
   <section class="panel"><h2>Upplösning</h2><div class="row">${[['auto', 'Auto (skärmens)'], ['1440', '1440p'], ['1080', '1080p'], ['720', '720p'], ['540', '540p']].map(q => `<button class="chip s ${(st.res || 'auto') === q[0] ? 'on' : ''}" data-act="res" data-arg="${q[0]}">${q[1]}</button>`).join('')}</div><p class="dim">Hur många bildrader 3D-vyn renderas med. Lägre ger högre bildfrekvens, högre ger skarpare bild. HUD:en påverkas inte.</p></section>
   <section class="panel"><h2>Pekskärmskontroller</h2><div class="row">${[['auto', 'Auto'], ['on', 'På'], ['off', 'Av']].map(q => `<button class="chip s ${st.touch === q[0] ? 'on' : ''}" data-act="touch" data-arg="${q[0]}">${q[1]}</button>`).join('')}</div></section>
+  ${controlsPanel()}
   <section class="panel"><h2>Sparning</h2><p class="dim">Pengar, bilar, delar, katsastuskortti, varningar och resultat sparas lokalt i webbläsaren.</p><div class="row"><button class="btn ghost danger" data-act="reset">Återställ sparning</button></div></section>`;
+}
+
+// ---------- kontroller ----------
+const keyName = c => c.replace(/^Key/, '').replace(/^Digit/, '').replace('Arrow', '').replace('Left', ' V').replace('Right', ' H').replace('Up', '↑').replace('Down', '↓').replace('Space', 'Mellanslag').replace('Escape', 'Esc').replace('Control', 'Ctrl');
+const padCode = c => !c ? '–' : c[0] === 'b' ? 'Knapp ' + c.slice(1) : 'Axel ' + c.slice(1);
+function controlsPanel() {
+  const B = binds(S.settings), gp = getPad(), dev = isWheel(gp) ? 'wheel' : 'pad', cap = U.capture;
+  const capBtn = (kind, a) => cap && cap.kind === kind && cap.a === a ? '<b class="cap">Tryck nu…</b>' : `<button class="btn small ghost" data-act="bind" data-arg="${kind}:${a}">Ändra</button>`;
+  return `<section class="panel"><h2>Kontroller</h2>
+    <p class="dim">${gp ? `Ansluten: <b>${padName(gp)}</b> <small>(${gp.id.slice(0, 60)})</small>` : 'Ingen handkontroll eller ratt hittad – anslut och tryck på en knapp (webbläsaren visar den först efter en knapptryckning).'} Tangentbord, PS4-handkontroll och ratt med pedaler fungerar samtidigt. Gas, broms, koppling, styrning och växling är separata funktioner.</p>
+    <table class="stats ctl"><tr><th>Funktion</th><th>Tangentbord</th><th></th><th>${dev === 'wheel' ? 'Ratt & pedaler' : 'Handkontroll'}</th><th></th></tr>
+    ${ACTIONS.map(([a, n]) => `<tr><td>${n}</td><td>${(B.key[a] || []).map(keyName).join(', ') || '–'}</td><td>${capBtn('key', a)}</td><td>${padCode(B[dev][a])}${dev === 'wheel' && B.wheelInv[a] ? ' (pedal)' : ''}</td><td>${capBtn(dev, a)}</td></tr>`).join('')}</table>
+    <div class="row"><span class="lbl">Dödzon ${Math.round(B.dead * 100)} %</span><input type="range" min="0" max="0.25" step="0.01" value="${B.dead}" data-in="dead"><button class="btn small ghost" data-act="bind-reset">Återställ standard</button></div>
+    <p class="dim">Tips: för pedaler som står på +1 när de är släppta – välj "Ändra" och tryck ner pedalen helt, så känner spelet av riktningen automatiskt.</p></section>`;
 }
 
 // ---------- händelser ----------
 const ACT = {
+  bind(a) {
+    const [kind, act] = a.split(':'); if (U.capStop) U.capStop();
+    U.capture = { kind, a: act };
+    U.capStop = captureNext(kind === 'key' ? 'key' : 'pad', (code, pedal) => {
+      U.capture = null; U.capStop = null; if (!code) { render(); return; }
+      const b = S.settings.binds = S.settings.binds || {};
+      if (kind === 'key') { b.key = b.key || {}; b.key[act] = code === 'Escape' && act !== 'pause' ? [] : [code]; }
+      else { b[kind] = b[kind] || {}; b[kind][act] = code; if (kind === 'wheel') { b.wheelInv = b.wheelInv || {}; b.wheelInv[act] = pedal || 0; } }
+      save(); render();
+    });
+  },
+  'bind-reset'() { delete S.settings.binds; save(); },
   go(a) { U.view = a; U.preview = null; if (a === 'komp') U.kompOpen = null; if (a === 'online' && ON.room) ON.room.setMe(netMe()); window.scrollTo(0, 0); },
   'on-create'() { const n = document.getElementById('onName'); if (n) { S.name = n.value.trim() || 'Du'; save(); } openRoom(makeCode(), true); },
   'on-join'() {
@@ -955,6 +983,7 @@ function quickDone(r, time) {
 }
 
 const INP = {
+  dead(v) { S.settings.binds = S.settings.binds || {}; S.settings.binds.dead = +v; save(); },
   'q-ai'(v) { U.quick.ai = +v; },
   num(v) { activeCar().num = Math.max(1, Math.min(999, Math.round(+v) || 1)); save(); return false; },
   name(v) { S.name = v.trim() || 'Du'; save(); return false; },

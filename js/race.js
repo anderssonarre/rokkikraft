@@ -4,6 +4,7 @@ import { getTrack } from './track.js';
 import { M4, cockpitMesh, steerWheelMesh, pendantMesh } from './gl.js';
 import { View3 } from './view3.js';
 import { ensureTerrain } from './terrain.js';
+import { Controls } from './input.js';
 import { torqueTable, engineAt, fmt } from './engine.js';
 
 const G = 9.81, DT = 1 / 240;
@@ -63,8 +64,10 @@ export function phys(c, dt, trk) {
     let rpm = Math.max(wheelRpm, s.idle);
     if (c.gear === 1 && wheelRpm < 3000) rpm = Math.max(rpm, s.idle + c.thr * (Math.min(s.peakRpm * 0.85, 3800) - s.idle));
     let Fd = 0;
+    const cl = c.clutch || 0;
+    if (cl > 0.05) rpm = Math.max(rpm * (1 - cl), s.idle + c.thr * (s.redline - 400 - s.idle) * cl);
     if (c.shiftT > 0) c.shiftT -= dt;
-    else if (rpm < s.redline) Fd = c.tq(rpm) * c.thr * c.pow * gr * s.eff / s.rw;
+    else if (rpm < s.redline) Fd = c.tq(rpm) * c.thr * c.pow * gr * s.eff / s.rw * (1 - cl);
     if (c.thr < 0.05 && c.vx > 1) Fd -= (0.97 + 0.15 * rpm / 1000) * 1e5 * s.Vd * 1e-3 / 12.566 * gr / s.rw;
     const capF = mu * Fzf * (s.muF || 1), capR = mu * Fzr * (s.muR || 1), capD = (fwd ? capF : capR) * (s.trac ? 1 : 0.86);
     let slip = 0, latD = 1;
@@ -466,17 +469,9 @@ export class Race {
   }
 
   bind() {
-    const map = { ArrowUp: 'gas', KeyW: 'gas', ArrowDown: 'brk', KeyS: 'brk', ArrowLeft: 'left', KeyA: 'left', ArrowRight: 'right', KeyD: 'right', Space: 'hb' };
-    this.kd = e => {
-      if (map[e.code]) { this.keys[map[e.code]] = 1; e.preventDefault(); }
-      else if (e.code === 'KeyE' || e.code === 'ShiftLeft' || e.code === 'ShiftRight') this.shift(1);
-      else if (e.code === 'KeyQ' || e.code === 'ControlLeft') this.shift(-1);
-      else if (e.code === 'KeyC' && !e.repeat) this.cycleCam();
-      else if (e.code === 'KeyT') this.toggleTele();
-      else if (e.code === 'KeyR') { if (this.state === 'run') this.resetCar(this.player); }
-      else if (e.code === 'KeyP' || e.code === 'Escape') this.togglePause();
-    };
-    this.ku = e => { if (map[e.code]) this.keys[map[e.code]] = 0; };
+    this.ctl = new Controls(this.cfg.settings || {});
+    this.kd = e => { if (e.repeat && this.ctl.keyAction(e.code)) { e.preventDefault(); return; } if (this.ctl.keydown(e.code)) e.preventDefault(); };
+    this.ku = e => this.ctl.keyup(e.code);
     window.addEventListener('keydown', this.kd); window.addEventListener('keyup', this.ku);
     this.rs = () => this.resize(); window.addEventListener('resize', this.rs);
     for (const b of this.host.querySelectorAll('.touch button')) {
@@ -497,7 +492,7 @@ export class Race {
   }
 
   togglePause() { if (this.done) return; this.paused = !this.paused; this.$('hPauseBox').hidden = !this.paused; this.last = performance.now(); if (this.gain) this.gain.gain.value = 0; }
-  shift(d) { const c = this.player; if (this.state !== 'run' || c.shiftT > 0) return; const g = c.gear + d; if (g >= 1 && g <= c.spec.gears.length) { c.gear = g; c.shiftT = c.spec.shift; } }
+  shift(d) { const c = this.player; if (this.state !== 'run' || c.shiftT > 0) return; const g = c.gear + d; if (g >= 1 && g <= c.spec.gears.length) { c.gear = g; c.shiftT = (c.clutch || 0) > 0.5 ? 0.06 : c.spec.shift; } }
   resize() { if (this.R) this.view.resize(); }
   resetCar(c) { const trk = this.trk, hwi = trk.hwAt ? trk.hwAt(c.i) : trk.hw, [x, z, h] = trk.point(c.i, clamp(c.lat, -hwi + 2, hwi - 2) * 0.3); c.x = x; c.z = z; c.h = h; c.vx = c.vy = c.r = 0; c.rev = false; c.gear = 1; }
   msg(html, dur = 2.4, cls = '') { const e = this.$('hMsg'); e.innerHTML = html; e.className = 'hud-msg show ' + cls; this.msgT = dur; }
@@ -604,10 +599,17 @@ export class Race {
   audio() { if (!this.gain) return; const c = this.player, f = c.rpm / 60 * c.spec.cyl / 2, t = this.ac.currentTime;
     this.o1.frequency.setTargetAtTime(f, t, 0.03); this.o2.frequency.setTargetAtTime(f / 2, t, 0.03); this.lp.frequency.setTargetAtTime(500 + c.rpm * 0.25 + c.thr * 900, t, 0.05);
     this.gain.gain.setTargetAtTime(this.vol * (0.035 + 0.075 * c.thr), t, 0.05); }
-  input(dt) { const c = this.player, k = this.keys, t = this.touch;
-    const gas = k.gas || t.gas, brk = k.brk || t.brk, st = (k.right || t.right ? 1 : 0) - (k.left || t.left ? 1 : 0);
-    c.thr += clamp((gas ? 1 : 0) - c.thr, -8 * dt, 5 * dt); c.brk += clamp((brk ? 1 : 0) - c.brk, -10 * dt, 6 * dt); c.hb = k.hb || t.hb ? 1 : 0;
-    const rate = st === 0 ? 5.5 : (Math.sign(st) !== Math.sign(c.steer) && c.steer !== 0 ? 7 : 3.2);
+  // Kör kontrollhändelser (tangenter / handkontroll / ratt) en gång per bildruta
+  controlEvents() {
+    for (const a of this.ctl.poll(this.touch)) {
+      if (a === 'up') this.shift(1); else if (a === 'down') this.shift(-1); else if (a === 'cam') this.cycleCam(); else if (a === 'tele') this.toggleTele();
+      else if (a === 'reset') { if (this.state === 'run') this.resetCar(this.player); } else if (a === 'pause') this.togglePause();
+    }
+  }
+  input(dt) { const c = this.player, I = this.ctl.state;
+    const gas = I.gas, brk = I.brk, st = I.steer;
+    c.thr += clamp(gas - c.thr, -8 * dt, (I.analogPedals ? 12 : 5) * dt); c.brk += clamp(brk - c.brk, -10 * dt, (I.analogPedals ? 14 : 6) * dt); c.hb = I.hb; c.clutch = I.clutch;
+    const rate = I.analog ? 9 : st === 0 ? 5.5 : (Math.sign(st) !== Math.sign(c.steer) && c.steer !== 0 ? 7 : 3.2);
     c.steer += clamp(st - c.steer, -rate * dt, rate * dt);
     if (brk && !gas && c.vx < 0.4 && this.state === 'run') c.rev = true; else if (gas || !brk) c.rev = false; }
 
@@ -888,6 +890,7 @@ export class Race {
   frame(now) {
     if (this.dead) return; this.raf = requestAnimationFrame(t => this.frame(t));
     let dt = Math.min(0.05, (now - this.last) / 1000); this.last = now;
+    if (this.ctl) this.controlEvents();
     if (this.net) this.netTick();
     if (!this.paused || this.net) { this.acc += dt; let k = 0; while (this.acc >= DT && k++ < 14) { this.step(DT); this.acc -= DT; if (this.done) return; } if (this.acc > DT * 4) this.acc = 0; this.particlesStep(dt); this.audio(); }
     this.render(dt); this.hud(dt);
