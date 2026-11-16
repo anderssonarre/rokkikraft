@@ -64,6 +64,8 @@ export function buildSpec(carId, cs, tune) {
     s.tqS = hpCache[eng.id];
   }
   s.tqS *= 1 + s.tqUp;
+  // tyngre/lättare motor flyttar vikt fram/bak (motorn sitter fram): mer grepp på framaxeln men mer understyrning
+  if (eng && eng.w != null) { const dw = eng.w - (engById(c.defaultEng)?.w ?? 140); s.front = Math.min(0.72, Math.max(0.45, (s.front * (s.mass - dw) + dw * 0.95) / s.mass)); }
   applySetup(s, tune);
   return s;
 }

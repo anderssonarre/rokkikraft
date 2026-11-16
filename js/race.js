@@ -70,26 +70,40 @@ export function phys(c, dt, trk) {
     else if (rpm < s.redline) Fd = c.tq(rpm) * c.thr * c.pow * gr * s.eff / s.rw * (1 - cl);
     if (c.thr < 0.05 && c.vx > 1) Fd -= (0.97 + 0.15 * rpm / 1000) * 1e5 * s.Vd * 1e-3 / 12.566 * gr / s.rw;
     const wk = trk.wetK ? (st === 'asfalt' ? trk.wetK[0] : trk.wetK[1]) : 1;
-    const capF = mu * wk * Fzf * (s.muF || 1), capR = mu * wk * Fzr * (s.muR || 1), capD = (fwd ? capF : capR) * (s.trac ? 1 : 0.86);
+    const capF = mu * wk * Fzf * (s.muF || 1), capR = mu * wk * Fzr * (s.muR || 1), muE = mu * wk;
+    // Differential. Öppen diff: i kurva avlastas innerhjulet och det spinner först → mindre drivkraft ut ur kurvan.
+    // Svetsad diff (lukkoperä): båda hjulen drar alltid fullt, men axeln vill gå rakt och släpper plötsligt.
+    const welded = !!s.trac, latUse = Math.min(1, Math.abs(c.vx * c.r) / (muE * G + 0.1));
+    const capD = (fwd ? capF : capR) * (welded ? 1 : 1 - 0.4 * latUse);
     let slip = 0, latD = 1;
     if (c.aids.tc) { const need = Math.abs(shape(fwd ? af : ar)); const lim = capD * 0.97 * Math.sqrt(Math.max(0.08, 1 - 0.92 * need * need)); if (Fd > lim) Fd = lim; }
-    else if (Fd > capD) { slip = Math.min(1.5, Fd / capD - 1); Fd = capD * (0.93 - 0.08 * Math.min(1, slip)); latD = 1 / (1 + 1.6 * slip); }
+    // hjulspinn: på löst grus gräver däcket och tappar lite drivkraft, på asfalt/is mer; sidogreppet försvinner
+    else if (Fd > capD) { slip = Math.min(2, Fd / capD - 1); Fd = capD * (st === 'grus' ? 0.97 - 0.03 * Math.min(1, slip) : 0.92 - 0.1 * Math.min(1, slip)); latD = 1 / (1 + (fwd ? 1.4 : 2.6) * slip); } // hjulspinn: glidfriktion < statisk, sidogreppet försvinner
     if (Fd < -capD) Fd = -capD;
     c.slip = slip;
     let Fbf = 0, Fbr = 0, lockF = false, lockR = false; const sg = c.vx >= 0 ? 1 : -1;
     if (c.brk > 0) { const Fb = c.brk * 1.12 * m * G * s.brake; Fbf = Fb * s.bias; Fbr = Fb * (1 - s.bias);
       if (Fbf > capF) { if (c.aids.abs) Fbf = capF * 0.96; else { lockF = true; Fbf = capF * 0.82; } }
+      const prop = capR * (fwd ? 0.8 : 0.92); // lastkännande bromskraftsfördelare: framhjulsdrivna bilar är extra bakbromsade-snåla → drar rakt
+      if (Fbr > prop && !c.aids.abs && fwd) Fbr = prop;
       if (Fbr > capR) { if (c.aids.abs) Fbr = capR * 0.96; else { lockR = true; Fbr = capR * 0.82; } } }
     if (c.hb) { lockR = true; Fbr = capR * 0.85; }
     c.lock = lockF || lockR;
     const Fxf = (fwd ? Fd : 0) - sg * Fbf, Fxr = (fwd ? 0 : Fd) - sg * Fbr;
     const latF = (al, cap, Fx, sc) => -cap * Math.sqrt(Math.max(0.12, 1 - (Fx / cap) ** 2)) * sc * shape(al);
-    const Fyf = latF(af, capF, Fxf, (fwd ? latD : 1) * (lockF ? 0.3 : 1) * (s.trac && fwd ? 0.95 : 1));
-    const Fyr = latF(ar, capR, Fxr, (fwd ? 1 : latD) * (lockR ? 0.35 : 1) * 1.05);
+    // Svetsad diff på drivaxeln: gas eller motorbroms mitt i kurvan gör att båda hjulen tappar sidogrepp samtidigt
+    let wl = 1; if (welded && Math.abs(c.vx) > 4) { const u = Math.abs(fwd ? Fxf : Fxr) / Math.max(1, fwd ? capF : capR); wl = 1 / (1 + 2.0 * u * u * (0.25 + latUse)); }
+    const Fyf = latF(af, capF, Fxf, (fwd ? latD * wl : 1) * (lockF ? 0.3 : 1));
+    const Fyr = latF(ar, capR, Fxr, (fwd ? 1 : latD * wl) * (lockR ? 0.35 : 1) * 1.05);
     const drag = 0.6 * s.CdA * c.vx * Math.abs(c.vx) + (Math.abs(c.vx) > 0.2 ? crr * m * G * sg : 0);
     const cd = Math.cos(delta), sd = Math.sin(delta);
     const axn = (Fxf * cd - Fyf * sd + Fxr - drag) / m, ayn = (Fyf * cd + Fxf * sd + Fyr) / m;
-    const Mz = a * (Fyf * cd + Fxf * sd) - b * Fyr;
+    let Mz = a * (Fyf * cd + Fxf * sd) - b * Fyr;
+    if (welded && !fwd) { // låst axel motverkar girning så länge hjulen greppar (understyr in i kurvan) – sedan släpper det
+      const tw = 0.74, need = Math.abs(c.r) * tw / Math.max(3, Math.abs(c.vx)), grip = Math.max(0, capR - Math.abs(Fxr)) * 0.5;
+      Mz -= Math.sign(c.r) * Math.min(1, need / 0.05) * grip * tw * 0.6;
+    }
+    if (fwd && Fbf > 0 && !c.hb) Mz -= c.r * m * 0.9 * Math.min(1, Fbf / (m * G * 0.4)); // inbromsning med framhjulsdrift: bilen vill gå rakt
     c.vx += (axn + c.vy * c.r) * dt; c.vy += (ayn - c.vx * c.r) * dt; c.r += Mz / (m * L * L * 0.36) * dt;
     c.ax += (axn - c.ax) * Math.min(1, 12 * dt);
     c.ay += (ayn - c.ay) * Math.min(1, 12 * dt);
@@ -99,7 +113,7 @@ export function phys(c, dt, trk) {
     // växling
     if (c.aids.auto && c.shiftT <= 0) {
       if (c.gear < s.gears.length && wheelRpm > c.upRpm && slip < 0.3) { c.gear++; c.shiftT = s.shift; }
-      else if (c.gear > 1 && wheelRpm * s.gears[c.gear - 2] / s.gears[c.gear - 1] < c.upRpm * 0.8) { c.gear--; c.shiftT = s.shift * 0.6; }
+      else if (c.gear > 1 && (wheelRpm < s.idle * 1.5 || (c.thr > 0.6 || c.brk > 0.2) && wheelRpm * s.gears[c.gear - 2] / s.gears[c.gear - 1] < c.upRpm * (0.55 + 0.25 * c.thr))) { c.gear--; c.shiftT = s.shift * 0.6; } // växlar bara ner vid gaspådrag, inbromsning eller för låga varv
     }
   }
   const ch = Math.cos(c.h), sh = Math.sin(c.h);
@@ -436,7 +450,7 @@ export class Race {
         // svårighet 1–100 %: 1 % kör ca 4–5 km/h-krypfart med vingliga linjer (≈5 min/varv), 100 % pressar däcken till gränsen
         const d = c.diff, mu = trk.surf.mu * c.spec.mu * Math.min(c.spec.muF || 1, c.spec.muR || 1), k = d != null ? 0.55 + 0.44 * Math.pow(d, 1.2) : c.skill, top = d != null ? 2.2 + 47.8 * Math.pow(d, 1.3) : 50;
         c.ai.thrMax = d != null ? 0.3 + 0.7 * Math.pow(d, 1.5) : 1; c.ai.noise = d != null ? 0.9 * (1 - d) ** 2 : 0; c.ai.agg = d != null ? d : 0.8; c.ai.wob = 0;
-        c.ai.prof = trk.profile(mu * G * 0.90 * k * k, mu * G * 0.70 * k, top); c.ai.vJ = Math.sqrt(mu * G * 0.85 * k * k * 21); c.ai.aB = mu * G * 0.6 * k;
+        c.ai.prof = trk.profile(mu * G * 0.90 * k * k, mu * G * 0.75 * k, d != null && d < 0.99 ? top : 90); c.ai.vJ = Math.sqrt(mu * G * 0.85 * k * k * 21); c.ai.aB = mu * G * 0.6 * k;
         c.ai.jokerLap = Math.floor(Math.random() * cfg.laps);
       }
     }
