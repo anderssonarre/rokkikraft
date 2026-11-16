@@ -1,6 +1,6 @@
 // Alla menyvyer + tävlingsdagens logik enligt ROKKIRALLI RY SÄÄNTÖKIRJA (21.04.2026).
-import { CARS, CLASSES, CLASS_RULES, BUILD, UPG, FUELS, PAINTS, TRACKS, SURF, CAREER, FINALS, calcPoints, PRIZE_SHARE, CODES, MARKS, DRIVERS, KOMP } from './data.js';
-import { buildSpec, engineAt, curve, carById, fuelById, defaultTune, fmt, checkInspection, formatCarNum } from './engine.js';
+import { CARS, ENGINES, CLASSES, CLASS_RULES, BUILD, UPG, FUELS, PAINTS, TRACKS, SURF, CAREER, FINALS, calcPoints, PRIZE_SHARE, CODES, MARKS, DRIVERS, KOMP } from './data.js';
+import { buildSpec, engineAt, curve, carById, engById, fuelById, defaultTune, fmt, checkInspection, formatCarNum } from './engine.js';
 import { S, save, reset, activeCar } from './state.js';
 import { getTrack } from './track.js';
 import { Race, fmtTime } from './race.js';
@@ -229,9 +229,24 @@ function drawTrackPreview(cv, trackId) {
 const AI_UPG_STD = [{}, { insug: 1, avgas: 1, dack: 1, vikt: 1 }, { insug: 2, avgas: 1, kam: 1, dack: 2, vikt: 2, vaxel: 1 }, { insug: 2, avgas: 2, kam: 2, dack: 2, vikt: 3, vaxel: 1, fjad: 2 }];
 const AI_UPG_SUP = [{ superkit: 1, turbo: 1, dack: 2 }, { superkit: 1, turbo: 1, ic: 1, dack: 3, diff: 1 }, { superkit: 1, turbo: 2, ic: 1, dack: 3, diff: 1, kam: 1, vikt: 2 }, { superkit: 1, turbo: 3, ic: 2, dack: 3, diff: 1, kam: 2, vikt: 3, fjad: 2 }];
 const AI_POOL = {
-  vetari: [['sunny', 'kadett'], ['sunny', 'kadett', 'civic'], ['kadett', 'civic', 'mondeo'], ['civic', 'mondeo']],
-  kardaani: [['v343', 'sierra'], ['v343', 'sierra', 'v940'], ['sierra', 'bmw325', 'v940'], ['bmw325', 'v940', 'sierra']],
-  super: [['saab9000', 'sierra_super'], ['saab9000', 'sierra_super', 'bmw325'], ['saab9000', 'sierra_super', 'v940'], ['saab9000', 'sierra_super']],
+  vetari: [
+    ['sunny', 'mazda3', 'kadett'],
+    ['sunny', 'mazda3', 'kadett', 'passat_vetari'],
+    ['mazda3', 'kadett', 'passat_vetari', 'civic', 'mondeo'],
+    ['passat_vetari', 'civic', 'mondeo'],
+  ],
+  kardaani: [
+    ['v343', 'sierra'],
+    ['v343', 'sierra', 'v940'],
+    ['sierra', 'v940', 'passat_kardaani', 'bmw325'],
+    ['v940', 'passat_kardaani', 'bmw325', 'sierra'],
+  ],
+  super: [
+    ['starlet_super', 'ascona_super', 'saab9000'],
+    ['starlet_super', 'ascona_super', 'saab9000', 'sierra_super'],
+    ['ascona_super', 'saab9000', 'sierra_super', 'volvo_v8_super'],
+    ['ascona_super', 'sierra_super', 'volvo_v8_super', 'starlet_super'],
+  ],
 };
 
 function makeOpps(n, li, skill, cls) {
@@ -239,12 +254,14 @@ function makeOpps(n, li, skill, cls) {
   const poolKey = cls === 'super' || cls === 'supersenior' ? 'super' : cls === 'kardaani' ? 'kardaani' : 'vetari';
   const isSup = poolKey === 'super';
   return names.map(name => {
-    const cid = pick(AI_POOL[poolKey][li]);
-    const upg = isSup ? { ...AI_UPG_SUP[li] } : { ...AI_UPG_STD[li], ...(carById(cid).drv === 'rwd' && li >= 2 ? { diff: 1 } : {}) };
+    const cid = pick(AI_POOL[poolKey][li]), cDef = carById(cid);
+    const engList = cDef.engines || [cDef.defaultEng];
+    const eng = li >= 2 && engList.length > 1 ? engList[Math.min(engList.length - 1, li - 1)] : cDef.defaultEng;
+    const upg = isSup ? { ...AI_UPG_SUP[li] } : { ...AI_UPG_STD[li], ...(cDef.drv === 'rwd' && li >= 2 ? { diff: 1 } : {}) };
     return {
       name, paint: pick(PAINTS.filter(p => p.id !== mine)).rgb, bw: Math.random() < 0.35 ? 'bw' : 'wb',
       skill: skill + (Math.random() - 0.5) * 0.05,
-      spec: buildSpec(cid, { build: full, upg }, defaultTune()),
+      spec: buildSpec(cid, { build: full, eng, upg }, defaultTune()),
     };
   });
 }
@@ -445,7 +462,8 @@ function startRace(o) {
 function statRows(s, k, k0) {
   const d = (a, b, dec = 0, inv) => { const x = a - b; return Math.abs(x) < 0.05 ? '' : `<em class="${(x > 0) !== !!inv ? 'up' : 'dn'}">${x > 0 ? '+' : '−'}${fmt(Math.abs(x), dec)}</em>`; };
   const e = engineAt(s, k.peakP.rpm);
-  return `<table class="stats"><tr><td>Toppeffekt</td><td>${fmt(k.hp)} hk · ${fmt(k.peakP.P, 1)} kW @ ${fmt(k.peakP.rpm)} ${k0 ? d(k.hp, k0.hp) : ''}</td></tr>
+  return `<table class="stats"><tr><td>Motor & Teknik</td><td><b>${s.engName}</b> (${fmt(s.Vd, 1)} L · ${s.cyl}-cyl)</td></tr>
+    <tr><td>Toppeffekt</td><td>${fmt(k.hp)} hk · ${fmt(k.peakP.P, 1)} kW @ ${fmt(k.peakP.rpm)} ${k0 ? d(k.hp, k0.hp) : ''}</td></tr>
     <tr><td>Toppmoment</td><td>${fmt(k.peakT.T)} Nm @ ${fmt(k.peakT.rpm)} ${k0 ? d(k.peakT.T, k0.peakT.T) : ''}</td></tr>
     <tr><td>Vikt med förare (Reg. tjänstevikt)</td><td>${fmt(s.mass)} kg (regbevis ${fmt(s.regMass)} kg, max 1 800 kg)</td></tr>
     <tr><td>Vikt/effekt</td><td class="${k.kgHp < 5 ? 'good' : k.kgHp > 7 ? 'bad' : ''}">${fmt(k.kgHp, 1)} kg/hk ${k0 ? d(k.kgHp, k0.kgHp, 1, true) : ''}</td></tr>
@@ -491,13 +509,33 @@ function garage() {
   }).join('')}</div></section>`;
 
   // Bilar
-  h += `<section class="panel"><h2>Bilar (${CARS.length})</h2><p class="dim">Vetari = framhjulsdrift (etuveto), Kardaani = bakhjulsdrift (takaveto), Super = turbo/4WD/specialbyggen utan viktgräns och utan myyntivelvoite (850 €).</p><div class="cards cars">${CARS.map(c => {
+  h += `<section class="panel"><h2>Bilmodeller (${CARS.length} dokumenterade Rokkirallibilar)</h2><p class="dim"><b>Vetari (etuveto)</b>: Volvo S40/V40, Mazda 3/6, Opel Astra/Vectra, VW Passat B5, Volvo 850/S70/V70 & Ford Mondeo. <b>Kardaani (takaveto)</b>: Opel Kadett/Ascona, Ford Sierra, Volvo 240/740/940, RWD-ombyggd Passat B5/Audi A4 2,8 V6 & BMW E36/E46. <b>Super</b>: Toyota Starlet, Opel Ascona (med Volvo-motor & BMW-låda), Ford Escort, BMW/Sierra Turbo & V8-Volvo!</p><div class="cards cars">${CARS.map(c => {
     const own = S.cars[c.id], ss = own ? spec(c.id) : stockSpec(c.id), kk = curve(ss);
-    return `<div class="card car ${S.active === c.id ? 'sel' : ''} ${own ? 'own' : ''}"><div class="c-top"><span>${CLASSES[c.cls].toUpperCase()} · ${fmt(c.Vd, 1)} L R${c.cyl}</span><b>${own ? (S.active === c.id ? 'VALD' : 'ÄGD') : eur(c.price)}</b></div>
+    return `<div class="card car ${S.active === c.id ? 'sel' : ''} ${own ? 'own' : ''}"><div class="c-top"><span>${CLASSES[c.cls].toUpperCase()} · ${fmt(ss.Vd, 1)} L ${ss.cyl}-CYL</span><b>${own ? (S.active === c.id ? 'VALD' : 'ÄGD') : eur(c.price)}</b></div>
       <strong>${c.name}</strong><em>”${c.nick}” – ${c.tag}</em><p>${c.desc}</p>
-      <ul><li>${fmt(kk.hp)} hk · ${fmt(kk.peakT.T)} Nm</li><li>${fmt(ss.mass)} kg (reg. ${c.regMass} kg) · ${fmt(kk.kgHp, 1)} kg/hk</li><li>Varvgräns ${fmt(ss.redline)} rpm${c.boost ? ' · turbo ' + fmt(c.boost, 1) + ' bar' : ' · sugmotor'}</li></ul>
+      <ul><li><b>${ss.engName}</b></li><li>${fmt(kk.hp)} hk · ${fmt(kk.peakT.T)} Nm</li><li>${fmt(ss.mass)} kg (reg. ${c.regMass} kg) · ${fmt(kk.kgHp, 1)} kg/hk</li><li>Varvgräns ${fmt(ss.redline)} rpm${ss.boost ? ' · turbo ' + fmt(ss.boost, 2) + ' bar' : ' · sugmotor'}</li></ul>
       ${own ? (S.active === c.id ? '' : `<button class="btn small" data-act="car-pick" data-arg="${c.id}">Välj bil</button>`) : `<button class="btn small" data-act="car-buy" data-arg="${c.id}" ${S.money >= c.price ? '' : 'disabled'}>Köp (${eur(c.price)})</button>`}</div>`;
   }).join('')}</div></section>`;
+
+  // Motoralternativ & Motorbyten (Tekniikanvaihto)
+  {
+    const isSup = insp.cls === 'super' || insp.cls === 'supersenior' || s.superReady;
+    const baseEngs = car.engines || [car.defaultEng];
+    const supSwaps = isSup ? ['volvo_b230_bmwbox', 'bmw_m54b30', 'sierra_cosworth', 'volvo_v8_44', 'opel_20_16v'] : [];
+    const allEngIds = [...new Set([...baseEngs, ...supSwaps])].filter(id => ENGINES[id]);
+    const curEngId = cs.eng || car.defaultEng;
+    const ownedEngs = cs.ownedEngs || [car.defaultEng];
+    h += `<section class="panel"><h2>Motoralternativ & Motorbyte (Tekniikanvaihto) – ${car.name}</h2>
+      <p class="dim">Välj bland bilmodellens dokumenterade motoralternativ eller gör ett motor-/drivlinebyte. I <b>Super-luokka</b> (och när Super-utrustning monterats) säger karossmodellen lite om tekniken under huven – där kan du även para ihop karossen med t.ex. <b>Volvo 2,3 B230 + BMW-låda</b>, <b>BMW 3,0 M54 rak sexa</b>, <b>Cosworth-turbo</b> eller <b>4,4 V8</b>! <button class="btn small ghost" data-act="komp-open" data-arg="bilar" style="margin-left:6px">📘 Översikt: Bilar & Motorer →</button></p>
+      <div class="cards">${allEngIds.map(eid => {
+        const eDef = ENGINES[eid], isCur = curEngId === eid, isOwn = ownedEngs.includes(eid) || eDef.price === 0;
+        const sTest = buildSpec(S.active, { ...cs, eng: eid }, cs.tune), kTest = curve(sTest);
+        return `<div class="card ${isOwn ? 'own' : ''} ${isCur ? 'sel' : ''}"><div class="c-top"><span>${fmt(eDef.Vd, 1)} L · ${eDef.cyl}-CYL${eDef.boost ? ' TURBO' : ' SUG'}</span><b>${isCur ? 'MONTERAD' : isOwn ? 'ÄGD' : eur(eDef.price)}</b></div>
+          <strong>${eDef.name}</strong><p>${eDef.desc}</p>
+          <ul><li>Med nuvarande trim: <b>${fmt(kTest.hp)} hk · ${fmt(kTest.peakT.T)} Nm</b> (${fmt(kTest.kgHp, 1)} kg/hk)</li><li>Kompression ${fmt(eDef.rc, 1)}:1 · Varvstopp ${fmt(eDef.redline)} rpm${eDef.shift ? ' · Tätstegad BMW-låda' : ''}</li></ul>
+          <div class="row">${isCur ? '' : isOwn ? `<button class="btn small" data-act="eng-pick" data-arg="${eid}">Montera i bilen</button>` : `<button class="btn small" data-act="eng-buy" data-arg="${eid}" ${S.money >= eDef.price ? '' : 'disabled'}>Köp & montera (${eur(eDef.price)})</button>`}</div></div>`;
+      }).join('')}</div></section>`;
+  }
 
   // Lack & Tävlingsnummer (Kilpailunumerot s. 8)
   h += `<section class="panel"><h2>Lack & Kilpailunumerot (Takasivulasi ≥ 20 cm, fram-/bakruta ≥ 10 cm)</h2>
@@ -736,6 +774,21 @@ const ACT = {
     }
   },
   'car-pick'(a) { if (S.cars[a]) { S.active = a; U.preview = null; save(); window.scrollTo(0, 0); } },
+  'eng-pick'(a) {
+    const cs = activeCar();
+    if (ENGINES[a]) { cs.eng = a; save(); toast(`Monterade ${ENGINES[a].name}!`); }
+  },
+  'eng-buy'(a) {
+    const cs = activeCar(), eDef = ENGINES[a];
+    if (eDef && S.money >= eDef.price) {
+      S.money -= eDef.price;
+      cs.ownedEngs = cs.ownedEngs || [carById(S.active).defaultEng];
+      if (!cs.ownedEngs.includes(a)) cs.ownedEngs.push(a);
+      cs.eng = a;
+      save();
+      toast(`🔧 Motorbyte klart: ${eDef.name} sitter nu under huven!`);
+    }
+  },
   paint(a) { activeCar().paint = a; save(); },
   'num-bw'(a) { activeCar().bw = a; save(); },
   buy(a) {

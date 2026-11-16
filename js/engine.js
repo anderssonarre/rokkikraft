@@ -1,25 +1,35 @@
 // Motormodell: MEP-kedjan FUELMEP → QMEP → IMEPg → BMEP samt klass- och besiktningskontroll enligt Sääntökirja 2026.
-import { CARS, UPG, BUILD, FUELS, CLASS_RULES } from './data.js';
+import { CARS, ENGINES, UPG, BUILD, FUELS, CLASS_RULES } from './data.js';
 
 export const carById = id => CARS.find(c => c.id === id) || CARS[0];
+export const engById = id => ENGINES[id] || null;
 export const fuelById = id => FUELS.find(f => f.id === id) || FUELS[0];
 
 export function defaultTune() { return { lambda: 0.95, ign: 0, fuel: 'b95', finalScale: 1, bias: 0.62 }; }
 
-// Slår ihop grundbil + bygge + uppgraderingar + trimning till en färdig specifikation.
+// Slår ihop grundbil + motorval/motorbyte + bygge + uppgraderingar + trimning till en färdig specifikation.
 export function buildSpec(carId, cs, tune) {
   const c = carById(carId);
   cs = cs || { build: {}, upg: {} };
   tune = { ...defaultTune(), ...(tune || {}) };
+  const eng = engById(cs.eng || c.defaultEng);
   const drv = c.drv || (c.cls === 'vetari' ? 'fwd' : 'rwd');
   const s = {
     id: c.id, name: c.name, cls: c.cls, drv, body: c.body,
-    Vd: c.Vd, cyl: c.cyl, redline: c.redline, rc: c.rc,
-    etaPeak: c.etaPeak, peakRpm: c.peakRpm, low: 0,
-    mass: c.mass + 75, regMass: c.regMass || (c.mass + 90),
+    engId: eng ? eng.id : (c.defaultEng || ''),
+    engName: eng ? eng.name : `${c.Vd} L R${c.cyl}`,
+    Vd: eng ? eng.Vd : c.Vd,
+    cyl: eng ? eng.cyl : c.cyl,
+    redline: eng ? eng.redline : c.redline,
+    rc: eng ? eng.rc : c.rc,
+    etaPeak: eng ? eng.etaPeak : c.etaPeak,
+    peakRpm: eng ? eng.peakRpm : c.peakRpm,
+    low: 0,
+    mass: c.mass + 75 + (eng?.kg || 0), regMass: c.regMass || (c.mass + 90),
     wb: c.wb, front: c.front, final: c.final, gears: c.gears,
-    CdA: c.CdA, cool: c.cool, boost: c.boost || 0, bs: c.boostStart || 2500, bf: c.boostFull || 3800, ic: c.ic || 0, pmepF: 1,
-    ignMax: 5, knockCtl: 0, radSafe: 0, shift: 0.28, eff: 0.88, trac: 0, mu: 1, susp: 0, brake: 1, dmg: 1,
+    CdA: c.CdA, cool: c.cool, boost: eng ? (eng.boost || 0) : (c.boost || 0),
+    bs: c.boostStart || 2500, bf: c.boostFull || 3800, ic: c.ic || 0, pmepF: 1,
+    ignMax: 5, knockCtl: 0, radSafe: 0, shift: eng?.shift || 0.28, eff: 0.88, trac: 0, mu: 1, susp: 0, brake: 1, dmg: 1,
     superReady: c.cls === 'super' ? 1 : 0, rallyTire: 0, chop: 0,
   };
   for (const b of BUILD) if (cs.build && cs.build[b.id]) s.mass += b.kg;
