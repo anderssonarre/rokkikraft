@@ -768,7 +768,7 @@ function trim() {
     <p class="dim">FUELMEP ${fmt(e.fuelmep, 1)} → QMEP ${fmt(e.qmep, 1)} → IMEPg ${fmt(e.imep, 1)} → BMEP ${fmt(e.bmep, 1)} bar</p></section>`;
 }
 
-// ---------- bilinställningar (gratis) ----------
+// ---------- bilinställningar (justeringar gratis; däck och fälgar kostar) ----------
 const SETUP_UI = [
   ['Fjädring', 'spring', 1, 10, 1, v => v <= 3 ? 'mjuk' : v >= 8 ? 'styv' : 'medel', 'Mjukt är bäst på grus och is, styvt på asfalt.'],
   ['Dämpare', 'damper', 1, 10, 1, v => v <= 3 ? 'mjuk' : v >= 8 ? 'hård' : 'medel', 'Hårda dämpare håller bilen stilla på asfalt men studsar på gupp.'],
@@ -782,19 +782,19 @@ const SETUP_UI = [
   ['Slutväxel', 'finalScale', 0.85, 1.2, 0.01, v => fmt(v, 2) + '×', 'Kort = acceleration, lång = toppfart.'],
   ['Bromskraft', 'brakeF', 0.6, 1.3, 0.01, v => fmt(v * 100) + ' %', ''],
   ['Bromsbalans fram', 'bias', 0.5, 0.75, 0.01, v => fmt(v * 100) + ' %', 'Mer bak gör att bilen svänger in vid inbromsning.'],
-  ['Fälgdiameter', 'rim', 20, 60, 1, v => fmt(v) + ' cm', 'Påverkar hjulradien och därmed utväxlingen.'],
-  ['Däckbredd', 'width', 5, 60, 1, v => fmt(v) + ' cm', 'Bredare = mer grepp men mer vikt och luftmotstånd.'],
+  ['Fälgdiameter', 'rim', 20, 60, 1, v => fmt(v) + ' cm', 'Påverkar hjulradien och därmed utväxlingen. Nya fälgar 220 €.'],
+  ['Däckbredd', 'width', 5, 60, 1, v => fmt(v) + ' cm', 'Bredare = mer grepp men mer vikt och luftmotstånd. Kräver en ny däcksats.'],
 ];
 function setup() {
   const cs = activeCar(), t = cs.tune, s = spec(), k = curve(s), car = carById(S.active), chip = (cs.upg.chip || 0) > 0;
   const top = s.redline / (s.gears[s.gears.length - 1] * s.final) / 9.5493 * s.rw * 3.6;
-  return `<section class="panel"><span class="kick">GARAGE · GRATIS ATT ÄNDRA</span><h1>Bilinställningar – ${car.name}</h1>
+  return `<section class="panel"><span class="kick">GARAGE · JUSTERINGAR GRATIS · DÄCK OCH FÄLGAR KOSTAR</span><h1>Bilinställningar – ${car.name}</h1>
     <div class="pills"><div><span>Effekt</span><b>${fmt(k.hp)} hk</b><small>${s.engName}</small></div><div><span>Vikt</span><b>${fmt(s.mass - 75)} kg</b><small>${fmt(k.kgHp, 1)} kg/hk</small></div>
       <div><span>0–100 km/h</span><b>${fmt(acc(s), 1)} s</b><small>asfalt</small></div><div><span>Greppbegränsad till</span><b>${fmt(spinTo(s, 1.0))} km/h</b><small>på grus – därefter avgör effekten</small></div><div><span>Fart vid varvstopp i högsta</span><b>${fmt(top)} km/h</b></div><div><span>Grepp fram / bak</span><b>${fmt(s.muF * 100)} / ${fmt(s.muR * 100)} %</b><small>${s.tyre}</small></div></div>
     <p class="dim">Fart vid varvstopp per växel (i utväxlingsordning): ${s.gears.map((g, i) => `<b>${s.gearLabels?.[i] ?? i + 1}${s.gearLabels?.[i] === '5' && s.halfGear ? ' (2½)' : ''}:</b> ${fmt(s.redline / (g * s.final) / 9.5493 * s.rw * 3.6)} km/h`).join(' · ')}. Maxeffekt vid ca ${fmt(k.peakP ? k.peakP.rpm : s.redline * 0.85)} rpm.
       ${s.halfGear ? '' : s.cls === 'super' ? '' : ' Tips: 2½-växel på femmans plats (Garage → Utväxling) håller en klen motor på maxeffekt på rakorna.'}</p>
     <div class="row wrap"><button class="btn small ghost" data-act="setup-reset">Återställ standard</button><button class="btn small ghost" data-act="go" data-arg="garage">‹ Garaget</button></div></section>
-  <section class="panel"><h2>Däck</h2><div class="cards">${Object.values(TYRES).map(x => `<div class="card ${t.tyre === x.id ? 'sel own' : ''}"><div class="c-top"><span>GREPP ${fmt(x.grip * 100)} %</span><b>${t.tyre === x.id ? 'MONTERADE' : 'GRATIS'}</b></div><strong>${x.name}</strong><p>${x.desc}</p>${t.tyre === x.id ? '' : `<button class="btn small" data-act="tyre" data-arg="${x.id}">Montera</button>`}</div>`).join('')}</div></section>
+  <section class="panel"><h2>Däck</h2><div class="cards">${Object.values(TYRES).map(x => `<div class="card ${t.tyre === x.id ? 'sel own' : ''}"><div class="c-top"><span>GREPP ${fmt(x.grip * 100)} %</span><b>${t.tyre === x.id ? 'MONTERADE' : (cs.tyres || []).includes(x.id) ? 'I FÖRRÅDET' : eur(x.price) + '/sats'}</b></div><strong>${x.name}</strong><p>${x.desc}</p>${t.tyre === x.id ? '' : `<button class="btn small" data-act="tyre" data-arg="${x.id}">Montera</button>`}</div>`).join('')}</div></section>
   <section class="panel"><h2>Chassi, växellåda & bromsar</h2><div class="sliders">${SETUP_UI.map(([n, key, lo, hi, st, f, d]) => `<label><span>${n} <b>${f(t[key])}</b></span><input type="range" min="${lo}" max="${hi}" step="${st}" value="${t[key]}" data-in="su:${key}"><small>${d}</small></label>`).join('')}</div></section>
   <section class="panel"><h2>Chiptrimning</h2><p>${chip ? '✓ Chiptrimmad (+12 % vridmoment).' : 'Omprogrammerad motorstyrning ger ca +12 % vridmoment och effekt.'}</p>
     <div class="row">${chip ? '<button class="btn small ghost" data-act="unmount" data-arg="chip">Återställ originalprogram</button>' : `<button class="btn" data-act="buy" data-arg="chip" ${S.money >= 329 ? '' : 'disabled'}>Chiptrimma (329 €)</button>`}</div></section>`;
@@ -1009,9 +1009,10 @@ const ACT = {
     const c = carById(a);
     if (S.money >= c.price && !S.cars[a]) {
       S.money -= c.price;
-      S.cars[a] = { build: {}, upg: c.cls === 'super' ? { superkit: 1 } : {}, paint: pick(PAINTS).id, num: 1 + Math.floor(Math.random() * 99), bw: 'wb', katsastusNo: 100 + Math.floor(Math.random() * 890), tune: defaultTune() };
+      // Myyntiluokka-bilar köps tävlingsklara för 850 € (som på myyntitilaisuus); Super-bilar köps färdigbyggda
+      S.cars[a] = { build: { strip: 1, cage: 1, seat: 1, net: 1, switch: 1 }, tyres: ['std'], upg: c.cls === 'super' ? { superkit: 1 } : {}, paint: pick(PAINTS).id, num: 1 + Math.floor(Math.random() * 99), bw: 'wb', katsastusNo: 100 + Math.floor(Math.random() * 890), tune: defaultTune() };
       S.active = a; U.preview = null; save();
-      toast(`${c.name} köpt. Bygg den enligt Sääntökirja 2026 för alkukatsastus.`);
+      toast(`${c.name} köpt för ${eur(c.price)} – tävlingsklar med katsastuskortti.`);
       window.scrollTo(0, 0);
     }
   },
@@ -1032,8 +1033,10 @@ const ACT = {
     }
   },
   paint(a) { activeCar().paint = a; save(); },
-  tyre(a) { activeCar().tune.tyre = a; save(); },
-  'setup-reset'() { const t = activeCar().tune; Object.assign(t, SETUP_DEF, { finalScale: 1, bias: 0.70 }); save(); },
+  tyre(a) { const cs = activeCar(), ty = TYRES[a]; cs.tyres = cs.tyres || ['std'];
+    if (!cs.tyres.includes(a)) { if (S.money < ty.price) { toast(`En sats ${ty.name} kostar ${eur(ty.price)}.`); return; } S.money -= ty.price; cs.tyres.push(a); toast(`Ny sats ${ty.name} monterad (${eur(ty.price)}).`); }
+    cs.tune.tyre = a; save(); },
+  'setup-reset'() { const t = activeCar().tune; Object.assign(t, SETUP_DEF, { finalScale: 1, bias: 0.70, rim: t.rim, width: t.width, tyre: t.tyre }); save(); },
   'num-bw'(a) { activeCar().bw = a; save(); },
   buy(a) {
     const u = UPG.find(x => x.id === a), cs = activeCar(), lvl = cs.upg[a] || 0, L = u.levels[lvl];
@@ -1085,8 +1088,13 @@ const INP = {
 
 export function initUI() {
   document.addEventListener('click', e => { const el = e.target.closest('[data-act]'); if (!el || el.disabled) return; const f = ACT[el.dataset.act]; if (!f) return; if (f(el.dataset.arg, el) !== false) render(); });
-  document.addEventListener('change', e => { const el = e.target.closest('[data-in]'); if (!el) return; if (el.dataset.in.startsWith('su:')) { activeCar().tune[el.dataset.in.slice(3)] = +el.value; save(); render(); return; } const f = INP[el.dataset.in]; if (f && f(el.value) !== false) render(); });
+  document.addEventListener('change', e => { const el = e.target.closest('[data-in]'); if (!el) return; if (el.dataset.in.startsWith('su:')) { const key = el.dataset.in.slice(3), cs = activeCar(), v = +el.value;
+      // justeringar är gratis, men nya fälgar eller en annan däckbredd kräver nya delar
+      const cost = key === 'rim' && v !== cs.tune.rim ? 220 : key === 'width' && v !== cs.tune.width ? TYRES[cs.tune.tyre || 'std'].price : 0;
+      if (cost) { if (S.money < cost) { toast(`${key === 'rim' ? 'Nya fälgar' : 'Nya däck i den bredden'} kostar ${eur(cost)}.`); render(); return; } S.money -= cost; toast(`${key === 'rim' ? 'Nya fälgar' : 'Nya däck'} köpta (${eur(cost)}).`); if (key === 'width') cs.tyres = [cs.tune.tyre || 'std']; }
+      cs.tune[key] = v; save(); render(); return; } const f = INP[el.dataset.in]; if (f && f(el.value) !== false) render(); });
   document.addEventListener('input', e => { const el = e.target.closest('input[type=range][data-in]'); if (!el) return; const b = el.closest('label')?.querySelector('span b'); if (b && ['lambda', 'finalScale'].includes(el.dataset.in)) b.textContent = (+el.value).toFixed(2).replace('.', ','); });
+  if (S.econReset) { delete S.econReset; save(); toast('Ny ekonomi: du börjar om med 5 000 € och en Mazda 626 i originalskick. Namn, statistik och rekord är kvar.'); }
   try { const c = cleanCode(new URLSearchParams(location.search).get('rum')); if (c.length === 4) { ON.code = c; U.view = 'online'; } } catch (e) { }
   render();
 }

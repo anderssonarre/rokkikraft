@@ -2,16 +2,16 @@
 import { defaultTune } from './engine.js';
 const KEY = 'rokkikraft-v2';
 const fresh = () => ({
-  v: 2, money: 1000, name: 'Du', active: 'mazda626',
+  v: 2, econ: 2, money: 5000, name: 'Du', active: 'mazda626',
   driverCls: 'auto', // 'auto' (bilens klass: Vetari/Kardaani/Super) eller 'junior', 'lady', 'senior', 'supersenior'
   warnings: 0,       // Förarpersonliga varningar (nollas vid ren tävling; 3 st = hylky + lippumiespesti)
   lippumies: 0,      // 1 = måste stå flaggvakt en tävlingshelg innan nästa start
   vouchers: 0,       // Hyvityskuitit (tillgodokvitton på anmälningsavgift om bilen gått sönder före 1:a heatet)
   cars: {
-    sunny: {
-      build: { strip: 1, cage: 1, seat: 1, net: 1, switch: 1 },
-      upg: {}, paint: 'gul', num: 27, bw: 'wb', // 'wb' = svart på vit botten, 'bw' = vit på svart botten
-      katsastusNo: 104,
+    // Man börjar med en originalbil: Mazda 626 i gatskick – inte rensad, ingen bur, inget besiktningskort
+    mazda626: {
+      build: {}, upg: {}, paint: 'vit', num: 26, bw: 'wb', // 'wb' = svart på vit botten, 'bw' = vit på svart botten
+      katsastusNo: 104, tyres: ['std'],
       tune: defaultTune(),
     },
   },
@@ -30,6 +30,8 @@ function load() {
           if (!s.cars[k].katsastusNo) s.cars[k].katsastusNo = 100 + Math.floor(Math.random() * 800);
         }
       }
+      // Ny ekonomi (5 000 € och en originalbil): gamla sparningar börjar om ekonomiskt men behåller namn, inställningar, statistik och rekord
+      if (!s.econ) return starters({ ...f, name: s.name || f.name, settings: { ...f.settings, ...s.settings }, aids: { ...f.aids, ...s.aids }, stats: s.stats, records: s.records || {}, pid: s.pid, econReset: 1 });
       return starters({ ...f, ...s, settings: { ...f.settings, ...s.settings }, aids: { ...f.aids, ...s.aids } });
     }
   } catch (e) { }
@@ -37,13 +39,7 @@ function load() {
 }
 // Startbilarna (Mazda 626, Passat V6, Mondeo ST220) är gratis och finns alltid i garaget, färdigbesiktade.
 function starters(st) {
-  const full = { strip: 1, cage: 1, seat: 1, net: 1, switch: 1 };
-  [['mazda626', 'vit', 26], ['passat_rx', 'bla', 33], ['mondeo_st', 'rod', 22]].forEach(([id, paint, num]) => {
-    if (!st.cars[id]) st.cars[id] = { build: { ...full }, upg: {}, paint, num, bw: 'wb', katsastusNo: 100 + Math.floor(Math.random() * 890), tune: defaultTune() };
-  });
-  for (const c of Object.values(st.cars)) { c.tune = { ...defaultTune(), ...(c.tune || {}) }; if (!st.v4 && c.tune.bias === 0.62) c.tune.bias = 0.70; }
-  st.v4 = 1;
-  if (!st.v3) { st.v3 = 1; st.active = st.active === 'sunny' && !st.career?.res ? 'mazda626' : st.active; }
+  for (const c of Object.values(st.cars)) { c.tune = { ...defaultTune(), ...(c.tune || {}) }; c.tyres = c.tyres || [c.tune.tyre || 'std']; }
   return st;
 }
 export const S = load();

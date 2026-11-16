@@ -44,3 +44,6 @@ Inget byggsteg och inga beroenden. Starta en statisk server i mappen, t.ex. `npx
 - **Global topplista:** speltid, lopp, segrar och bästa varv per bana – sparas som "retained" meddelanden hos de publika MQTT-mäklarna (ingen egen server). Kan försvinna om mäklarna rensar data.
 - **Skador:** bucklor och mattare lack, rök från motorn, skramlande motorljud, sämre grepp/styrning. Ljud för däck/underlag och kollisioner.
 - **Väder:** sol, mulet, regn, dimma, snöfall – påverkar sikt och grepp.
+
+### Ekonomi (från 16.11.2026)
+Man börjar med 5 000 € och en Mazda 626 i originalskick (inte rensad, ingen bur). Bygget till alkukatsastus kostar ca 865 € (rensning 40 €, turvakaaret 450 €, kuppipenkki & bälten 280 €, Nascar-nät 45 €, katsastus & kortti 50 €). Alla myyntiluokka-bilar kostar 850 € och köps tävlingsklara, Super-bilar 3 200–19 500 €. Delar har ungefärliga verkliga priser (begagnat/egen montering i Finland), t.ex. chiptrim 329 €, programmerbart sprut 1 200 €, hybridturbo 1 800 €, fyrhjulsdrift 4 500 €, 5,2 V8 4 500 €. Däcksats 240–420 €, nya fälgar 220 €. Justeringar (camber, toe, fjädring, höjd, bromsbalans, utväxlingsspridning) är gratis.
