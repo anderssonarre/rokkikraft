@@ -527,11 +527,12 @@ export function cockpitMesh() {
   m.tube([0.20, 0.71, 0.08], [0.34, 0.77, 0.10], 0.006, 0.006, alu, 6); // Stag upp till brädan
 
   // 5. VIT PASSAGERARSKYLT ("MATKUSTAJA" / "Eventtec" med svart ram på höger sida av brädan som i foto 1 & 4!) + Monit-box (foto 3)
-  m.box(0.38, 0.63, 0.29, 0.02, 0.125, 0.21, [0.95, 0.96, 0.97, 1]);
-  m.box(0.372, 0.638, 0.29, 0.015, 0.108, 0.19, [0.14, 0.15, 0.18, 1]);
-  m.box(0.364, 0.70, 0.29, 0.01, 0.026, 0.15, [0.95, 0.96, 0.97, 1]);
-  m.box(0.364, 0.662, 0.31, 0.01, 0.024, 0.105, [0.95, 0.96, 0.97, 1]);
-  m.box(0.364, 0.662, 0.23, 0.01, 0.026, 0.030, [0.92, 0.22, 0.14, 1]);
+  // Brädans framsida mot kameran ligger vid x = 0.30, så skylten placeras vid x = 0.292!
+  m.box(0.295, 0.635, 0.29, 0.016, 0.115, 0.21, [0.95, 0.96, 0.97, 1]);
+  m.box(0.289, 0.643, 0.29, 0.012, 0.098, 0.19, [0.14, 0.15, 0.18, 1]);
+  m.box(0.283, 0.698, 0.29, 0.008, 0.024, 0.15, [0.95, 0.96, 0.97, 1]);
+  m.box(0.283, 0.662, 0.31, 0.008, 0.022, 0.105, [0.95, 0.96, 0.97, 1]);
+  m.box(0.283, 0.662, 0.23, 0.008, 0.024, 0.030, [0.92, 0.22, 0.14, 1]);
   // Blå/röd digital rallybox ovanpå höger brädkant (som i foto 3!)
   m.box(0.41, 0.78, 0.37, 0.06, 0.075, 0.15, dark);
   m.box(0.378, 0.792, 0.37, 0.012, 0.045, 0.085, [0.58, 0.74, 0.92, 1]);
@@ -581,13 +582,13 @@ export function cockpitMesh() {
   m.tube([-0.22, 1.08, -0.35], [-0.15, 1.07, -0.33], 0.088, 0.076, [0.95, 0.96, 0.98, 1], 10, true); // Vit Sparco-skärmkant
   m.tube([-0.23, 0.99, -0.35], [-0.16, 1.00, -0.33], 0.085, 0.072, [0.06, 0.07, 0.09, 1], 10, true); // Mörkt visir
   // Förarstolens ryggstöd (kuppipenkki) & förarens svarta racingoverall-axlar och överarmar med blå/vit Sparco-epålett (foto 1 & 2!)
-  m.box(-0.36, 0.44, -0.32, 0.12, 0.48, 0.34, suitBlack);
+  m.box(-0.42, 0.42, -0.34, 0.10, 0.44, 0.32, suitBlack);
   // Vänster & höger överarm som sträcker sig framåt från förarens axlar [-0.32] fram till underarmarna vid [0.00]
   m.tube([-0.32, 0.76, -0.44], [0.02, 0.77, -0.44], 0.062, 0.052, suitBlack, 10, true);
   m.tube([-0.32, 0.73, -0.20], [0.02, 0.76, -0.19], 0.066, 0.054, suitBlack, 10, true);
   // Blå/vit Sparco-epålett på höger axel/ärm nere till vänster (exakt som i foto 1 & 2!)
-  m.box(-0.24, 0.78, -0.23, 0.065, 0.026, 0.048, sparcoBlue);
-  m.box(-0.24, 0.804, -0.23, 0.058, 0.006, 0.040, [0.95, 0.96, 0.98, 1]);
+  m.box(-0.18, 0.76, -0.20, 0.068, 0.032, 0.052, sparcoBlue);
+  m.box(-0.18, 0.788, -0.20, 0.060, 0.008, 0.044, [0.95, 0.96, 0.98, 1]);
   // Textilveck i overall-ärmarna
   m.tube([-0.18, 0.74, -0.20], [-0.12, 0.75, -0.19], 0.060, 0.058, suitFold, 10);
   m.tube([-0.08, 0.75, -0.19], [-0.03, 0.76, -0.19], 0.056, 0.054, suitFold, 10);
