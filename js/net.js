@@ -71,7 +71,8 @@ export class Room {
     this.code = code; this.isHost = !!host; this.id = rid(); this.me = me; this.onChange = onChange || (() => { });
     this.status = 'connecting'; // connecting | lobby | race | notfound | closed
     this.members = host ? [{ id: this.id, name: me.name, car: me.car, host: 1 }] : [];
-    this.cfg = { track: 'tammisaari', laps: 3, ai: 2, joker: 0 };
+    this.cfg = { track: 'tammisaari', laps: 3, ai: 2, joker: 0, diff: 75, weather: 'sol', perStart: 6 };
+    this.live = {}; // pågående heat: { grid, cfg, lead, goAt, ready, done, order }
     this.offset = 0; this.rtt = Infinity; this.seen = new Map(); this.last = new Map(); this.n = 0; this.hostSeen = Date.now(); this.race = null; this.lastResult = null; this.hostId = host ? this.id : null;
     this.topicBytes = str(`rokkikraft/p${PROTO}/${code}`);
     this.links = brokers().map(u => new Mqtt(u, `rokkikraft/p${PROTO}/${code}`, m => this.recv(m), () => this.linkState()));
@@ -107,7 +108,7 @@ export class Room {
       if (this.status === 'lobby' || this.status === 'race' || this.status === 'connecting') {
         if (this.bn % 2 === 0) this.hello();
         if ((this.rtt > 60 && this.bn < 20) || this.bn % 10 === 0) this.send({ k: 'pg', t0: now });
-        if (this.status !== 'connecting' && now - this.hostSeen > 12000) { this.status = 'closed'; this.onChange(); if (this.race) this.race.netHostLost(); }
+        if (this.status !== 'connecting' && now - this.hostSeen > 15000) { this.status = 'closed'; this.onChange(); if (this.race) this.race.netHostLost(); }
       }
     }
   }
@@ -132,11 +133,19 @@ export class Room {
       } break;
       case 'pg': if (this.isHost) this.send({ k: 'po', to: m.f, t0: m.t0, ht: Date.now() }); break;
       case 'po': if (m.to === this.id) { const now = Date.now(), rtt = now - m.t0; if (rtt < this.rtt) { this.rtt = rtt; this.offset = m.ht - (m.t0 + now) / 2; } } break;
-      case 'start': if (!this.isHost && m.f === this.hostId) { this.status = 'race'; this.goAt = 0; this.grid = m.grid; this.cfg = m.cfg; if (this.onStart) this.onStart(m.grid, m.cfg); } break;
-      case 'rdy': if (this.isHost && this.ready) { this.ready.add(m.f); this.checkGo(); } break;
-      case 'go': if (m.f === this.hostId) { this.goAt = m.at; } break;
+      case 'start': if (m.f === this.hostId || this.isHost) {
+        this.live[m.h] = { grid: m.grid, cfg: m.cfg, lead: m.lead, goAt: 0, ready: new Set(), done: false, t0: Date.now() };
+        if (!this.isHost) this.status = 'race';
+        if (m.grid.some(g => g.id === this.id) && this.onStart) this.onStart(m.h, m.grid, m.cfg, m.lead);
+        this.onChange();
+      } break;
+      case 'rdy': { const L = this.live[m.h]; if (L && L.lead === this.id) { L.ready.add(m.f); this.checkGo(m.h); } } break;
+      case 'go': { const L = this.live[m.h]; if (L) L.goAt = m.at; } break;
       case 's': if (this.race) this.race.netState(m); break;
-      case 'end': if (m.f === this.hostId) { this.lastResult = m.order; if (this.race) this.race.netEnd(m.order); if (!this.isHost) this.status = 'lobby'; } break;
+      case 'end': { const L = this.live[m.h]; if (L && !L.done) { L.done = true; L.order = m.order; if (this.race && this.race.heatId === m.h) this.race.netEnd(m.order); if (this.onHeatEnd) this.onHeatEnd(m.h, m.order); this.onChange(); } } break;
+      case 'cs': if (m.f === this.hostId) { this.champ = m.cs; this.onChange(); } break;
+      case 'skip': if (this.isHost && this.onSkip) this.onSkip(m.f); break;
+      case 'lobby': if (m.f === this.hostId) { this.status = 'lobby'; this.onChange(); } break;
       case 'bye':
         if (m.f === this.hostId && !this.isHost) { this.status = 'closed'; this.onChange(); if (this.race) this.race.netHostLost(); }
         else if (this.isHost) { this.members = this.members.filter(x => x.id !== m.f); this.sendRoom(); this.onChange(); }
@@ -144,20 +153,53 @@ export class Room {
         break;
     }
   }
-  // Värden: starta heat. grid = startordning med alla bilar ({ id, name, car } eller AI { id, ai:1, name, paint, bw, skill, spec }).
-  start(grid) {
-    if (!this.isHost) return; this.status = 'race'; this.goAt = 0; this.grid = grid; this.ready = new Set([this.id]); this.lastResult = null;
-    const msg = { k: 'start', grid, cfg: this.cfg }; this.send(msg);
-    clearTimeout(this.goT); this.goT = setTimeout(() => this.fireGo(), 9000); this.sendRoom();
+  // Värden startar ett heat. grid = startordning ({ id, name, car } för människor, { id, ai:1, name, paint, bw, diff, spec, powScale } för AI).
+  // lead = den förare vars dator kör AI-bilarna, ger startsignal och skickar resultatet för just det heatet.
+  startHeat(h, grid, cfg, lead) {
+    if (!this.isHost) return; this.status = 'race';
+    const msg = { k: 'start', h, grid, cfg, lead }; this.send(msg); this.recvLocal(msg);
   }
-  checkGo() { if (this.goAt || !this.ready) return; if (this.members.every(m => this.ready.has(m.id))) this.fireGo(); }
-  fireGo() { if (this.goAt || this.status !== 'race') return; clearTimeout(this.goT); this.goAt = Date.now() + 4200; const go = () => { if (this.status === 'race') this.send({ k: 'go', at: this.goAt }); }; go(); setTimeout(go, 500); setTimeout(go, 1500); }
-  imReady() { if (!this.isHost) { const r = () => { if (this.status === 'race' && !this.goAt) { this.send({ k: 'rdy' }); setTimeout(r, 1500); } }; r(); } else this.checkGo(); }
-  end(order) { if (!this.isHost) return; this.lastResult = order; this.send({ k: 'end', order }); setTimeout(() => this.send({ k: 'end', order }), 600); this.status = 'lobby'; this.sendRoom(); }
-  backToLobby() { if (this.status === 'race') { this.status = 'lobby'; if (this.isHost) this.sendRoom(); } this.race = null; }
+  recvLocal(m) { m.f = this.id; this.live[m.h] = { grid: m.grid, cfg: m.cfg, lead: m.lead, goAt: 0, ready: new Set(), done: false, t0: Date.now() }; if (m.grid.some(g => g.id === this.id) && this.onStart) this.onStart(m.h, m.grid, m.cfg, m.lead); this.onChange(); }
+  goAtFor(h) { return this.live[h]?.goAt || 0; }
+  humansIn(h) { return (this.live[h]?.grid || []).filter(g => !g.ai).map(g => g.id); }
+  checkGo(h) { const L = this.live[h]; if (!L || L.goAt) return; if (this.humansIn(h).every(id => L.ready.has(id) || !this.members.some(m => m.id === id))) this.fireGo(h); }
+  fireGo(h) { const L = this.live[h]; if (!L || L.goAt) return; clearTimeout(L.goT); L.goAt = this.now() + 4200; const go = () => this.send({ k: 'go', h, at: L.goAt }); go(); setTimeout(go, 500); setTimeout(go, 1500); }
+  imReady(h) {
+    const L = this.live[h]; if (!L) return;
+    if (L.lead === this.id) { L.ready.add(this.id); clearTimeout(L.goT); L.goT = setTimeout(() => this.fireGo(h), 10000); this.checkGo(h); }
+    else { const r = () => { if (!L.goAt && !L.done) { this.send({ k: 'rdy', h }); setTimeout(r, 1500); } }; r(); }
+  }
+  end(h, order) { const L = this.live[h]; const m = { k: 'end', h, order }; this.send(m); setTimeout(() => this.send({ k: 'end', h, order }), 600); if (L && !L.done) { L.done = true; L.order = order; if (this.onHeatEnd) this.onHeatEnd(h, order); } }
+  toLobby() { if (!this.isHost) return; this.status = 'lobby'; this.live = {}; this.send({ k: 'lobby' }); this.sendRoom(); this.onChange(); }
+  sendChamp(cs) { if (!this.isHost) return; this.champ = cs; this.send({ k: 'cs', cs }); this.onChange(); }
+  backToLobby() { this.race = null; }
   leave() {
     if (this.gone) return; this.gone = true; try { this.send({ k: 'bye' }); } catch (e) { }
     clearInterval(this.tick); clearTimeout(this.goT); window.removeEventListener('pagehide', this.unload);
     setTimeout(() => this.links.forEach(l => l.close()), 150);
   }
+}
+
+// ---------- global topplista ----------
+// Varje spelare lägger sin statistik som ett "retained" meddelande på rokkikraft/lb1/<spelar-id> hos mäklarna.
+// Den som öppnar topplistan prenumererar på rokkikraft/lb1/+ och får allas senaste värden direkt.
+export class Board {
+  constructor(onUpdate) {
+    this.list = new Map(); this.onUpdate = onUpdate || (() => { }); this.topic = 'rokkikraft/lb1/+';
+    this.links = brokers().map(u => new Mqtt(u, this.topic, m => this.recv(m), () => this.onUpdate()));
+  }
+  get connected() { return this.links.filter(l => l.open).length; }
+  recv(m) {
+    if (!m || typeof m.id !== 'string' || typeof m.name !== 'string') return;
+    const old = this.list.get(m.id); if (old && old.t >= m.t) return;
+    this.list.set(m.id, { id: m.id.slice(0, 24), name: m.name.slice(0, 24), sec: +m.sec || 0, races: +m.races || 0, wins: +m.wins || 0, best: m.best && typeof m.best === 'object' ? m.best : {}, t: +m.t || 0 });
+    clearTimeout(this.ut); this.ut = setTimeout(() => this.onUpdate(), 150);
+  }
+  publish(e) {
+    const bytes = packet(0x31, str('rokkikraft/lb1/' + e.id), enc.encode(JSON.stringify(e))); // 0x31 = PUBLISH med retain
+    this.list.set(e.id, e);
+    const go = () => { let sent = 0; for (const l of this.links) if (l.open) { l.send(bytes); sent++; } return sent; };
+    if (!go()) { let n = 0; const iv = setInterval(() => { if (go() || ++n > 20) clearInterval(iv); }, 500); }
+  }
+  close() { this.links.forEach(l => l.close()); }
 }

@@ -24,18 +24,25 @@ export class View3 {
     R.shadowMap.enabled = this.q > 0; R.shadowMap.type = THREE.PCFSoftShadowMap; R.autoClear = false;
     this.res = opt.res || 'auto';
     const S = this.scene = new THREE.Scene(), w = this.winter;
-    const horizon = new THREE.Color(w ? 0xd5e2ee : 0xa9cbe6), zenith = new THREE.Color(w ? 0x5f8cc0 : 0x2764b4);
-    S.fog = new THREE.Fog(horizon, 140, w ? 900 : 1300);
+    const wx = this.weather = opt.weather || 'sol', grey = wx === 'mulet' || wx === 'regn' || wx === 'dimma' || wx === 'sno';
+    const horizon = new THREE.Color(grey ? (wx === 'regn' ? 0x8a9198 : wx === 'sno' ? 0xd8dde2 : 0xb4bcc4) : w ? 0xd5e2ee : 0xa9cbe6), zenith = new THREE.Color(grey ? (wx === 'regn' ? 0x5d646c : 0x8e98a3) : w ? 0x5f8cc0 : 0x2764b4);
+    S.fog = new THREE.Fog(horizon, wx === 'dimma' ? 20 : wx === 'regn' || wx === 'sno' ? 60 : 140, wx === 'dimma' ? 220 : wx === 'regn' || wx === 'sno' ? 520 : w ? 900 : 1300);
     this.cam = new THREE.PerspectiveCamera(60, 1, 0.08, 4000);
     // himmel
     const sunDir = this.sunDir = new THREE.Vector3(0.55, 0.62, 0.42).normalize();
     const sky = new THREE.Mesh(new THREE.SphereGeometry(3200, 32, 16), new THREE.ShaderMaterial({ side: THREE.BackSide, depthWrite: false, fog: false,
-      uniforms: { top: { value: zenith }, hor: { value: horizon }, sun: { value: sunDir } },
+      uniforms: { top: { value: zenith }, hor: { value: horizon }, sun: { value: grey ? new THREE.Vector3(0, -1, 0) : sunDir } },
       vertexShader: 'varying vec3 d;void main(){d=normalize(position);gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}',
       fragmentShader: 'varying vec3 d;uniform vec3 top,hor,sun;void main(){float h=clamp(d.y,0.0,1.0);vec3 c=mix(hor,top,pow(h,0.55));float s=max(dot(normalize(d),sun),0.0);c+=vec3(1.0,0.92,0.75)*(pow(s,350.0)*1.6+pow(s,12.0)*0.16);gl_FragColor=vec4(c,1.0);}' }));
     this.sky = sky; S.add(sky);
     S.add(new THREE.HemisphereLight(w ? 0xdde9ff : 0xcfe2ff, w ? 0x9aa6b5 : 0x5a5240, w ? 0.62 : 0.52));
-    const sun = this.sun = new THREE.DirectionalLight(w ? 0xfff2e0 : 0xffedc8, w ? 0.72 : 0.86); sun.castShadow = this.q > 0;
+    const sun = this.sun = new THREE.DirectionalLight(w ? 0xfff2e0 : 0xffedc8, (w ? 0.72 : 0.86) * (grey ? 0.45 : 1)); sun.castShadow = this.q > 0 && !grey;
+    if (wx === 'regn' || wx === 'sno') { // nederbörd: partiklar som följer kameran
+      const N = this.q ? 3500 : 1400, g = new THREE.BufferGeometry(), pos = new Float32Array(N * 3); for (let i = 0; i < N * 3; i++) pos[i] = (Math.random() - 0.5) * 60;
+      g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+      this.precip = new THREE.Points(g, new THREE.PointsMaterial({ color: wx === 'sno' ? 0xffffff : 0xaab8c8, size: wx === 'sno' ? 0.12 : 0.06, transparent: true, opacity: wx === 'sno' ? 0.9 : 0.55, depthWrite: false }));
+      this.precip.frustumCulled = false; S.add(this.precip); this.precipV = wx === 'sno' ? 1.6 : 14;
+    }
     const sc = sun.shadow.camera; sc.left = -75; sc.right = 75; sc.top = 75; sc.bottom = -75; sc.near = 1; sc.far = 420; sun.shadow.mapSize.set(2048, 2048); sun.shadow.bias = -0.0006; sun.shadow.normalBias = 0.04;
     S.add(sun); S.add(sun.target);
     this.buildTerrain(); this.buildTrack(); this.buildForest(); this.buildProps(); this.buildClouds();
@@ -191,6 +198,8 @@ export class View3 {
   frame(o) { if (!this.ok) return; const THREE = T(), cam = this.cam, R = this.r;
     cam.fov = o.fov * 180 / Math.PI; cam.updateProjectionMatrix(); cam.position.set(o.eye[0], o.eye[1], o.eye[2]); cam.up.set(o.up[0], o.up[1], o.up[2]); cam.lookAt(o.at[0], o.at[1], o.at[2]);
     this.sky.position.copy(cam.position);
+    if (this.precip) { const a = this.precip.geometry.attributes.position, d = Math.min(0.05, (performance.now() - (this.pT || performance.now())) / 1000); this.pT = performance.now();
+      for (let i = 0; i < a.count; i++) { let y = a.array[i * 3 + 1] - this.precipV * d; if (y < -30) y += 60; a.array[i * 3 + 1] = y; } a.needsUpdate = true; this.precip.position.copy(cam.position); }
     const f = o.focus; this.sun.target.position.set(f[0], f[1], f[2]); this.sun.position.set(f[0] + this.sunDir.x * 180, f[1] + this.sunDir.y * 180, f[2] + this.sunDir.z * 180);
     // damm
     const pl = o.particles || [], pa = this.pGeo.attributes, N = Math.min(pl.length, 260);

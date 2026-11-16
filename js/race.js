@@ -69,7 +69,8 @@ export function phys(c, dt, trk) {
     if (c.shiftT > 0) c.shiftT -= dt;
     else if (rpm < s.redline) Fd = c.tq(rpm) * c.thr * c.pow * gr * s.eff / s.rw * (1 - cl);
     if (c.thr < 0.05 && c.vx > 1) Fd -= (0.97 + 0.15 * rpm / 1000) * 1e5 * s.Vd * 1e-3 / 12.566 * gr / s.rw;
-    const capF = mu * Fzf * (s.muF || 1), capR = mu * Fzr * (s.muR || 1), capD = (fwd ? capF : capR) * (s.trac ? 1 : 0.86);
+    const wk = trk.wetK ? (st === 'asfalt' ? trk.wetK[0] : trk.wetK[1]) : 1;
+    const capF = mu * wk * Fzf * (s.muF || 1), capR = mu * wk * Fzr * (s.muR || 1), capD = (fwd ? capF : capR) * (s.trac ? 1 : 0.86);
     let slip = 0, latD = 1;
     if (c.aids.tc) { const need = Math.abs(shape(fwd ? af : ar)); const lim = capD * 0.97 * Math.sqrt(Math.max(0.08, 1 - 0.92 * need * need)); if (Fd > lim) Fd = lim; }
     else if (Fd > capD) { slip = Math.min(1.5, Fd / capD - 1); Fd = capD * (0.93 - 0.08 * Math.min(1, slip)); latD = 1 / (1 + 1.6 * slip); }
@@ -405,8 +406,9 @@ export class Race {
     this.$ = id => host.querySelector('#' + id);
     this.cv = host.querySelector('.race-cv');
     ensureTerrain(trk);
+    trk.wetK = { regn: [0.78, 0.9], sno: [0.75, 0.82], dimma: [0.97, 0.98] }[cfg.weather] || null;
     const q = cfg.settings?.quality === 'lag' ? 0 : 1; this.q = q;
-    this.view = new View3(this.cv, trk, { quality: q, res: cfg.settings?.res || 'auto' }); this.R = this.view.ok ? this.view : null;
+    this.view = new View3(this.cv, trk, { quality: q, res: cfg.settings?.res || 'auto', weather: cfg.weather || 'sol' }); this.R = this.view.ok ? this.view : null;
     if (this.R) this.view.setCockpit([cockpitMesh(), steerWheelMesh(), pendantMesh(), cockpitMesh({ driverView: true })], cfg.player.paint);
     this.env = trk.winter
       ? { zenith: [0.46, 0.62, 0.82], fog: [0.82, 0.88, 0.94], fd: 0.000014, light: [0.42, 0.78, 0.32] }
@@ -423,7 +425,7 @@ export class Race {
     if (this.net) this.player.nid = this.net.id;
     // Åskådarläge: alla bilar körs av AI, kameran följer valfri bil (E/Q eller växelknapparna byter bil)
     this.spectate = !!cfg.spectate;
-    if (this.spectate) { const p = this.player; p.isPlayer = false; p.ai = { jokerLap: 0, off: 0, stuck: 0, prof: null }; p.diff = cfg.player.diff ?? 0.8; p.pow = cfg.player.powScale || 1; p.aids = { abs: 1, tc: 1, auto: 1 }; for (const c of this.cars) c.auto = true; }
+    if (this.spectate) { const p = this.player; p.isPlayer = false; if (!p.remote) p.ai = { jokerLap: 0, off: 0, stuck: 0, prof: null }; p.diff = cfg.player.diff ?? 0.8; p.pow = cfg.player.powScale || 1; p.aids = { abs: 1, tc: 1, auto: 1 }; for (const c of this.cars) c.auto = true; }
     if (location.search.includes('auto')) { const c = this.player; c.auto = true; c.skill = 0.97; c.ai = { jokerLap: 0, off: 0, stuck: 0, prof: null }; c.aids = { abs: 1, tc: 1, auto: 1 }; }
     this.player.dmg = cfg.dmg0 || 0; this.player.tireWearF = cfg.wear0?.[0] || 0; this.player.tireWearR = cfg.wear0?.[1] || 0; this.player.radLeak = !!cfg.radLeak0;
     const needMirrors = !this.sideContact;
@@ -451,7 +453,7 @@ export class Race {
     if (cfg.mode === 'time') { this.$('hLbCard').style.display = 'none'; }
     this.audioInit();
     if (this.spectate) this.msg('👁 ÅSKÅDARLÄGE – E/Q byter bil, C byter kamera', 4);
-    if (this.net) { this.goAt = Infinity; this.net.race = this; this.net.imReady(); this.msg('Väntar på övriga förare…', 60); }
+    if (this.net) { this.heatId = cfg.heatId || 'h1'; this.netLead = cfg.netLead === this.net.id; this.goAt = Infinity; this.net.race = this; if (!this.spectate) this.net.imReady(this.heatId); this.msg(this.spectate ? '👁 Väntar på start…' : 'Väntar på övriga förare…', 60); }
     this.last = performance.now(); this.raf = requestAnimationFrame(t => this.frame(t));
   }
 
@@ -493,7 +495,7 @@ export class Race {
     this.$('hQuit').onclick = () => {
       this.player.retired = true; this.player.flag = 'K';
       if (!this.net) return this.finish();
-      if (this.net.isHost && this.cars.every(c => c.remote ? c.finished || c.retired : true)) this.endAt = this.t; // ensam kvar: avsluta för alla
+      if (this.netLead && this.cars.every(c => c.remote ? c.finished || c.retired : true)) this.endAt = this.t; // ensam kvar: avsluta för alla
       this.togglePause(); if (this.state === 'run') this.state = 'flag'; this.endLocal();
     };
   }
@@ -654,7 +656,7 @@ export class Race {
     if (this.state === 'grid') {
       this.gridT += dt; this.input(dt);
       if (this.net) { // gemensam start: värden skickar en klocktid, lamporna räknar ner mot den
-        const g = this.net.goAt;
+        const g = this.net.goAtFor(this.heatId);
         if (g && !this.goWall) { this.goWall = g; this.gridT = 0; this.goAt = Math.max(0.9, (g - this.net.now()) / 1000); this.msg('Alla klara – se på startljusen!', 1.4); }
         if (this.goWall) this.gridT = this.goAt - (this.goWall - this.net.now()) / 1000;
       }
@@ -855,8 +857,8 @@ export class Race {
   }
   netTick() {
     const net = this.net, now = performance.now(); if (now - (this.netLast || 0) < 80 || this.done) return; this.netLast = now;
-    net.send({ k: 's', t: Math.round(net.now()), c: this.cars.filter(c => !c.remote).map(c => this.netPack(c)) });
-    if (!net.isHost || this.state === 'grid') return;
+    const mine = this.cars.filter(c => !c.remote); if (mine.length) net.send({ k: 's', h: this.heatId, t: Math.round(net.now()), c: mine.map(c => this.netPack(c)) });
+    if (!this.netLead || this.state === 'grid') return;
     const wall = Date.now();
     for (const c of this.cars) if (c.remote && !c.finished && !c.retired && wall - c.seenT > 8000) c.retired = true; // tappad anslutning = K
     if (this.endAt === undefined) {
@@ -866,10 +868,11 @@ export class Race {
     }
     if (this.endAt !== undefined && this.t >= this.endAt) {
       const order = this.order().map(r => ({ id: r.c.nid, name: r.name, flag: r.flag, time: r.c.finished && !r.c.retired ? r.t : null, best: isFinite(r.c.bestLap) ? r.c.bestLap : null, jokerLap: r.c.jokerLap ?? null }));
-      net.end(order); this.finish(order);
+      net.end(this.heatId, order); this.finish(order);
     }
   }
   netState(m) {
+    if ((m.h || 'h1') !== this.heatId) return;
     for (const a of m.c) {
       const c = this.cars.find(x => x.remote && x.nid === a[0]); if (!c) continue;
       if (c.snap && m.t < c.snap.t) continue;
