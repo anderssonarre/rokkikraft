@@ -123,101 +123,101 @@ table.codes td small { display: block; }
 body.racing { overflow: hidden; } body.racing #app { padding: 0; }
 .race { position: fixed; inset: 0; background: #000; touch-action: none; user-select: none; -webkit-user-select: none; }
 .race-cv { width: 100%; height: 100%; display: block; }
-.hud { position: absolute; inset: 0; pointer-events: none; font-family: var(--mono); color: #f3f4f6; padding: calc(10px + env(safe-area-inset-top)) calc(12px + env(safe-area-inset-right)) calc(8px + env(safe-area-inset-bottom)) calc(12px + env(safe-area-inset-left)); display: flex; flex-direction: column; justify-content: space-between; }
+.hud { position: absolute; inset: 0; pointer-events: none; font-family: var(--mono); color: #f3f4f6; padding: calc(6px + env(safe-area-inset-top)) calc(8px + env(safe-area-inset-right)) calc(6px + env(safe-area-inset-bottom)) calc(8px + env(safe-area-inset-left)); display: flex; flex-direction: column; justify-content: space-between; overflow: hidden; }
 .hud button { pointer-events: auto; cursor: pointer; }
-.hud-card { background: linear-gradient(145deg, rgba(20, 24, 31, 0.86), rgba(12, 15, 20, 0.90)); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); border: 1px solid rgba(255, 255, 255, 0.12); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.48); border-radius: 10px; padding: 9px 11px; pointer-events: auto; }
-.hud-row-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; width: 100%; }
-.hud-col-l, .hud-col-r { display: flex; align-items: flex-start; gap: 8px; flex-wrap: wrap; }
-.hud-col-c { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.hud-card { background: linear-gradient(145deg, rgba(20, 24, 31, 0.86), rgba(12, 15, 20, 0.90)); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); border: 1px solid rgba(255, 255, 255, 0.12); box-shadow: 0 6px 20px rgba(0, 0, 0, 0.48); border-radius: 9px; padding: 6px 9px; pointer-events: auto; }
+.hud-row-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 6px; width: 100%; }
+.hud-col-l, .hud-col-r { display: flex; align-items: flex-start; gap: 6px; flex-wrap: nowrap; }
+.hud-col-c { display: flex; flex-direction: column; align-items: center; gap: 4px; flex-shrink: 0; }
 
-/* Vänster topp: Leaderboard + Status/Bränsle/Däck */
-.hud-lb { width: 196px; font-size: 0.68rem; }
-.hud-lb-head { display: flex; justify-content: space-between; align-items: baseline; border-bottom: 1px solid rgba(255,255,255,.1); padding-bottom: 5px; margin-bottom: 5px; }
-.hud-lb-pos b { font: 900 1.95rem var(--cond); color: #fff; line-height: 0.95; }
-.hud-lb-pos span { color: #9ca3af; font-size: 0.75rem; margin-left: 3px; }
-.hud-lb-lap { color: #e5e7eb; font-weight: 700; font-size: 0.72rem; }
-.hud-lb-list > div { display: flex; align-items: center; justify-content: space-between; padding: 1.5px 0; white-space: nowrap; }
-.hud-lb-list .lb-l { display: flex; align-items: center; gap: 5px; overflow: hidden; text-overflow: ellipsis; }
-.hud-lb-list i.dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
-.hud-lb-list em.num { font-style: normal; color: #9ca3af; width: 12px; }
-.hud-lb-list .me { color: var(--hi); font-weight: 800; background: rgba(255,212,0,.09); border-radius: 4px; padding: 1px 4px; margin: 0 -4px; }
-.hud-lb-foot { margin-top: 5px; padding-top: 4px; border-top: 1px solid rgba(255,255,255,.1); display: flex; justify-content: space-between; font-size: 0.64rem; color: #d1d5db; }
+/* Vänster topp: Leaderboard + Status/Bränsle/Däck (sida vid sida som i referensbilden!) */
+.hud-lb { width: 156px; font-size: 0.62rem; }
+.hud-lb-head { display: flex; justify-content: space-between; align-items: baseline; border-bottom: 1px solid rgba(255,255,255,.1); padding-bottom: 3px; margin-bottom: 3px; }
+.hud-lb-pos b { font: 900 1.65rem var(--cond); color: #fff; line-height: 0.95; }
+.hud-lb-pos span { color: #9ca3af; font-size: 0.68rem; margin-left: 2px; }
+.hud-lb-lap { color: #e5e7eb; font-weight: 700; font-size: 0.65rem; }
+.hud-lb-list > div { display: flex; align-items: center; justify-content: space-between; padding: 1px 0; white-space: nowrap; }
+.hud-lb-list .lb-l { display: flex; align-items: center; gap: 4px; overflow: hidden; text-overflow: ellipsis; }
+.hud-lb-list i.dot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
+.hud-lb-list em.num { font-style: normal; color: #9ca3af; width: 10px; }
+.hud-lb-list .me { color: var(--hi); font-weight: 800; background: rgba(255,212,0,.09); border-radius: 4px; padding: 0 3px; margin: 0 -3px; }
+.hud-lb-foot { margin-top: 3px; padding-top: 3px; border-top: 1px solid rgba(255,255,255,.1); display: flex; justify-content: space-between; font-size: 0.58rem; color: #d1d5db; }
 .hud-lb-foot b { color: #fb7185; }
 
-.hud-statcard { width: 215px; font-size: 0.66rem; }
-.hud-stat-hd { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
-.hud-stat-hd span { color: #9ca3af; font-weight: 700; letter-spacing: .06em; }
-.hud-stat-hd b { color: #34d399; font-size: 0.82rem; }
-.hud-bar-bg { width: 100%; height: 7px; background: #1f2937; border-radius: 99px; overflow: hidden; margin-bottom: 5px; }
+.hud-statcard { width: 168px; font-size: 0.58rem; }
+.hud-stat-hd { display: flex; justify-content: space-between; align-items: center; margin-bottom: 3px; }
+.hud-stat-hd span { color: #9ca3af; font-weight: 700; letter-spacing: .04em; }
+.hud-stat-hd b { color: #34d399; font-size: 0.74rem; }
+.hud-bar-bg { width: 100%; height: 5px; background: #1f2937; border-radius: 99px; overflow: hidden; margin-bottom: 4px; }
 .hud-bar-fg { height: 100%; background: linear-gradient(90deg, #10b981, #a3e635); border-radius: 99px; transition: width .12s; }
-.hud-stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding-top: 5px; border-top: 1px solid rgba(255,255,255,.1); margin-top: 4px; }
-.hud-stat-dot { width: 8px; height: 8px; border-radius: 2px; background: #34d399; display: inline-block; margin-right: 4px; }
+.hud-stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 3px; padding-top: 3px; border-top: 1px solid rgba(255,255,255,.1); margin-top: 3px; }
+.hud-stat-dot { width: 7px; height: 7px; border-radius: 2px; background: #34d399; display: inline-block; margin-right: 3px; }
 
 /* Mitten topp: 5 Startljus i realistisk armatur */
-.hud-lights { display: flex; gap: 10px; background: linear-gradient(180deg, #232730, #12151a); padding: 10px 18px; border-radius: 14px; border: 2px solid #090b0e; box-shadow: 0 10px 28px rgba(0,0,0,.65), inset 0 1px 1px rgba(255,255,255,.12); transition: opacity .4s; }
+.hud-lights { display: flex; gap: 7px; background: linear-gradient(180deg, #232730, #12151a); padding: 7px 12px; border-radius: 12px; border: 2px solid #090b0e; box-shadow: 0 8px 22px rgba(0,0,0,.65), inset 0 1px 1px rgba(255,255,255,.12); transition: opacity .4s; }
 .hud-lights.dimmed { opacity: 0.22; }
-.hud-lights i { width: 28px; height: 28px; border-radius: 50%; background: radial-gradient(circle at 35% 35%, #3a1212, #1a0606); border: 2px solid #07080a; box-shadow: inset 0 2px 5px rgba(0,0,0,.85); transition: all .08s; }
-.hud-lights i.on { background: radial-gradient(circle at 35% 35%, #ff7b7b, #e11d48 55%, #881337); box-shadow: 0 0 20px rgba(244, 63, 94, 0.95), inset 0 1px 4px rgba(255,255,255,.65); }
-.hud-top-btns { display: flex; gap: 5px; align-items: center; padding: 4px 8px; font-size: 0.64rem; }
-.hud-mini-btn { background: rgba(255,255,255,.09); color: #f3f4f6; border: 1px solid rgba(255,255,255,.15); border-radius: 6px; padding: 3px 8px; font: 700 0.64rem var(--mono); }
+.hud-lights i { width: 22px; height: 22px; border-radius: 50%; background: radial-gradient(circle at 35% 35%, #3a1212, #1a0606); border: 2px solid #07080a; box-shadow: inset 0 2px 5px rgba(0,0,0,.85); transition: all .08s; }
+.hud-lights i.on { background: radial-gradient(circle at 35% 35%, #ff7b7b, #e11d48 55%, #881337); box-shadow: 0 0 18px rgba(244, 63, 94, 0.95), inset 0 1px 4px rgba(255,255,255,.65); }
+.hud-top-btns { display: flex; gap: 4px; align-items: center; padding: 3px 6px; font-size: 0.58rem; }
+.hud-mini-btn { background: rgba(255,255,255,.09); color: #f3f4f6; border: 1px solid rgba(255,255,255,.15); border-radius: 5px; padding: 2px 6px; font: 700 0.58rem var(--mono); white-space: nowrap; }
 .hud-mini-btn.on { background: rgba(14, 165, 233, 0.35); border-color: #38bdf8; color: #fff; }
 
 /* Höger topp: Underlag + Minimap & Tider */
-.hud-surfcard { width: 170px; font-size: 0.66rem; }
-.hud-mapcol { display: flex; flex-direction: column; gap: 6px; width: 185px; }
-#hMap { width: 100%; height: 108px; display: block; }
-.hud-timecard { font-size: 0.65rem; }
-.hud-time-row { display: flex; justify-content: space-between; align-items: baseline; padding: 1px 0; color: #d1d5db; }
-.hud-time-row b.big { font-size: 0.98rem; color: #fff; font-weight: 800; }
-.hud-sectors { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 4px; margin-top: 5px; text-align: center; font-size: 0.58rem; }
-.hud-sectors span { background: rgba(255,255,255,.06); border-radius: 4px; padding: 2px 0; color: #9ca3af; }
+.hud-surfcard { width: 136px; font-size: 0.58rem; }
+.hud-mapcol { display: flex; flex-direction: column; gap: 5px; width: 154px; }
+#hMap { width: 100%; height: 86px; display: block; }
+.hud-timecard { font-size: 0.58rem; }
+.hud-time-row { display: flex; justify-content: space-between; align-items: baseline; padding: 0.5px 0; color: #d1d5db; }
+.hud-time-row b.big { font-size: 0.86rem; color: #fff; font-weight: 800; }
+.hud-sectors { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 3px; margin-top: 3px; text-align: center; font-size: 0.52rem; }
+.hud-sectors span { background: rgba(255,255,255,.06); border-radius: 4px; padding: 1.5px 0; color: #9ca3af; }
 
 /* Mitten: Meddelande + Närhetsradar */
 .hud-center-wrap { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; pointer-events: none; margin: auto 0; }
-.hud-msg { position: fixed; left: 50%; top: 28%; transform: translate(-50%, -50%) scale(.92); opacity: 0; transition: opacity .18s, transform .18s; text-align: center; font: 900 clamp(1.4rem, 4vw, 2.4rem) var(--cond); letter-spacing: .05em; text-shadow: 0 3px 0 #000, 0 0 24px rgba(0,0,0,.85); z-index: 30; pointer-events: none; background: rgba(12,15,20,.82); padding: 8px 18px; border-radius: 12px; border: 1px solid rgba(255,255,255,.15); }
-.hud-msg small { display: block; font: 700 .8rem var(--mono); color: #f3f4f6; letter-spacing: 0; } .hud-msg.show { opacity: 1; transform: translate(-50%, -50%) scale(1); } .hud-msg.go { color: var(--ok); border-color: var(--ok); } .hud-msg.warn { color: var(--bad); border-color: var(--bad); }
-#hRadar { width: 112px; height: 112px; opacity: 0.88; }
+.hud-msg { position: fixed; left: 50%; top: 26%; transform: translate(-50%, -50%) scale(.92); opacity: 0; transition: opacity .18s, transform .18s; text-align: center; font: 900 clamp(1.3rem, 3.5vw, 2.1rem) var(--cond); letter-spacing: .05em; text-shadow: 0 3px 0 #000, 0 0 24px rgba(0,0,0,.85); z-index: 30; pointer-events: none; background: rgba(12,15,20,.82); padding: 6px 14px; border-radius: 10px; border: 1px solid rgba(255,255,255,.15); }
+.hud-msg small { display: block; font: 700 .74rem var(--mono); color: #f3f4f6; letter-spacing: 0; } .hud-msg.show { opacity: 1; transform: translate(-50%, -50%) scale(1); } .hud-msg.go { color: var(--ok); border-color: var(--ok); } .hud-msg.warn { color: var(--bad); border-color: var(--bad); }
+#hRadar { width: 96px; height: 96px; opacity: 0.88; }
 
 /* Nederkant: Motorn Just Nu (MEP) + In-Car Rattdisplay + Växel/Hastighet/G-kraft */
-.hud-row-bot { display: flex; justify-content: space-between; align-items: flex-end; gap: 10px; width: 100%; }
-.hud-mepcard { width: 245px; font-size: 0.65rem; }
-.hud-mep-row { display: flex; align-items: center; gap: 6px; margin: 2.5px 0; }
-.hud-mep-row > span { width: 42px; color: #9ca3af; }
-.hud-mep-row > div { flex: 1; height: 6px; background: #1f2937; border-radius: 99px; overflow: hidden; }
+.hud-row-bot { display: flex; justify-content: space-between; align-items: flex-end; gap: 6px; width: 100%; }
+.hud-mepcard { width: 205px; font-size: 0.58rem; }
+.hud-mep-row { display: flex; align-items: center; gap: 4px; margin: 1.5px 0; }
+.hud-mep-row > span { width: 38px; color: #9ca3af; }
+.hud-mep-row > div { flex: 1; height: 5px; background: #1f2937; border-radius: 99px; overflow: hidden; }
 .hud-mep-row > div i { display: block; height: 100%; border-radius: 99px; }
-.hud-mep-row > b { width: 52px; text-align: right; color: #e5e7eb; font-weight: 600; }
+.hud-mep-row > b { width: 46px; text-align: right; color: #e5e7eb; font-weight: 600; }
 
 /* In-Car Digital Ratt-/Dash-skärm i mitten längst ner (som i referensbilden!) */
-.hud-wheel-cluster { background: linear-gradient(180deg, #161920, #0b0d12); border: 2px solid #28303d; border-radius: 16px 16px 8px 8px; padding: 7px 14px; display: flex; align-items: center; gap: 12px; box-shadow: 0 -4px 24px rgba(0,0,0,.75), inset 0 1px 2px rgba(255,255,255,.15); }
-.wc-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; }
-.wc-btns i { width: 13px; height: 13px; border-radius: 50%; display: block; border: 1.5px solid rgba(255,255,255,.35); box-shadow: 0 0 6px currentColor; }
-.wc-screen { background: #060a10; border: 1px solid #1e293b; border-radius: 6px; padding: 5px 12px; min-width: 155px; display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 8px; text-align: center; }
-.wc-Screen-l, .wc-Screen-r { font-size: 0.6rem; color: #94a3b8; display: flex; flex-direction: column; gap: 2px; }
-.wc-Screen-l b { color: #facc15; font-size: 0.72rem; }
-.wc-Screen-r b { color: #38bdf8; font-size: 0.72rem; }
-.wc-Screen-c b { font: 900 1.9rem var(--mono); color: #fff; line-height: 1; display: block; }
-.wc-Screen-c span { font-size: 0.78rem; color: #e2e8f0; font-weight: 700; }
+.hud-wheel-cluster { background: linear-gradient(180deg, #161920, #0b0d12); border: 2px solid #28303d; border-radius: 14px 14px 6px 6px; padding: 5px 10px; display: flex; align-items: center; gap: 8px; box-shadow: 0 -4px 20px rgba(0,0,0,.75), inset 0 1px 2px rgba(255,255,255,.15); }
+.wc-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+.wc-btns i { width: 11px; height: 11px; border-radius: 50%; display: block; border: 1.5px solid rgba(255,255,255,.35); box-shadow: 0 0 5px currentColor; }
+.wc-screen { background: #060a10; border: 1px solid #1e293b; border-radius: 5px; padding: 4px 8px; min-width: 132px; display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 6px; text-align: center; }
+.wc-Screen-l, .wc-Screen-r { font-size: 0.54rem; color: #94a3b8; display: flex; flex-direction: column; gap: 1px; }
+.wc-Screen-l b { color: #facc15; font-size: 0.64rem; }
+.wc-Screen-r b { color: #38bdf8; font-size: 0.64rem; }
+.wc-Screen-c b { font: 900 1.55rem var(--mono); color: #fff; line-height: 1; display: block; }
+.wc-Screen-c span { font-size: 0.68rem; color: #e2e8f0; font-weight: 700; }
 
 /* Höger botten: Växel, 15 LED RPM, Hastighet & G-kraft/Däcktemp */
-.hud-right-bot { display: flex; flex-direction: column; gap: 6px; width: 245px; }
-.hud-dash-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.hud-gear { font: 900 2.3rem var(--mono); width: 34px; text-align: center; color: #fff; line-height: 1; }
-.hud-leds { display: flex; gap: 2px; height: 8px; margin-bottom: 3px; }
-.hud-leds i { flex: 1; background: #1f2937; border-radius: 2px; }
-.hud-leds i.g { background: #22c55e; box-shadow: 0 0 6px #22c55e; }
-.hud-leds i.y { background: #facc15; box-shadow: 0 0 6px #facc15; }
-.hud-leds i.r { background: #ef4444; box-shadow: 0 0 8px #ef4444; }
-.hud-speed b { font: 900 1.9rem var(--mono); color: #fff; line-height: 1; display: block; text-align: right; }
-.hud-speed span { font-size: 0.58rem; color: #9ca3af; display: block; text-align: right; }
-.hud-badges { display: flex; gap: 4px; margin-top: 6px; justify-content: space-between; }
-.hud-badge { flex: 1; text-align: center; font-size: 0.58rem; font-weight: 700; padding: 2px 4px; border-radius: 4px; background: rgba(255,255,255,.06); color: #9ca3af; border: 1px solid rgba(255,255,255,.1); }
+.hud-right-bot { display: flex; flex-direction: column; gap: 5px; width: 205px; }
+.hud-dash-top { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+.hud-gear { font: 900 1.95rem var(--mono); width: 28px; text-align: center; color: #fff; line-height: 1; }
+.hud-leds { display: flex; gap: 1.5px; height: 6px; margin-bottom: 2px; }
+.hud-leds i { flex: 1; background: #1f2937; border-radius: 1.5px; }
+.hud-leds i.g { background: #22c55e; box-shadow: 0 0 5px #22c55e; }
+.hud-leds i.y { background: #facc15; box-shadow: 0 0 5px #facc15; }
+.hud-leds i.r { background: #ef4444; box-shadow: 0 0 7px #ef4444; }
+.hud-speed b { font: 900 1.65rem var(--mono); color: #fff; line-height: 1; display: block; text-align: right; }
+.hud-speed span { font-size: 0.54rem; color: #9ca3af; display: block; text-align: right; }
+.hud-badges { display: flex; gap: 3px; margin-top: 4px; justify-content: space-between; }
+.hud-badge { flex: 1; text-align: center; font-size: 0.52rem; font-weight: 700; padding: 1.5px 3px; border-radius: 4px; background: rgba(255,255,255,.06); color: #9ca3af; border: 1px solid rgba(255,255,255,.1); }
 .hud-badge.on { background: rgba(16, 185, 129, 0.22); color: #6ee7b7; border-color: rgba(16, 185, 129, 0.45); }
 .hud-badge.warn { background: rgba(239, 68, 68, 0.25); color: #fca5a5; border-color: rgba(239, 68, 68, 0.55); }
-.hud-gcard { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 0.62rem; }
-.hud-tires { flex: 1; display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
-.hud-tire-box { background: rgba(14, 165, 233, 0.14); border: 1px solid rgba(56, 189, 248, 0.32); border-radius: 5px; padding: 3px 6px; display: flex; justify-content: space-between; }
+.hud-gcard { display: flex; align-items: center; justify-content: space-between; gap: 6px; font-size: 0.56rem; }
+.hud-tires { flex: 1; display: grid; grid-template-columns: 1fr 1fr; gap: 3px; }
+.hud-tire-box { background: rgba(14, 165, 233, 0.14); border: 1px solid rgba(56, 189, 248, 0.32); border-radius: 4px; padding: 2px 5px; display: flex; justify-content: space-between; }
 .hud-tire-box b { color: #7dd3fc; }
-.hud-keys-bar { text-align: center; font-size: 0.62rem; color: rgba(243,244,246,.85); background: rgba(0,0,0,.5); padding: 3px 12px; border-radius: 99px; margin: 2px auto 0; backdrop-filter: blur(4px); }
+.hud-keys-bar { text-align: center; font-size: 0.56rem; color: rgba(243,244,246,.85); background: rgba(0,0,0,.5); padding: 2px 10px; border-radius: 99px; margin: 2px auto 0; backdrop-filter: blur(4px); }
 
 .pause { position: fixed; inset: 0; background: rgba(0,0,0,.75); display: grid; place-items: center; pointer-events: auto; z-index: 40; } .pause[hidden] { display: none; } .pause > div { background: var(--panel); border: 1px solid var(--line); border-radius: 20px; padding: 24px; display: flex; flex-direction: column; gap: 12px; min-width: 260px; text-align: center; font-family: inherit; }
 .touch { position: fixed; inset: 0; pointer-events: none; z-index: 25; } .touch > div { position: absolute; bottom: calc(84px + env(safe-area-inset-bottom)); } .t-l { left: 14px; display: flex; gap: 10px; }
