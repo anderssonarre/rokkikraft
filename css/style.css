@@ -219,6 +219,21 @@ body.racing { overflow: hidden; } body.racing #app { padding: 0; }
 .hud-tire-box b { color: #7dd3fc; }
 .hud-keys-bar { text-align: center; font-size: 0.56rem; color: rgba(243,244,246,.85); background: rgba(0,0,0,.5); padding: 2px 10px; border-radius: 99px; margin: 2px auto 0; backdrop-filter: blur(4px); }
 
+/* GoPro Clean-läge (standard i GoPro In-Car-vy: helt fri sikt över förararmar, mockaratt, aluminiumpanel, golvrör & dörrsträvor!) */
+.hud.gopro-clean .hud-statcard,
+.hud.gopro-clean .hud-surfcard,
+.hud.gopro-clean .hud-timecard,
+.hud.gopro-clean .hud-mepcard,
+.hud.gopro-clean .hud-gcard,
+.hud.gopro-clean #hRadar,
+.hud.gopro-clean .hud-keys-bar { display: none !important; }
+.hud.gopro-clean .hud-lb { width: 132px; padding: 4px 6px; opacity: 0.86; }
+.hud.gopro-clean .hud-mapcol { width: 146px; opacity: 0.86; }
+.hud.gopro-clean #hMap { height: 74px; }
+.hud.gopro-clean .hud-right-bot { position: fixed; top: 96px; right: 10px; width: 146px; opacity: 0.86; }
+.hud.gopro-clean .hud-gear { font-size: 1.45rem; width: 20px; }
+.hud.gopro-clean .hud-speed b { font-size: 1.25rem; }
+
 .pause { position: fixed; inset: 0; background: rgba(0,0,0,.75); display: grid; place-items: center; pointer-events: auto; z-index: 40; } .pause[hidden] { display: none; } .pause > div { background: var(--panel); border: 1px solid var(--line); border-radius: 20px; padding: 24px; display: flex; flex-direction: column; gap: 12px; min-width: 260px; text-align: center; font-family: inherit; }
 .touch { position: fixed; inset: 0; pointer-events: none; z-index: 25; } .touch > div { position: absolute; bottom: calc(84px + env(safe-area-inset-bottom)); } .t-l { left: 14px; display: flex; gap: 10px; }
 .t-r { right: 14px; display: grid; grid-template-columns: auto auto; grid-template-rows: auto auto; gap: 10px; align-items: end; }

@@ -215,7 +215,7 @@ export class Race {
     const totalCars = cfg.opps.length + 1;
 
     host.innerHTML = `<div class="race"><canvas class="race-cv"></canvas>
-      <div class="hud">
+      <div class="hud gopro-clean" id="hHudRoot">
         <!-- ÖVRE RADEN: Leaderboard + Bränsle/Skada/Lisälenkki + 5 Startljus + Underlag/Minimap/Tider -->
         <div class="hud-row-top">
           <div class="hud-col-l">
@@ -250,7 +250,8 @@ export class Race {
           <div class="hud-col-c">
             <div class="hud-lights" id="hLights">${'<i></i>'.repeat(5)}</div>
             <div class="hud-card hud-top-btns">
-              <button class="hud-mini-btn on" id="hCamBtn" title="Byt kamera (C)">🎥 IN-CAR KUPÉ [C]</button>
+              <button class="hud-mini-btn on" id="hCamBtn" title="Byt kamera (C)">🎥 GOPRO IN-CAR [C]</button>
+              <button class="hud-mini-btn" id="hTeleBtn" title="Visa/dölj telemetri (T)">📊 TELEMETRI [T]</button>
               <button class="hud-mini-btn" id="hPause">☰ PAUS [P]</button>
             </div>
           </div>
@@ -448,6 +449,13 @@ export class Race {
     if (wc) wc.style.display = this.cam === 1 ? '' : 'none';
   }
 
+  toggleTele() {
+    const root = this.$('hHudRoot'), btn = this.$('hTeleBtn');
+    if (!root) return;
+    const isClean = root.classList.toggle('gopro-clean');
+    if (btn) btn.classList.toggle('on', !isClean);
+  }
+
   bind() {
     const map = { ArrowUp: 'gas', KeyW: 'gas', ArrowDown: 'brk', KeyS: 'brk', ArrowLeft: 'left', KeyA: 'left', ArrowRight: 'right', KeyD: 'right', Space: 'hb' };
     this.kd = e => {
@@ -455,6 +463,7 @@ export class Race {
       else if (e.code === 'KeyE' || e.code === 'ShiftLeft' || e.code === 'ShiftRight') this.shift(1);
       else if (e.code === 'KeyQ' || e.code === 'ControlLeft') this.shift(-1);
       else if (e.code === 'KeyC') this.cycleCam();
+      else if (e.code === 'KeyT') this.toggleTele();
       else if (e.code === 'KeyR') { if (this.state === 'run') this.resetCar(this.player); }
       else if (e.code === 'KeyP' || e.code === 'Escape') this.togglePause();
     };
@@ -467,6 +476,7 @@ export class Race {
       b.addEventListener('pointerdown', on); b.addEventListener('pointerup', off); b.addEventListener('pointercancel', off); b.addEventListener('pointerleave', off);
     }
     this.$('hCamBtn').onclick = () => this.cycleCam();
+    if (this.$('hTeleBtn')) this.$('hTeleBtn').onclick = () => this.toggleTele();
     this.$('hPause').onclick = () => this.togglePause();
     this.$('hResume').onclick = () => this.togglePause();
     this.$('hQuit').onclick = () => { this.player.retired = true; this.player.flag = 'K'; this.finish(); };
@@ -833,18 +843,18 @@ export class Race {
 
     let eye, at, up = [0, 1, 0], fov = 1.05;
     if (this.cam === 0) {
-      // GOPRO ROLL-BAR IN-CAR KUPÉVY (Exakt samma vinkel som i de 4 GoPro-referensbilderna: [-0.30, 1.03, -0.10]!)
+      // GOPRO ROLL-BAR IN-CAR KUPÉVY (Monterad vid B-stolpen [-0.62, 1.06, 0.02] med vidvinkel precis som i de 4 GoPro-referensbilderna!)
       const vib = Math.sin(this.t * 45) * 0.0018 * (p.rpm / 6000);
       const transformPt = (lx, ly, lz) => [
         pMat[0] * lx + pMat[4] * ly + pMat[8] * lz + pMat[12],
         pMat[1] * lx + pMat[5] * ly + pMat[9] * lz + pMat[13],
         pMat[2] * lx + pMat[6] * ly + pMat[10] * lz + pMat[14],
       ];
-      eye = transformPt(-0.30, 1.03 + vib, -0.10);
-      // Titta framåt-vänster över 3-ekrade mockaratten, förararmarna, DIY-aluminiumpanelen och ut genom vindrutan & sidorutan!
-      at = transformPt(10.0, 0.62 + vib, -0.32 + p.steer * 0.95);
+      eye = transformPt(-0.62, 1.06 + vib, 0.02);
+      // Titta snett nedåt-framåt så hela kupén (hjälm, overall-armar, mockaratt, aluminiumpanel, Eventtec-skylt, golvrör & dörrsträvor) syns!
+      at = transformPt(8.0, 0.25 + vib, -0.08 + p.steer * 0.85);
       up = [pMat[4], pMat[5], pMat[6]];
-      fov = 1.18;
+      fov = 1.28;
     } else if (this.cam === 1) {
       // HUVKAMERA (framme på motorhuven)
       const c = Math.cos(p.h), s = Math.sin(p.h);
@@ -895,12 +905,12 @@ export class Race {
     if (this.cam === 0 && this.cockpit && this.steerWheel) {
       R.clearDepth();
       R.draw(this.cockpit, pMat, p.paint, true);
-      // Ratten sitter vid [0.16, 0.79, -0.31], lutad 0.22 rad uppåt och roterar med styrutslaget p.steer!
-      const wLocal = M4.localRotX(0.16, 0.79, -0.31, 0.22, -p.steer * 0.85);
+      // Ratten sitter vid [0.16, 0.78, -0.31], lutad 0.22 rad uppåt och roterar med styrutslaget p.steer!
+      const wLocal = M4.localRotX(0.16, 0.78, -0.31, 0.22, -p.steer * 0.85);
       R.draw(this.steerWheel, M4.mul(pMat, wLocal), p.paint, true);
       if (this.pendant) {
         const sway = clamp((p.ay || 0) * 0.045 + Math.sin(this.t * 6.0) * 0.03, -0.45, 0.45);
-        const pLocal = M4.localRotX(0.25, 1.07, -0.02, 0.0, sway);
+        const pLocal = M4.localRotX(0.30, 1.06, -0.02, 0.0, sway);
         R.draw(this.pendant, M4.mul(pMat, pLocal), p.paint, true);
       }
     }
