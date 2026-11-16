@@ -250,3 +250,10 @@ body.racing { overflow: hidden; } body.racing #app { padding: 0; }
 @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
 
 .stats-p .pills { margin-top: 6px; } table.stat-t { margin-top: 12px; } table.stat-t td:not(:first-child), table.stat-t th:not(:first-child) { text-align: right; }
+
+/* online */
+.roomcode{font:900 clamp(2.6rem,9vw,4.4rem)/1 ui-monospace,Menlo,Consolas,monospace;letter-spacing:.28em;color:#ffd23f;margin:.15em 0 .3em;text-shadow:0 3px 0 rgba(0,0,0,.45)}
+.on-in{background:#0e1318;border:1px solid #2c3742;border-radius:10px;color:#f1f4f6;padding:.6em .8em;font:inherit;min-width:0}
+.on-in.code{width:6.2em;text-transform:uppercase;letter-spacing:.3em;font-weight:800;text-align:center}
+.on-in.link{flex:1;font-size:.85rem;color:#9fb0bf}
+.dot{display:inline-block;width:.8em;height:.8em;border-radius:50%;margin-right:.5em;border:1px solid rgba(255,255,255,.35);vertical-align:-.05em}

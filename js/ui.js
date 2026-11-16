@@ -5,6 +5,7 @@ import { S, save, reset, activeCar } from './state.js';
 import { getTrack } from './track.js';
 import { Race, fmtTime, CAM_NAMES, DEFAULT_CAM } from './race.js';
 import { newTask, checkTask } from './dyno.js';
+import { Room, makeCode, cleanCode } from './net.js';
 
 const app = () => document.getElementById('app');
 const eur = v => fmt(Math.round(v)) + ' €';
@@ -24,9 +25,9 @@ const topLevel = () => { let t = 0; CAREER.forEach((l, i) => { if (levelOpen(i))
 // ---------- ram ----------
 export function render() {
   const racing = U.view === 'race'; document.body.classList.toggle('racing', racing); if (racing) return;
-  const V = { menu, karriar, event: eventView, garage, trim, dyno, komp, settings }[U.view] || menu;
+  const V = { menu, karriar, event: eventView, garage, trim, dyno, komp, settings, online }[U.view] || menu;
   app().innerHTML = `<header class="topbar">${U.view !== 'menu' && U.view !== 'event' ? '<button class="back" data-act="go" data-arg="menu">‹ Meny</button>' : '<span class="brand">ROKKI<b>KRAFT</b></span>'}
-    <span class="top-title">${{ karriar: 'Karriär & Banor', event: 'Tävlingsdag', garage: 'Garage & Besiktning', trim: 'Trimning', dyno: 'Räknebänken', komp: 'Kompendium & Sääntökirja', settings: 'Inställningar' }[U.view] || ''}</span>
+    <span class="top-title">${{ karriar: 'Karriär & Banor', event: 'Tävlingsdag', garage: 'Garage & Besiktning', trim: 'Trimning', dyno: 'Räknebänken', komp: 'Kompendium & Sääntökirja', settings: 'Inställningar', online: 'Online – rumskod' }[U.view] || ''}</span>
     <span class="wallet">${S.warnings > 0 ? `<i style="color:#ff6a3d">⚠ ${S.warnings}/3 varningar</i>` : ''}${S.vouchers > 0 ? `<i style="color:#5ce080">🎟 ${S.vouchers} hyvityskuitti</i>` : ''}<b>${eur(S.money)}</b><i>${CAREER[topLevel()].name}</i></span></header>
     <main class="view v-${U.view}">${V()}</main>${U.toast ? `<div class="toast">${U.toast}</div>` : ''}`;
   if (U.toast) { clearTimeout(U.toastT); U.toastT = setTimeout(() => { U.toast = ''; document.querySelector('.toast')?.remove(); }, 2800); }
@@ -53,6 +54,7 @@ function menu() {
     <div class="hero-r">${plate(numStr, hex(paintOf(cs.paint).rgb), cs.bw)}</div></section>
     ${statsPanel()}
     <nav class="mgrid">
+      ${btn('online', '🌐', ON.room ? `Rum ${ON.room.code}` : 'Rumskod', 'Spela online', 'Skapa ett rum eller gå med i en kompis rum och kör samma heat', 'c1')}
       ${btn('karriar', '🏁', `Nivå ${topLevel() + 1}/4`, 'Karriär & Banor', `Tammisaari, Rantasalmi m.fl. · Sääntökirja 2026`, 'c1')}
       ${btn('garage', '🔧', `${owned} bilar · ${parts} delar`, 'Garage & Besiktning', 'Katsastuskortti, kaaret, klassval & uppgraderingar', 'c2')}
       ${btn('trim', '🔥', fuelById(cs.tune.fuel).name, 'Trimning', 'λ, tändläge, bränsle och utväxling', 'c3')}
@@ -468,8 +470,70 @@ function startRace(o) {
   U.race = new Race(app(), {
     ...o, onDone: res => { countRace(o.trackId, res); done(res); }, record: S.records[o.trackId], settings: S.settings,
     onCameraChange: camera => { S.settings.camera = camera; save(); },
-    player: { name: `${S.name || 'Du'} (#${numStr})`, num: numStr, spec: s, paint: paintOf(cs.paint).rgb, bw: cs.bw || 'wb', aids: { ...S.aids } },
+    player: { name: o.net ? `${netName()} #${numStr}` : `${S.name || 'Du'} (#${numStr})`, num: numStr, spec: s, paint: paintOf(cs.paint).rgb, bw: cs.bw || 'wb', aids: { ...S.aids } },
   });
+}
+
+// ---------- online (rumskod) ----------
+const ON = { code: '', room: null, last: null, copied: 0 };
+const esc = t => String(t ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const netName = () => (S.name && S.name !== 'Du' ? S.name : 'Förare').slice(0, 20);
+function netMe() {
+  const cs = activeCar(), insp = currentInsp(), s = insp.spec;
+  return { name: netName(), car: { spec: s, paint: paintOf(cs.paint).rgb, bw: cs.bw || 'wb', num: formatCarNum(cs.num, insp.cls), model: carById(S.active).name, hp: Math.round(curve(s).hp), cls: insp.rules.name } };
+}
+const roomLink = code => location.origin + location.pathname + '?rum=' + code;
+function setRumParam(code) { try { const q = new URLSearchParams(location.search); if (code) q.set('rum', code); else q.delete('rum'); const t = q.toString(); history.replaceState(null, '', location.pathname + (t ? '?' + t : '')); } catch (e) { } }
+function openRoom(code, host) {
+  if (ON.room) ON.room.leave();
+  const room = ON.room = new Room({ code, host, me: netMe(), onChange: () => { if (U.view === 'online') render(); } });
+  ON.last = null; if (host) room.cfg.track = U.quick.track;
+  room.onStart = (grid, cfg) => netRace(grid, cfg);
+  setRumParam(code);
+}
+function leaveRoom() { if (ON.room) ON.room.leave(); ON.room = null; ON.last = null; setRumParam(''); }
+function netRace(grid, cfg) {
+  const room = ON.room, my = grid.findIndex(g => g.id === room.id); if (my < 0 || U.view === 'race') return;
+  const opps = grid.filter(g => g.id !== room.id).map(g => g.ai
+    ? { name: g.name, paint: g.paint, bw: g.bw, skill: g.skill, spec: g.spec, nid: g.id, remote: !room.isHost }
+    : { name: g.name, paint: g.car.paint, bw: g.car.bw, num: g.car.num, skill: 1, spec: g.car.spec, nid: g.id, remote: true });
+  startRace({
+    trackId: cfg.track, laps: cfg.laps, opps, grid: my, gridRows: 2, useJoker: !!cfg.joker, sideContact: true, title: 'Onlineheat', mode: 'heat', net: room,
+    onDone: r => { room.backToLobby(); ON.last = r; if (isFinite(r.bestLap)) record(cfg.track, r.bestLap); U.view = 'online'; render(); },
+  });
+}
+function online() {
+  const room = ON.room;
+  if (!room) return `<section class="panel"><span class="kick">ONLINE</span><h1>Kör mot andra med rumskod</h1>
+      <p class="dim">En skapar ett rum och får en kod på fyra tecken. De andra skriver in koden (eller öppnar länken) och hamnar i samma rum. Alla kör med sin egen aktiva bil från garaget; värden väljer bana, varv och AI-bilar och trycker start. Upp till 8 bilar per heat.</p>
+      <div class="row"><span class="lbl">Ditt namn</span><input class="on-in" id="onName" maxlength="20" value="${esc(netName())}"></div>
+      <div class="row"><button class="btn" data-act="on-create">➕ Skapa rum</button></div>
+      <div class="row"><span class="lbl">Rumskod</span><input class="on-in code" id="onCode" maxlength="4" autocomplete="off" autocapitalize="characters" placeholder="ABCD" value="${esc(ON.code)}"><button class="btn" data-act="on-join">Gå med</button></div>
+    </section>`;
+  const st = room.status, back = '<div class="row"><button class="btn ghost" data-act="on-leave">‹ Tillbaka</button></div>';
+  const head = `<span class="kick">ONLINE · RUM</span><div class="roomcode">${room.code}</div>`;
+  if (st === 'connecting') return `<section class="panel">${head}<p>Ansluter till spelservern…</p>${back}</section>`;
+  if (st === 'offline') return `<section class="panel">${head}<p>⚠ Kunde inte nå spelservrarna. Kolla nätet (vissa skol- och jobbnät blockerar WebSocket-trafik) – försöker igen automatiskt.</p>${back}</section>`;
+  if (st === 'notfound') return `<section class="panel">${head}<p>⚠ Hittade inget öppet rum med koden <b>${room.code}</b>. Kolla koden och att värden har rummet öppet.</p><div class="row"><button class="btn" data-act="on-retry">Försök igen</button><button class="btn ghost" data-act="on-leave">‹ Tillbaka</button></div></section>`;
+  if (st === 'closed') return `<section class="panel">${head}<p>Värden stängde rummet eller tappade anslutningen.</p>${back}</section>`;
+  const cfg = room.cfg, H = room.isHost, trk = TRACKS.find(t => t.id === cfg.track) || TRACKS[0], busy = !H && room.roomSt === 'race';
+  let h = `<section class="panel">${head}
+      <div class="row"><input class="on-in link" readonly value="${esc(roomLink(room.code))}" onclick="this.select()"><button class="btn small" data-act="on-copy">${ON.copied ? '✓ Kopierad' : '📋 Kopiera länk'}</button></div>
+      <p class="dim">Skicka koden eller länken till dem du vill köra mot. ${room.connected ? `Ansluten (${room.connected} server${room.connected > 1 ? 'ar' : ''}).` : '⚠ Ingen anslutning just nu – återansluter…'}</p></section>
+    <section class="panel"><h2>Förare i rummet (${room.members.length}/8)</h2><table class="stats">
+      ${room.members.map(m => `<tr><td><span class="dot" style="background:${hex(m.car?.paint || [.5, .5, .5])}"></span><b>${esc(m.name)}</b>${m.host ? ' · värd' : ''}${m.id === room.id ? ' · du' : ''}</td><td>#${esc(m.car?.num)} ${esc(m.car?.model)} · ${esc(m.car?.hp)} hk · ${esc(m.car?.cls)}</td></tr>`).join('')}</table>
+      <div class="row"><button class="btn small ghost" data-act="go" data-arg="garage">Byt bil i garaget</button></div></section>`;
+  h += `<section class="panel"><h2>Heat</h2>`;
+  if (H) h += `<div class="chips">${TRACKS.map(t => `<button class="chip ${cfg.track === t.id ? 'on' : ''}" data-act="on-cfg" data-arg="track:${t.id}">${t.name}<small>${SURF[t.surface].name.split(' ')[0]}</small></button>`).join('')}</div>
+      <div class="row"><span class="lbl">Varv</span>${[2, 3, 4, 6].map(n => `<button class="chip s ${cfg.laps === n ? 'on' : ''}" data-act="on-cfg" data-arg="laps:${n}">${n}</button>`).join('')}
+        <span class="lbl">AI-bilar</span>${[0, 2, 4].map(n => `<button class="chip s ${cfg.ai === n ? 'on' : ''}" data-act="on-cfg" data-arg="ai:${n}">${n}</button>`).join('')}
+        <span class="lbl">Lisälenkki</span><button class="chip s ${cfg.joker ? 'on' : ''}" data-act="on-cfg" data-arg="joker:${cfg.joker ? 0 : 1}">${cfg.joker ? 'PÅ' : 'AV'}</button></div>
+      <div class="row"><button class="btn" data-act="on-start" ${room.connected ? '' : 'disabled'}>🏁 Starta heatet${room.members.length < 2 ? ' (ensam + AI)' : ` för ${room.members.length} förare`}</button><button class="btn ghost danger" data-act="on-leave">Stäng rummet</button></div>`;
+  else h += `<table class="stats"><tr><td>Bana</td><td>${trk.name}</td></tr><tr><td>Varv</td><td>${cfg.laps}</td></tr><tr><td>AI-bilar</td><td>${cfg.ai}</td></tr><tr><td>Lisälenkki</td><td>${cfg.joker ? 'Körs' : 'Körs ej'}</td></tr></table>
+      <p>${busy ? '⏳ Ett heat pågår – du kommer med i nästa.' : '⏳ Väntar på att värden startar heatet…'}</p><div class="row"><button class="btn ghost danger" data-act="on-leave">Lämna rummet</button></div>`;
+  h += `</section>`;
+  if (ON.last) h += `<section class="panel"><h2>Senaste heatet</h2><table class="stats">${ON.last.order.map((o, i) => `<tr><td>${i + 1}. ${o.isPlayer ? '<b>' + esc(o.name) + '</b>' : esc(o.name)}${o.flag ? ` <span class="lock">${esc(o.flag)}</span>` : ''}</td><td>${o.time != null ? fmtTime(o.time) : '–'}</td></tr>`).join('')}</table></section>`;
+  return h;
 }
 
 // ---------- garage ----------
@@ -693,7 +757,24 @@ function settings() {
 
 // ---------- händelser ----------
 const ACT = {
-  go(a) { U.view = a; U.preview = null; if (a === 'komp') U.kompOpen = null; window.scrollTo(0, 0); },
+  go(a) { U.view = a; U.preview = null; if (a === 'komp') U.kompOpen = null; if (a === 'online' && ON.room) ON.room.setMe(netMe()); window.scrollTo(0, 0); },
+  'on-create'() { const n = document.getElementById('onName'); if (n) { S.name = n.value.trim() || 'Du'; save(); } openRoom(makeCode(), true); },
+  'on-join'() {
+    const n = document.getElementById('onName'); if (n) { S.name = n.value.trim() || 'Du'; save(); }
+    const code = cleanCode(document.getElementById('onCode')?.value || ON.code); ON.code = code;
+    if (code.length !== 4) { toast('Rumskoden har fyra tecken.'); return; }
+    openRoom(code, false);
+  },
+  'on-retry'() { openRoom(ON.room.code, false); },
+  'on-leave'() { leaveRoom(); },
+  'on-cfg'(a) { const [k, v] = a.split(':'); ON.room?.setCfg({ [k]: k === 'track' ? v : +v }); return false; },
+  'on-copy'() { const l = roomLink(ON.room.code); try { navigator.clipboard.writeText(l); } catch (e) { } ON.copied = 1; setTimeout(() => { ON.copied = 0; if (U.view === 'online') render(); }, 1800); },
+  'on-start'() {
+    const room = ON.room; if (!room || !room.isHost) return false; const cfg = room.cfg;
+    const players = room.members.filter(m => m.car && m.car.spec).map(m => ({ id: m.id, name: `${m.name} #${m.car.num}`, car: m.car }));
+    const ais = makeOpps(Math.max(0, Math.min(cfg.ai, 8 - players.length)), 1, 0.9, currentInsp().cls).map((o, i) => ({ id: 'ai' + i, ai: 1, ...o }));
+    const grid = shuffle([...players, ...ais]); room.start(grid); netRace(grid, cfg); return false;
+  },
   aid(a) { S.aids[a] = S.aids[a] ? 0 : 1; save(); },
   'drv-cls'(a) { S.driverCls = a; save(); },
   'do-lippumies'() { S.lippumies = 0; S.warnings = 0; save(); toast('🚩 Du har stått flaggvakt en tävlingsdag (lippumiespesti) – du har nu tävlingsrätt igen!'); },
@@ -850,5 +931,6 @@ export function initUI() {
   document.addEventListener('click', e => { const el = e.target.closest('[data-act]'); if (!el || el.disabled) return; const f = ACT[el.dataset.act]; if (!f) return; if (f(el.dataset.arg, el) !== false) render(); });
   document.addEventListener('change', e => { const el = e.target.closest('[data-in]'); if (!el) return; const f = INP[el.dataset.in]; if (f && f(el.value) !== false) render(); });
   document.addEventListener('input', e => { const el = e.target.closest('input[type=range][data-in]'); if (!el) return; const b = el.closest('label')?.querySelector('span b'); if (b && ['lambda', 'finalScale'].includes(el.dataset.in)) b.textContent = (+el.value).toFixed(2).replace('.', ','); });
+  try { const c = cleanCode(new URLSearchParams(location.search).get('rum')); if (c.length === 4) { ON.code = c; U.view = 'online'; } } catch (e) { }
   render();
 }

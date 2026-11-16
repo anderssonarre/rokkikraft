@@ -411,11 +411,15 @@ export class Race {
     for (let sl = 0; sl < N; sl++) defs.push(sl === pslot ? { ...cfg.player, isP: true } : cfg.opps[oi++]);
     this.cars = defs.map((d, sl) => makeCar(d, trk, sl, !!d.isP, this.gridRows, N));
     this.player = this.cars.find(c => c.isPlayer);
+    // Online: bilar som simuleras hos någon annan (remote) får sitt läge via nätet i stället för AI/fysik
+    this.net = cfg.net || null;
+    this.cars.forEach((c, sl) => { const d = defs[sl]; c.num = d.num; if (d.nid) c.nid = d.nid; if (d.remote) { c.remote = true; c.ai = null; c.snap = null; c.seenT = Date.now(); } });
+    if (this.net) this.player.nid = this.net.id;
     if (location.search.includes('auto')) { const c = this.player; c.auto = true; c.skill = 0.97; c.ai = { jokerLap: 0, off: 0, stuck: 0, prof: null }; c.aids = { abs: 1, tc: 1, auto: 1 }; }
     this.player.dmg = cfg.dmg0 || 0; this.player.tireWearF = cfg.wear0?.[0] || 0; this.player.tireWearR = cfg.wear0?.[1] || 0; this.player.radLeak = !!cfg.radLeak0;
     const needMirrors = !this.sideContact;
     for (const c of this.cars) {
-      if (this.R) c.obj = this.view.addCar(c.spec.body, c.paint, { bars: c.spec.dmg < 1, mirrors: needMirrors, bw: c.bw, num: c.isPlayer ? (cfg.player.num || '') : 1 + ((c.slot * 37 + 11) % 98) });
+      if (this.R) c.obj = this.view.addCar(c.spec.body, c.paint, { bars: c.spec.dmg < 1, mirrors: needMirrors, bw: c.bw, num: c.isPlayer ? (cfg.player.num || '') : c.num || 1 + ((c.slot * 37 + 11) % 98) });
       c.y = trk.heightAt(c.x, c.z); c.wspin = 0;
       if (c.ai) {
         const mu = trk.surf.mu * c.spec.mu, k = c.skill; const top = 50;
@@ -435,6 +439,7 @@ export class Race {
     this.$('hTouch').style.display = showTouch ? '' : 'none'; if (showTouch) this.$('hKeys').style.display = 'none';
     if (cfg.mode === 'time') { this.$('hLbCard').style.display = 'none'; }
     this.audioInit();
+    if (this.net) { this.goAt = Infinity; this.net.race = this; this.net.imReady(); this.msg('Väntar på övriga förare…', 60); }
     this.last = performance.now(); this.raf = requestAnimationFrame(t => this.frame(t));
   }
 
@@ -481,7 +486,12 @@ export class Race {
     if (this.$('hTeleBtn')) this.$('hTeleBtn').onclick = () => this.toggleTele();
     this.$('hPause').onclick = () => this.togglePause();
     this.$('hResume').onclick = () => this.togglePause();
-    this.$('hQuit').onclick = () => { this.player.retired = true; this.player.flag = 'K'; this.finish(); };
+    this.$('hQuit').onclick = () => {
+      this.player.retired = true; this.player.flag = 'K';
+      if (!this.net) return this.finish();
+      if (this.net.isHost && this.cars.every(c => c.remote ? c.finished || c.retired : true)) this.endAt = this.t; // ensam kvar: avsluta för alla
+      this.togglePause(); if (this.state === 'run') this.state = 'flag'; this.endLocal();
+    };
   }
 
   togglePause() { if (this.done) return; this.paused = !this.paused; this.$('hPauseBox').hidden = !this.paused; this.last = performance.now(); if (this.gain) this.gain.gain.value = 0; }
@@ -608,7 +618,7 @@ export class Race {
     if (c.isPlayer) {
       if (c.warnCount >= 2) {
         this.msg(`SVART FLAGG (${code})<br><small>${title} – 2 varningar i heatet, du placeras sist!</small>`, 3.4, 'warn');
-        setTimeout(() => this.finish(), 2200);
+        setTimeout(() => this.endLocal(), 2200);
         this.state = 'flag';
       } else {
         this.msg(`VAROITUS ${code}: ${title}<br><small>${desc} (varning = sist i heatet!)</small>`, 3.4, 'warn');
@@ -620,6 +630,11 @@ export class Race {
     const trk = this.trk, n = trk.n, p = this.player;
     if (this.state === 'grid') {
       this.gridT += dt; this.input(dt);
+      if (this.net) { // gemensam start: värden skickar en klocktid, lamporna räknar ner mot den
+        const g = this.net.goAt;
+        if (g && !this.goWall) { this.goWall = g; this.gridT = 0; this.goAt = Math.max(0.9, (g - this.net.now()) / 1000); this.msg('Alla klara – se på startljusen!', 1.4); }
+        if (this.goWall) this.gridT = this.goAt - (this.goWall - this.net.now()) / 1000;
+      }
       if (this.gridT >= this.goAt) { this.state = 'run'; this.msg('KÖR! 🏁', 1.2, 'go'); }
       else {
         for (const c of this.cars) if (!c.isPlayer) { c.thr = 0; c.brk = 1; }
@@ -632,8 +647,9 @@ export class Race {
       }
     }
     if (this.state !== 'run' && this.state !== 'flag') return;
-    this.t += dt;
+    if (this.net) this.t = Math.max(this.t, (this.net.now() - this.goWall) / 1000); else this.t += dt;
     for (const c of this.cars) {
+      if (c.remote) { this.netCar(c, dt); continue; }
       if (c.isPlayer) {
         if (this.state === 'run' && !c.finished && !c.retired) {
           if (c.auto) aiDrive(c, this, dt); else this.input(dt);
@@ -660,7 +676,7 @@ export class Race {
         if (hit > 9.2 && Math.abs(c.vy) > 3.5 && !c.kaato && this.state === 'run') {
           c.kaato = true; c.retired = true; this.state = 'flag';
           this.msg('KA – KAATO (RULLNING)!<br><small>Takrännan i marken – heatet avbryts, kräver kaatokatsastus!</small>', 3.6, 'warn');
-          setTimeout(() => this.finish(), 2400);
+          setTimeout(() => this.endLocal(), 2400);
         }
       }
 
@@ -707,7 +723,14 @@ export class Race {
     for (let a = 0; a < this.cars.length; a++) for (let b = a + 1; b < this.cars.length; b++) {
       const A = this.cars[a], B = this.cars[b];
       if (Math.abs(A.x - B.x) > 6 || Math.abs(A.z - B.z) > 6) continue;
+      let rm = null, sv;
+      if (this.net) {
+        if (A.remote && B.remote) continue;
+        const parked = c => (c.finished || c.retired) && Math.abs(c.vx) < 2; if (parked(A) || parked(B)) continue; // målgångna/brutna bilar spökar inte banan
+        rm = A.remote ? A : B.remote ? B : null; if (rm) sv = [rm.x, rm.z, rm.h, rm.vx, rm.vy, rm.r];
+      }
       const hit = collide(A, B);
+      if (rm) [rm.x, rm.z, rm.h, rm.vx, rm.vy, rm.r] = sv; // den andres bil flyttas bara av sin egen dator
       if (hit > 1.2 && (A.isPlayer || B.isPlayer)) {
         this.damage(hit * hit * 0.09, true);
         const other = A.isPlayer ? B : A;
@@ -732,8 +755,9 @@ export class Race {
     if (p.dmg >= 100 && !p.retired && this.state === 'run') {
       p.retired = true; this.state = 'flag';
       this.msg('K – KESKEYTTÄNYT<br><small>Bilen höll inte – stanna vid STOP-märket!</small>', 3.2, 'warn');
-      setTimeout(() => this.finish(), 2200);
+      setTimeout(() => this.endLocal(), 2200);
     }
+    if (this.net) return;
     if (this.state === 'flag' && this.flagT !== undefined && this.t - this.flagT > 3) this.finish();
     if (this.t > 600) this.finish();
   }
@@ -793,9 +817,57 @@ export class Race {
 
   livePos() { const cs = [...this.cars].sort((a, b) => b.prog - a.prog); return cs; }
 
-  finish() {
-    if (this.done) return; this.done = true; const rows = this.order(), p = this.player;
+  // ---------- online ----------
+  endLocal() { if (!this.net) return this.finish(); if (!this.done) this.msg('Väntar på att övriga går i mål…<br><small>Resultatet visas när alla är klara</small>', 600); }
+  netPack(c) {
+    const r2 = v => Math.round(v * 100) / 100;
+    const bits = (c.finished ? 1 : 0) | (c.retired ? 2 : 0) | (c.jokerDone ? 4 : 0) | (c.coneDown ? 8 : 0) | (c.jump ? 16 : 0) | (c.kaato ? 32 : 0) | (c.brk > 0.2 ? 64 : 0);
+    return [c.nid, r2(c.x), r2(c.z), Math.round(c.h * 1000) / 1000, r2(c.vx), r2(c.vy), r2(c.r), r2(c.steer), Math.round(c.prog * 10) / 10, r2(c.lat), c.i, bits,
+      c.finished ? Math.round(c.finishT * 1000) / 1000 : 0, c.sanction || '', isFinite(c.bestLap) ? Math.round(c.bestLap * 1000) / 1000 : 0, isFinite(c.sanctionT) ? r2(c.sanctionT) : 0];
+  }
+  netTick() {
+    const net = this.net, now = performance.now(); if (now - (this.netLast || 0) < 80 || this.done) return; this.netLast = now;
+    net.send({ k: 's', t: Math.round(net.now()), c: this.cars.filter(c => !c.remote).map(c => this.netPack(c)) });
+    if (!net.isHost || this.state === 'grid') return;
+    const wall = Date.now();
+    for (const c of this.cars) if (c.remote && !c.finished && !c.retired && wall - c.seenT > 8000) c.retired = true; // tappad anslutning = K
+    if (this.endAt === undefined) {
+      let first = Infinity; for (const c of this.cars) if (c.finished && c.finishT < first) first = c.finishT;
+      if (this.cars.every(c => c.finished || c.retired)) this.endAt = this.t + 2.5;
+      else if (this.t > first + 75 || this.t > 900) this.endAt = this.t;
+    }
+    if (this.endAt !== undefined && this.t >= this.endAt) {
+      const order = this.order().map(r => ({ id: r.c.nid, name: r.name, flag: r.flag, time: r.c.finished && !r.c.retired ? r.t : null }));
+      net.end(order); this.finish(order);
+    }
+  }
+  netState(m) {
+    for (const a of m.c) {
+      const c = this.cars.find(x => x.remote && x.nid === a[0]); if (!c) continue;
+      if (c.snap && m.t < c.snap.t) continue;
+      c.snap = { t: m.t, x: a[1], z: a[2], h: a[3], vx: a[4], vy: a[5], r: a[6], steer: a[7], prog: a[8], lat: a[9], i: a[10] }; c.seenT = Date.now();
+      const b = a[11]; c.finished = !!(b & 1); c.retired = !!(b & 2); c.jokerDone = !!(b & 4); c.coneDown = !!(b & 8); c.jump = !!(b & 16); c.kaato = !!(b & 32); c.brk = b & 64 ? 1 : 0;
+      if (c.finished) c.finishT = a[12]; c.sanction = a[13] || ''; c.bestLap = a[14] || Infinity; c.sanctionT = a[15] || Infinity;
+    }
+  }
+  // Fjärrbil: följ senaste lägesrapporten, framräknad med dess hastighet så att bilen inte hackar eller släpar efter
+  netCar(c, dt) {
+    const s = c.snap; if (!s) return;
+    const age = clamp((this.net.now() - s.t) / 1000, 0, 0.4), ch = Math.cos(s.h), sh = Math.sin(s.h), wx = s.vx * ch - s.vy * sh, wz = s.vx * sh + s.vy * ch;
+    const tx = s.x + wx * age, tz = s.z + wz * age, th = s.h + s.r * age, k = Math.min(1, dt * 10);
+    if (Math.abs(tx - c.x) + Math.abs(tz - c.z) > 18) { c.x = tx; c.z = tz; c.h = th; }
+    else { c.x += wx * dt + (tx - c.x) * k; c.z += wz * dt + (tz - c.z) * k; c.h += s.r * dt + wrapA(th - c.h) * k; }
+    c.vx = s.vx; c.vy = s.vy; c.r = s.r; c.steer = s.steer; c.lat = s.lat; c.i = s.i; c.prog = s.prog + s.vx * age / this.trk.ds; c.slip = 0; c.lock = 0; c.thr = 0.5;
+    c.wspin += c.vx / 0.31 * dt;
+  }
+  netEnd(order) { this.finish(order); }
+  netGone(id) { const c = this.cars.find(x => x.remote && x.nid === id); if (c && !c.finished) c.retired = true; }
+  netHostLost() { if (this.done) return; this.finish(); }
+
+  finish(netOrder) {
+    if (this.done) return; this.done = true; let rows = this.order(); const p = this.player;
     const pRow = rows.find(r => r.isPlayer);
+    if (netOrder && this.net) rows = netOrder.map(o => ({ name: o.name, isPlayer: o.id === this.net.id, flag: o.flag, t: o.time, c: { finished: o.time != null, retired: false } }));
     const res = {
       order: rows.map(r => ({ name: r.name, isPlayer: r.isPlayer, flag: r.flag, time: r.c.finished && !r.c.retired ? r.t : null })),
       pos: rows.findIndex(r => r.isPlayer) + 1,
@@ -808,13 +880,14 @@ export class Race {
 
   destroy() {
     cancelAnimationFrame(this.raf); window.removeEventListener('keydown', this.kd); window.removeEventListener('keyup', this.ku); window.removeEventListener('resize', this.rs);
-    try { if (this.ac) this.ac.close(); } catch (e) { } this.dead = true; if (this.view) this.view.dispose();
+    try { if (this.ac) this.ac.close(); } catch (e) { } this.dead = true; if (this.net && this.net.race === this) this.net.race = null; if (this.view) this.view.dispose();
   }
 
   frame(now) {
     if (this.dead) return; this.raf = requestAnimationFrame(t => this.frame(t));
     let dt = Math.min(0.05, (now - this.last) / 1000); this.last = now;
-    if (!this.paused) { this.acc += dt; let k = 0; while (this.acc >= DT && k++ < 14) { this.step(DT); this.acc -= DT; if (this.done) return; } if (this.acc > DT * 4) this.acc = 0; this.particlesStep(dt); this.audio(); }
+    if (this.net) this.netTick();
+    if (!this.paused || this.net) { this.acc += dt; let k = 0; while (this.acc >= DT && k++ < 14) { this.step(DT); this.acc -= DT; if (this.done) return; } if (this.acc > DT * 4) this.acc = 0; this.particlesStep(dt); this.audio(); }
     this.render(dt); this.hud(dt);
   }
 
