@@ -26,3 +26,21 @@ Inget byggsteg och inga beroenden. Starta en statisk server i mappen, t.ex. `npx
 - Däcken slits (mest av sladd, hjulspinn och låsning, mer på asfalt än på grus) och slitna däck ger sämre grepp. Slitaget följer med mellan heaten under en tävlingsdag och däcken kan bytas i depån.
 - Lobbyn visar körtid, antal körda heat och bästa varv per bana. Statistiken sparas lokalt i webbläsaren.
 - Upplösningen på 3D-vyn väljs under Inställningar (Auto, 1440p, 1080p, 720p, 540p).
+
+
+## Uppdatering: utvecklingslistan (november 2026)
+
+- **Huvudmeny:** Spela, Online, Karriär, Garage, Inställningar, Byt namn, Global topplista (+ Trimning, Kompendium, Räknebänken).
+- **Startbilar (gratis):** Mazda 626 1989 (2,0 R5, 150 hk, 998 kg, FWD), VW Passat 3,0 V6 (260 hk, 1 455 kg, RWD), Ford Mondeo ST220 (3,0 V6, 220 hk, 1 400 kg, FWD).
+- **Motoralternativ:** 0,9 R3 35 hk … 5,2 V8 589 hk. Garaget visar hk, volym, cylindrar, ventiler, vikt, effekt/vikt och beräknad 0–100 (simulerad med bilens egen fysik).
+- **Bilinställningar (gratis):** fjädring, dämpare, camber, toe fram/bak, markfrigång fram/bak, bakvagnens höjd, växellåda, slutväxel, bromskraft/balans, fälg 20–60 cm, däckbredd 5–60 cm, däck (Standard, Westlake, CrossClimate, CrossClimate Plus). Chiptrim 329 €. Lätta bilar har en liten kurvfördel (lastkänslighet).
+- **Kontroller:** tangentbord, PS4-handkontroll och ratt/pedaler (Gamepad API). Gas, broms, koppling, styrning och växling är separata och kan bindas om under Inställningar.
+- **AI:** 1–100 % svårighet (1 % ≈ 4–5 min/varv), bilar byggs med spelarens inställningar och effekten skalas mot spelarens bil.
+- **Mästerskap (karriär och online):** 4–8 förare per start, Alkuerä (1–2 → semi), Keräilyerä (1–2 → semi), Last Call (vinnaren → semi), semifinal (plats 1–6 → A–F-final), finaler F → A där topp 3 går upp. KESKÖIDÄ i Alkuerä och Keräilyerä. Förare med straff går inte vidare direkt. Last Call-förlorare slås ut.
+- **Straff:** EJ AJA LISÄLENKKI (missad jokerlap), A6 (hård kollision i hög fart), LI (tjuvstart).
+- **Priser:** vanligt lopp 60/35/20/15/9/4 €, mästerskapets slutplacering enligt A-finalens tabell (350 € / 25 p … 25 € / 1 p) för förare som nått en final.
+- **Resultattabell** efter varje lopp med bästa varv (lila = snabbast), total tid, jokervarv, avstånd och tid till bilen framför, straff, pris och poäng.
+- **Online:** rumskod, bana, väder, 1–100 varv, upp till 30 AI, AI-svårighet, 4–8 per start, startlistor, samtidiga heat, åskådarläge (E/Q byter bil, C kamera).
+- **Global topplista:** speltid, lopp, segrar och bästa varv per bana – sparas som "retained" meddelanden hos de publika MQTT-mäklarna (ingen egen server). Kan försvinna om mäklarna rensar data.
+- **Skador:** bucklor och mattare lack, rök från motorn, skramlande motorljud, sämre grepp/styrning. Ljud för däck/underlag och kollisioner.
+- **Väder:** sol, mulet, regn, dimma, snöfall – påverkar sikt och grepp.

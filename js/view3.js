@@ -182,6 +182,24 @@ export class View3 {
     for (const z of [0.5, -0.5]) { const hl = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.13, 0.34), dark); hl.position.set(h - 0.02, 0.66, z); G.add(hl); }
     if (opt.mirrors) for (const z of [W / 2 + 0.08, -W / 2 - 0.08]) { const m = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.1, 0.16), dark); m.position.set(aB - 0.1, 0.99, z); G.add(m); }
     this.scene.add(G); this.cars.push(G); return G; }
+  // Synliga skador: bucklar in lackerade delar (deterministiskt per bil) och gör lacken mattare/repig
+  damageCar(G, dmg) {
+    const lvl = Math.round(dmg / 5) * 5; if (G.userData.dl === lvl) return; G.userData.dl = lvl;
+    const seed = G.userData.seed ??= Math.random() * 100, k = lvl / 100;
+    G.traverse(m => {
+      if (!m.isMesh || !m.material || m.material.metalness !== 0.35) return; // lackerade delar
+      const pos = m.geometry.attributes.position; if (!m.userData.orig) m.userData.orig = pos.array.slice();
+      const o = m.userData.orig, a = pos.array;
+      for (let i = 0; i < a.length; i += 3) {
+        const x = o[i], y = o[i + 1], z = o[i + 2], n = Math.sin(x * 3.1 + seed) * Math.cos(z * 2.7 + seed * 1.7) * Math.sin(y * 4.3 + seed * 0.3);
+        const d = Math.max(0, n) * 0.16 * k;
+        a[i] = x - Math.sign(x) * d * 0.6; a[i + 1] = y - d * 0.5; a[i + 2] = z - Math.sign(z) * d;
+      }
+      pos.needsUpdate = true; m.geometry.computeVertexNormals();
+      if (!m.userData.c0) m.userData.c0 = m.material.color.clone();
+      m.material.color.copy(m.userData.c0).lerp(new (T().Color)(0.35, 0.33, 0.3), k * 0.35); m.material.roughness = 0.42 + k * 0.45; m.material.metalness = 0.35; // behåll markören
+    });
+  }
   poseCar(G, x, y, z, hdg, roll, pitch, steer, spin, braking, visible) { G.visible = visible; if (!visible) return; G.position.set(x, y, z); G.rotation.order = 'YZX'; G.rotation.set(-roll, -hdg, pitch);
     for (const w of G.userData.wheels) { w.wh.rotation.z = -spin; if (w.front) w.piv.rotation.y = -steer * 0.45; } G.userData.brake.color.setHex(braking ? 0xff2a1a : 0x8a0f0a); }
 

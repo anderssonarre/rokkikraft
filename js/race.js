@@ -761,9 +761,9 @@ export class Race {
       if (hit > 1.2 && (A.isPlayer || B.isPlayer)) {
         this.damage(hit * hit * 0.09, true); this.crash(hit);
       }
-      if (hit > 4.5 && this.state === 'run') { // A6: hård kollision i hög hastighet (liten knuff i låg fart ger inget straff)
-        const rammer = collide.front === 'A' ? A : collide.front === 'B' ? B : null;
-        if (rammer && !rammer.remote && Math.hypot(rammer.vx, rammer.vy) > 9) this.giveSanction(rammer, 'A6', 'Kollision i hög hastighet', 'Hård påkörning – straff A6');
+      if (hit > 6.5 && this.state === 'run') { // A6: hård kollision i hög hastighet (liten knuff i låg fart ger inget straff)
+        const rammer = collide.front === 'A' ? A : collide.front === 'B' ? B : null, other = rammer === A ? B : A;
+        if (rammer && !rammer.remote && Math.hypot(rammer.vx, rammer.vy) > 12 && (collide.type === 'rear' || Math.hypot(rammer.vx, rammer.vy) > Math.hypot(other.vx, other.vy) + 4)) this.giveSanction(rammer, 'A6', 'Kollision i hög hastighet', 'Hård påkörning – straff A6');
         if (hit > 3) { for (const X of [A, B]) if (!X.isPlayer && !X.remote) X.dmg = Math.min(100, (X.dmg || 0) + hit * hit * 0.09 * X.spec.dmg); }
       }
     }
@@ -779,7 +779,7 @@ export class Race {
       if (this.cars.every(c => c.finished || c.retired)) this.endAt = this.t + 2; else if (this.t > first + 60) this.endAt = this.t;
     }
     if (this.spectate && this.endAt !== undefined && this.t >= this.endAt) return this.finish();
-    if (this.state === 'flag' && this.flagT !== undefined && this.t - this.flagT > 3) this.finish();
+    if (this.state === 'flag' && this.flagT !== undefined && this.t - this.flagT > (this.cfg.mode === 'time' || p.retired || this.cars.every(c => c.finished || c.retired) ? 3 : 45)) this.finish();
     if (this.t > 600) this.finish();
   }
 
@@ -940,6 +940,9 @@ export class Race {
         pl.push({ x: bx, y: (c.y || 0) + 0.28, z: bz, vx: (Math.random() - 0.5) * 1.8, vy: 0.9 + Math.random() * 1.4, vz: (Math.random() - 0.5) * 1.8, life: 0, max: 0.75 + Math.random() * 0.85, s: 0.45 + Math.random() * 0.40, d: surf.dust });
       }
       if (c.pe > 1) c.pe = 0;
+      const dm = Math.max(0, (c.dmg || 0) - 45) + (c.isPlayer && c.temp > 112 ? 30 : 0);
+      if (dm > 0) { c.se = (c.se || 0) + dm * 0.09 * dt * (this.q ? 1 : 0.5); while (c.se > 1 && pl.length < 255) { c.se -= 1; const g = 0.18 + Math.random() * 0.12 + (c.temp > 112 ? 0.4 : 0);
+        pl.push({ x: c.x + Math.cos(c.h) * 1.6, y: (c.y || 0) + 1.0, z: c.z + Math.sin(c.h) * 1.6, vx: (Math.random() - 0.5) * 0.6 - c.vx * Math.cos(c.h) * 0.2, vy: 1.2 + Math.random(), vz: (Math.random() - 0.5) * 0.6 - c.vx * Math.sin(c.h) * 0.2, life: 0, max: 1.4 + Math.random(), s: 0.5 + Math.random() * 0.4, d: [g, g, g] }); } }
     }
     for (let i = pl.length - 1; i >= 0; i--) { const p = pl[i]; p.life += dt; if (p.life > p.max) { pl[i] = pl[pl.length - 1]; pl.pop(); continue; } p.x += p.vx * dt; p.y += p.vy * dt; p.z += p.vz * dt; p.s += dt * 1.65; }
   }
@@ -996,6 +999,7 @@ export class Race {
       at = [p.x + ch * 6, pY + 0.6, p.z + sh * 6];
     }
 
+    for (const c of this.cars) if (c.obj && (c.dmg || 0) > 4) this.view.damageCar(c.obj, c.dmg);
     for (const c of this.cars) this.view.poseCar(c.obj, c.x, c.y, c.z, c.h, clamp(-c.vx * c.r * 0.0045, -0.07, 0.07), clamp(c.ax * 0.004, -0.045, 0.045) + Math.atan(c.slope || 0), c.steer, c.wspin, c.brk > 0.1, !(c === p && (this.cam === 0 || this.cam === 1 || this.cam === DEFAULT_CAM)));
     let cockpit = null;
     if (this.cam === 0) { const sway = clamp((p.ay || 0) * 0.045 + Math.sin(this.t * 6.0) * 0.03, -0.45, 0.45);

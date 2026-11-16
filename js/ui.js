@@ -1055,7 +1055,7 @@ const ACT = {
 
 function quickDone(r, time) {
   if (isFinite(r.bestLap)) record(U.quick.track, r.bestLap);
-  const prize = time ? 0 : NORMAL_PRIZE[r.pos - 1] || 0; if (prize && r.finished) S.money += prize; save();
+  const prize = time || r.flag ? 0 : NORMAL_PRIZE[r.pos - 1] || 0; if (prize && r.finished) S.money += prize; save();
   U.result = { r, time, prize: r.finished ? prize : 0, title: time ? 'Tidskörning' : 'Träningsheat' }; U.view = 'result'; render();
 }
 function result() {
