@@ -1,7 +1,9 @@
 // Heatet: körfysik, AI, kollisioner, lisälenkki, varningskoder (A1–B9), Vi/Li/K/KA,
 // autentisk 3D In-Car kupévy med roterande mockaratt samt Pro Telemetri-HUD inspirerad av referensbilden.
 import { getTrack } from './track.js';
-import { initGL, M4, carMesh, worldMesh, cockpitMesh, steerWheelMesh, pendantMesh } from './gl.js';
+import { M4, cockpitMesh, steerWheelMesh, pendantMesh } from './gl.js';
+import { View3 } from './view3.js';
+import { ensureTerrain } from './terrain.js';
 import { torqueTable, engineAt, fmt } from './engine.js';
 
 const G = 9.81, DT = 1 / 240;
@@ -45,7 +47,7 @@ export function makeCar(def, trk, slot, isPlayer, gridRows = 2, totalCars = 6) {
 export function phys(c, dt, trk) {
   const s = c.spec, surf = trk.surfAt ? trk.surfAt(c.i) : trk.surf;
   const L = s.wb, a = L * (1 - s.front), b = L * s.front, m = s.mass, fwd = s.drv === 'fwd';
-  const mu = surf.mu * s.mu * (c.onSurf ? 1 : 0.72 + 0.12 * s.susp), crr = c.onSurf ? surf.crr : 0.09 - 0.03 * s.susp;
+  const mu = surf.mu * s.mu * (c.gripF || 1) * (c.onSurf ? 1 : 0.72 + 0.12 * s.susp), crr = c.onSurf ? surf.crr : 0.09 - 0.03 * s.susp;
   const v = Math.hypot(c.vx, c.vy), delta = c.steer * 0.52 / (1 + v * 0.035);
   if (c.rev) {
     c.vx += (-4.5 - c.vx) * Math.min(1, 2.2 * dt); c.vy *= 1 - Math.min(1, 8 * dt); c.r = c.vx * Math.tan(delta) / L; c.rpm = s.idle + 1200; c.slip = 0;
@@ -395,15 +397,10 @@ export class Race {
 
     this.$ = id => host.querySelector('#' + id);
     this.cv = host.querySelector('.race-cv');
-    this.R = initGL(this.cv);
+    ensureTerrain(trk);
     const q = cfg.settings?.quality === 'lag' ? 0 : 1; this.q = q;
-    if (this.R) {
-      this.world = this.R.mesh(worldMesh(trk, q));
-      this.cockpit = this.R.mesh(cockpitMesh());
-      this.steerWheel = this.R.mesh(steerWheelMesh());
-      this.pendant = this.R.mesh(pendantMesh());
-      this.meshes = {};
-    }
+    this.view = new View3(this.cv, trk, { quality: q, res: cfg.settings?.res || 'auto' }); this.R = this.view.ok ? this.view : null;
+    if (this.R) this.view.setCockpit([cockpitMesh(), steerWheelMesh(), pendantMesh()], cfg.player.paint);
     this.env = trk.winter
       ? { zenith: [0.46, 0.62, 0.82], fog: [0.82, 0.88, 0.94], fd: 0.000014, light: [0.42, 0.78, 0.32] }
       : { zenith: [0.18, 0.44, 0.78], fog: [0.64, 0.78, 0.92], fd: 0.000009, light: [0.48, 0.82, 0.36] };
@@ -414,13 +411,11 @@ export class Race {
     this.cars = defs.map((d, sl) => makeCar(d, trk, sl, !!d.isP, this.gridRows, N));
     this.player = this.cars.find(c => c.isPlayer);
     if (location.search.includes('auto')) { const c = this.player; c.auto = true; c.skill = 0.97; c.ai = { jokerLap: 0, off: 0, stuck: 0, prof: null }; c.aids = { abs: 1, tc: 1, auto: 1 }; }
-    this.player.dmg = cfg.dmg0 || 0; this.player.radLeak = !!cfg.radLeak0;
+    this.player.dmg = cfg.dmg0 || 0; this.player.tireWearF = cfg.wear0?.[0] || 0; this.player.tireWearR = cfg.wear0?.[1] || 0; this.player.radLeak = !!cfg.radLeak0;
     const needMirrors = !this.sideContact;
     for (const c of this.cars) {
-      if (this.R) {
-        const key = [c.spec.body, c.spec.dmg < 1 ? 'b' : '', c.spec.chop ? 'c' : '', needMirrors ? 'm' : '', c.bw || 'wb'].join(':');
-        c.mesh = this.meshes[key] || (this.meshes[key] = this.R.mesh(carMesh(c.spec.body, { bars: c.spec.dmg < 1, chop: !!c.spec.chop, mirrors: needMirrors, bw: c.bw })));
-      }
+      if (this.R) c.obj = this.view.addCar(c.spec.body, c.paint, { bars: c.spec.dmg < 1, mirrors: needMirrors, bw: c.bw, num: c.isPlayer ? (cfg.player.num || '') : 1 + ((c.slot * 37 + 11) % 98) });
+      c.y = trk.heightAt(c.x, c.z); c.wspin = 0;
       if (c.ai) {
         const mu = trk.surf.mu * c.spec.mu, k = c.skill; const top = 50;
         c.ai.prof = trk.profile(mu * G * 0.90 * k * k, mu * G * 0.70 * k, top); c.ai.vJ = Math.sqrt(mu * G * 0.85 * k * k * 21); c.ai.aB = mu * G * 0.6 * k;
@@ -484,7 +479,7 @@ export class Race {
 
   togglePause() { if (this.done) return; this.paused = !this.paused; this.$('hPauseBox').hidden = !this.paused; this.last = performance.now(); if (this.gain) this.gain.gain.value = 0; }
   shift(d) { const c = this.player; if (this.state !== 'run' || c.shiftT > 0) return; const g = c.gear + d; if (g >= 1 && g <= c.spec.gears.length) { c.gear = g; c.shiftT = c.spec.shift; } }
-  resize() { const r = this.cv.getBoundingClientRect(), dpr = Math.min(window.devicePixelRatio || 1, this.q ? 2 : 1.25); this.cv.width = Math.max(2, r.width * dpr | 0); this.cv.height = Math.max(2, r.height * dpr | 0); }
+  resize() { if (this.R) this.view.resize(); }
   resetCar(c) { const trk = this.trk, hwi = trk.hwAt ? trk.hwAt(c.i) : trk.hw, [x, z, h] = trk.point(c.i, clamp(c.lat, -hwi + 2, hwi - 2) * 0.3); c.x = x; c.z = z; c.h = h; c.vx = c.vy = c.r = 0; c.rev = false; c.gear = 1; }
   msg(html, dur = 2.4, cls = '') { const e = this.$('hMsg'); e.innerHTML = html; e.className = 'hud-msg show ' + cls; this.msgT = dur; }
 
@@ -640,6 +635,8 @@ export class Race {
       else { c.thr = 0; c.brk = 0.45; }
 
       phys(c, dt, trk);
+      { const ii = trk.w(c.i), sl = trk.SL[ii] * (Math.cos(c.h) * trk.TX[ii] + Math.sin(c.h) * trk.TZ[ii]); c.vx -= G * sl * dt; c.slope = sl; c.wspin += c.vx / 0.31 * dt;
+        c.gripF = 1 - (c.tireWearF + c.tireWearR) * 0.0011; }
       const lapBefore = Math.floor(c.prog / n);
       const hit = trackStep(c, trk, this.t, this.useJoker);
 
@@ -691,8 +688,10 @@ export class Race {
         c.tireTemp[0] += (tgtF - c.tireTemp[0]) * dt * 0.8; c.tireTemp[1] += (tgtF - c.tireTemp[1]) * dt * 0.8;
         c.tireTemp[2] += (tgtR - c.tireTemp[2]) * dt * 0.8; c.tireTemp[3] += (tgtR - c.tireTemp[3]) * dt * 0.8;
         c.brakeTemp += ((60 + c.brk * 260) - c.brakeTemp) * dt * 1.5;
-        c.tireWearF = Math.min(35, c.tireWearF + (0.04 + c.slip * 0.15) * dt);
-        c.tireWearR = Math.min(35, c.tireWearR + (0.04 + Math.abs(c.vy) * 0.03) * dt);
+        // Däckslitage: sladd, hjulspinn och låsning sliter mest, asfalt mer än grus, is nästan inget. Slitna däck ger sämre grepp.
+        { const st = trk.surfTypeAt ? trk.surfTypeAt(c.i) : trk.surface, k = st === 'asfalt' ? 1.5 : st === 'is' ? 0.25 : 1, sp = Math.min(1, Math.abs(c.vx) / 25), drvF = c.spec.drv === 'fwd';
+          c.tireWearF = Math.min(100, c.tireWearF + k * (0.05 * sp + Math.abs(c.vy) * 0.05 + Math.abs(c.steer) * sp * 0.10 + (drvF ? c.slip * 0.9 : 0) + (c.lock ? 0.7 : 0)) * dt);
+          c.tireWearR = Math.min(100, c.tireWearR + k * (0.04 * sp + Math.abs(c.vy) * 0.07 + (drvF ? 0 : c.slip * 0.9) + (c.hb ? 0.8 : 0)) * dt); }
         c.fuelKg = Math.max(1.0, c.fuelKg - 0.008 * c.thr * dt);
       }
     }
@@ -795,14 +794,14 @@ export class Race {
       pos: rows.findIndex(r => r.isPlayer) + 1,
       bestLap: p.bestLap, dmg: p.dmg, flag: pRow.flag, sanction: p.sanction, kaato: p.kaato,
       exhaustLoose: p.exhaustLoose, finished: p.finished && !p.retired,
-      time: p.finished && !p.retired ? p.finishT : null, radLeak: p.radLeak,
+      time: p.finished && !p.retired ? p.finishT : null, radLeak: p.radLeak, dur: this.t, wear: [p.tireWearF, p.tireWearR],
     };
     this.destroy(); this.cfg.onDone(res);
   }
 
   destroy() {
     cancelAnimationFrame(this.raf); window.removeEventListener('keydown', this.kd); window.removeEventListener('keyup', this.ku); window.removeEventListener('resize', this.rs);
-    try { if (this.ac) this.ac.close(); } catch (e) { } this.dead = true;
+    try { if (this.ac) this.ac.close(); } catch (e) { } this.dead = true; if (this.view) this.view.dispose();
   }
 
   frame(now) {
@@ -823,7 +822,7 @@ export class Race {
       while (c.pe > 1 && pl.length < 255) {
         c.pe -= 1;
         const bx = c.x - Math.cos(c.h) * 1.7 + (Math.random() - 0.5) * 1.5, bz = c.z - Math.sin(c.h) * 1.7 + (Math.random() - 0.5) * 1.5;
-        pl.push({ x: bx, y: 0.28, z: bz, vx: (Math.random() - 0.5) * 1.8, vy: 0.9 + Math.random() * 1.4, vz: (Math.random() - 0.5) * 1.8, life: 0, max: 0.75 + Math.random() * 0.85, s: 0.45 + Math.random() * 0.40, d: surf.dust });
+        pl.push({ x: bx, y: (c.y || 0) + 0.28, z: bz, vx: (Math.random() - 0.5) * 1.8, vy: 0.9 + Math.random() * 1.4, vz: (Math.random() - 0.5) * 1.8, life: 0, max: 0.75 + Math.random() * 0.85, s: 0.45 + Math.random() * 0.40, d: surf.dust });
       }
       if (c.pe > 1) c.pe = 0;
     }
@@ -839,7 +838,9 @@ export class Race {
     }
     const ch = Math.cos(this.camH), sh = Math.sin(this.camH);
     const pRoll = clamp(-p.vx * p.r * 0.0045, -0.07, 0.07), pPitch = clamp(p.ax * 0.004, -0.045, 0.045);
-    const pMat = M4.car(p.x, 0, p.z, p.h, pRoll, pPitch);
+    for (const c of this.cars) { const ty = this.trk.heightAt(c.x, c.z); c.y = c.y === undefined ? ty : c.y + (ty - c.y) * Math.min(1, 14 * dt); }
+    const pY = p.y, pSl = Math.atan(p.slope || 0);
+    const pMat = M4.car(p.x, pY, p.z, p.h, pRoll, pPitch + pSl);
 
     let eye, at, up = [0, 1, 0], fov = 1.05;
     if (this.cam === 0) {
@@ -858,62 +859,24 @@ export class Race {
     } else if (this.cam === 1) {
       // HUVKAMERA (framme på motorhuven)
       const c = Math.cos(p.h), s = Math.sin(p.h);
-      eye = [p.x + c * 0.55, 1.18, p.z + s * 0.55];
-      at = [p.x + c * 14, 0.85, p.z + s * 14];
+      eye = [p.x + c * 0.55, pY + 1.18, p.z + s * 0.55];
+      at = [p.x + c * 14, pY + 0.85 + 14 * (p.slope || 0), p.z + s * 14];
       fov = 1.15;
     } else if (this.cam === 2) {
       // BAKOM NÄRA
-      eye = [p.x - ch * 6.8, 2.7, p.z - sh * 6.8];
-      at = [p.x + ch * 5, 0.9, p.z + sh * 5];
+      eye = [p.x - ch * 6.8, 0, p.z - sh * 6.8]; eye[1] = Math.max(pY + 2.7, this.trk.heightAt(eye[0], eye[2]) + 1.6);
+      at = [p.x + ch * 5, pY + 0.9, p.z + sh * 5];
     } else {
       // BAKOM HÖG
-      eye = [p.x - ch * 12.5, 6.8, p.z - sh * 12.5];
-      at = [p.x + ch * 6, 0.6, p.z + sh * 6];
+      eye = [p.x - ch * 12.5, 0, p.z - sh * 12.5]; eye[1] = Math.max(pY + 6.8, this.trk.heightAt(eye[0], eye[2]) + 3);
+      at = [p.x + ch * 6, pY + 0.6, p.z + sh * 6];
     }
 
-    const vp = M4.mul(M4.persp(fov, cv.width / cv.height, 0.08, 1400), M4.look(eye, at, up));
-    R.begin(vp, this.env, eye, pPitch);
-    R.draw(this.world, M4.ident());
-
-    // Rita alla bilar (utom spelarens ytterkaross i In-Car & Huvkamera)
-    for (const c of this.cars) {
-      if (c === p && (this.cam === 0 || this.cam === 1)) continue;
-      R.draw(c.mesh, M4.car(c.x, 0, c.z, c.h, clamp(-c.vx * c.r * 0.0045, -0.07, 0.07), clamp(c.ax * 0.004, -0.045, 0.045)), c.paint);
-    }
-
-    // Damm & rökpartiklar
-    const pl = this.pl;
-    if (pl.length) {
-      const fx = at[0] - eye[0], fy = at[1] - eye[1], fz = at[2] - eye[2];
-      let rx = fy * up[2] - fz * up[1], ry = fz * up[0] - fx * up[2], rz = fx * up[1] - fy * up[0];
-      const l = Math.hypot(rx, ry, rz) || 1; rx /= l; ry /= l; rz /= l;
-      let ux = ry * fz - rz * fy, uy = rz * fx - rx * fz, uz = rx * fy - ry * fx;
-      const lu = Math.hypot(ux, uy, uz) || 1; ux /= lu; uy /= lu; uz /= lu;
-      const A = this.parts, defD = this.trk.surf.dust; let o = 0;
-      for (const q of pl) {
-        const d = q.d || defD, al = 0.5 * (1 - q.life / q.max), s = q.s;
-        const cs = [[-1, -1], [1, -1], [1, 1], [-1, -1], [1, 1], [-1, 1]];
-        for (const [a, b] of cs) {
-          A[o++] = q.x + (rx * a + ux * b) * s; A[o++] = q.y + (ry * a + uy * b) * s; A[o++] = q.z + (rz * a + uz * b) * s;
-          A[o++] = d[0]; A[o++] = d[1]; A[o++] = d[2]; A[o++] = al; A[o++] = a; A[o++] = b;
-        }
-      }
-      R.particles(A, pl.length);
-    }
-
-    // Rita 3D GoPro In-Car Kupé + Roterande 3-ekrad Mockaratt med handskar/underarmar + Dinglande Doftkort!
-    if (this.cam === 0 && this.cockpit && this.steerWheel) {
-      R.clearDepth();
-      R.draw(this.cockpit, pMat, p.paint, true);
-      // Ratten sitter vid [0.16, 0.78, -0.31], lutad 0.22 rad uppåt och roterar med styrutslaget p.steer!
-      const wLocal = M4.localRotX(0.16, 0.78, -0.31, 0.22, -p.steer * 0.85);
-      R.draw(this.steerWheel, M4.mul(pMat, wLocal), p.paint, true);
-      if (this.pendant) {
-        const sway = clamp((p.ay || 0) * 0.045 + Math.sin(this.t * 6.0) * 0.03, -0.45, 0.45);
-        const pLocal = M4.localRotX(0.30, 1.06, -0.02, 0.0, sway);
-        R.draw(this.pendant, M4.mul(pMat, pLocal), p.paint, true);
-      }
-    }
+    for (const c of this.cars) this.view.poseCar(c.obj, c.x, c.y, c.z, c.h, clamp(-c.vx * c.r * 0.0045, -0.07, 0.07), clamp(c.ax * 0.004, -0.045, 0.045) + Math.atan(c.slope || 0), c.steer, c.wspin, c.brk > 0.1, !(c === p && (this.cam === 0 || this.cam === 1)));
+    let cockpit = null;
+    if (this.cam === 0) { const sway = clamp((p.ay || 0) * 0.045 + Math.sin(this.t * 6.0) * 0.03, -0.45, 0.45);
+      cockpit = [pMat, M4.mul(pMat, M4.localRotX(0.16, 0.78, -0.31, 0.22, -p.steer * 0.85)), M4.mul(pMat, M4.localRotX(0.30, 1.06, -0.02, 0.0, sway))]; }
+    this.view.frame({ eye, at, up, fov, focus: [p.x, pY, p.z], particles: this.pl, dust: this.trk.surf.dust, cockpit });
   }
 
   hud(dt) {
@@ -996,7 +959,7 @@ export class Race {
     $('hDbTxt').style.color = p.exhaustLoose ? '#fb7185' : '#34d399';
     $('hWearF').textContent = Math.round(p.tireWearF) + ' %';
     $('hWearR').textContent = Math.round(p.tireWearR) + ' %';
-    const gripPct = Math.round((1 - (p.tireWearF + p.tireWearR) * 0.003) * 100);
+    const gripPct = Math.round((p.gripF || 1) * 100);
     $('hGripPct').textContent = `${gripPct} / ${gripPct} %`;
     const jBadge = $('hJoker'), jMini = $('hJokerMini');
     if (this.useJoker) {

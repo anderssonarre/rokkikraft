@@ -18,3 +18,11 @@ Ett webbläsarspel om att bygga rokkiralli-bilar och köra heat enligt **Rokkira
 ## Köra lokalt
 
 Inget byggsteg och inga beroenden. Starta en statisk server i mappen, t.ex. `npx serve` eller `python -m http.server 8000`, och öppna `http://localhost:8000`.
+
+## 3D-grafik, terräng och statistik
+
+- 3D-vyn ritas med [three.js r128](https://threejs.org) (MIT), som ligger med i repot under `js/vendor/` – inget byggsteg och inget CDN behövs.
+- Banorna är kuperade. Höjdskillnaden per bana följer banfakta där den är känd (Kouvola 20 m, Pihtipudas liten); övriga är antagna, och kullarnas exakta läge är genererat – det finns ingen uppmätt höjddata i spelet.
+- Däcken slits (mest av sladd, hjulspinn och låsning, mer på asfalt än på grus) och slitna däck ger sämre grepp. Slitaget följer med mellan heaten under en tävlingsdag och däcken kan bytas i depån.
+- Lobbyn visar körtid, antal körda heat och bästa varv per bana. Statistiken sparas lokalt i webbläsaren.
+- Upplösningen på 3D-vyn väljs under Inställningar (Auto, 1440p, 1080p, 720p, 540p).

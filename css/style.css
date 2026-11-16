@@ -248,3 +248,5 @@ body.racing { overflow: hidden; } body.racing #app { padding: 0; }
   .hud-lb { width: 145px; } .hud-mapcol { width: 135px; } .hud-right-bot { width: 190px; }
 }
 @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+
+.stats-p .pills { margin-top: 6px; } table.stat-t { margin-top: 12px; } table.stat-t td:not(:first-child), table.stat-t th:not(:first-child) { text-align: right; }

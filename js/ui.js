@@ -51,6 +51,7 @@ function menu() {
         <div><span>Moment · Ljud</span><b>${fmt(k.peakT.T)} Nm</b><small>${k.db4500} dB @ 4500 rpm (max 110)</small></div>
         <div class="${k.kgHp < 5 ? 'good' : k.kgHp > 7 ? 'bad' : ''}"><span>Vikt/effekt</span><b>${fmt(k.kgHp, 1)} kg/hk</b><small>${fmt(s.mass)} kg (reg. ${s.regMass} kg)</small></div></div></div>
     <div class="hero-r">${plate(numStr, hex(paintOf(cs.paint).rgb), cs.bw)}</div></section>
+    ${statsPanel()}
     <nav class="mgrid">
       ${btn('karriar', '🏁', `Nivå ${topLevel() + 1}/4`, 'Karriär & Banor', `Tammisaari, Rantasalmi m.fl. · Sääntökirja 2026`, 'c1')}
       ${btn('garage', '🔧', `${owned} bilar · ${parts} delar`, 'Garage & Besiktning', 'Katsastuskortti, kaaret, klassval & uppgraderingar', 'c2')}
@@ -312,14 +313,14 @@ function evRun() {
     grid: ev.grid, gridRows: ev.rules.gridRows,
     useJoker: ev.rules.joker, sideContact: ev.rules.sideContact,
     title: `${ev.rules.name} – ${stageName(ev)}${ev.stage === 'final' ? '' : ' ' + ev.heat}`,
-    dmg0: ev.dmg, radLeak0: ev.radLeak, mode: 'heat',
+    dmg0: ev.dmg, radLeak0: ev.radLeak, wear0: ev.wear, mode: 'heat',
     onDone: res => { evAfter(res); U.view = 'event'; render(); },
   });
 }
 
 function evAfter(res) {
   const ev = U.ev, pos = res.pos;
-  ev.dmg = res.dmg; ev.radLeak = res.radLeak; ev.exhaustLoose = !!res.exhaustLoose; ev.needKaatoInsp = !!res.kaato;
+  ev.dmg = res.dmg; ev.wear = res.wear || ev.wear; ev.radLeak = res.radLeak; ev.exhaustLoose = !!res.exhaustLoose; ev.needKaatoInsp = !!res.kaato;
   ev.last = res; ev.protestable = !!res.sanction;
   ev.hist.push({ stage: stageName(ev), pos, flag: res.flag });
   if (isFinite(res.bestLap)) record(ev.e.track, res.bestLap);
@@ -434,11 +435,13 @@ function eventView() {
         <div><span>Startruta (${ev.rules.gridRows} led)</span><b>Ruta ${ev.grid + 1} av 6</b><small>${ev.rules.gridRows === 1 ? '1 led i bredd' : ev.grid < 3 ? 'Främre ledet' : 'Bakre ledet (7 m bakom)'}</small></div>
         <div><span>Distans & Lisälenkki</span><b>${ev.laps} varv</b><small>${ev.rules.joker ? 'Lisälenkki ska köras 1 gång' : 'Ingen lisälenkki i klassen'}</small></div>
         <div class="${ev.dmg > 65 || ev.exhaustLoose ? 'bad' : ''}"><span>Skador & Ljud</span><b>${Math.round(ev.dmg)} %</b><small>${ev.exhaustLoose ? 'Avgasrör löst (>110 dB)!' : ev.radLeak ? 'Kylaren läcker' : '≤110 dB OK'}</small></div>
+        <div class="${ev.wear && (ev.wear[0] + ev.wear[1]) / 2 > 55 ? 'bad' : ''}"><span>Däckslitage</span><b>${Math.round(ev.wear ? ev.wear[0] : 0)} / ${Math.round(ev.wear ? ev.wear[1] : 0)} %</b><small>fram / bak · grepp ${Math.round(100 - (ev.wear ? (ev.wear[0] + ev.wear[1]) * 0.11 : 0))} %</small></div>
         <div><span>Köpta lotter (Arpa 20 €)</span><b>${ev.arvat} st</b><small>${ev.rules.salePrice ? 'Kan skydda egen bil vid 850 €-lottning' : 'Ingen myyntivelvoite i Super'}</small></div>
       </div>
       <div class="row wrap">
         <button class="btn" data-act="ev-run" ${ev.needKaatoInsp || ev.exhaustLoose ? 'disabled' : ''}>🏁 Kör ut till keräily & start</button>
         ${cost > 0 ? `<button class="btn ghost" data-act="ev-repair" ${S.money >= cost ? '' : 'disabled'}>🔧 Laga & fäst avgasrör i depån (${eur(cost)})</button>` : ''}
+        ${ev.wear && ev.wear[0] + ev.wear[1] > 10 ? `<button class="btn ghost" data-act="ev-tyres" ${S.money >= 40 ? '' : 'disabled'}>🛞 Byt till fräscha däck (${eur(40)})</button>` : ''}
         ${ev.rules.salePrice > 0 ? `<button class="btn ghost" data-act="ev-buy-arpa" ${S.money >= 20 ? '' : 'disabled'}>🎟 Köp arpa / lott (20 €)</button>` : ''}
         <button class="btn ghost danger" data-act="ev-quit">${ev.hist.length === 0 && ev.feePaid > 0 ? 'Bryt före 1:a heatet (få hyvityskuitti!)' : 'Avbryt dagen'}</button>
       </div></section>`;
@@ -446,15 +449,25 @@ function eventView() {
   return h;
 }
 
+function stats() { if (!S.stats) S.stats = { sec: 0, races: 0, wins: 0, tracks: {} }; return S.stats; }
+function statsPanel() { const st = stats(), h = st.sec / 3600, rows = Object.entries(st.tracks).sort((a, b) => b[1].n - a[1].n);
+  const tname = id => (TRACKS.find(t => t.id === id) || { name: id }).name.split(' – ')[0];
+  return `<section class="panel stats-p"><div class="lv-head"><h2>Din körstatistik</h2><span>sparas i den här webbläsaren</span></div>
+    <div class="pills"><div><span>Körtid</span><b>${h >= 1 ? fmt(h, 1) + ' h' : fmt(st.sec / 60, 0) + ' min'}</b><small>på banan</small></div>
+      <div><span>Körda heat</span><b>${st.races}</b><small>${st.wins} segrar</small></div>
+      <div><span>Banor körda</span><b>${rows.length} / ${TRACKS.length}</b></div></div>
+    ${rows.length ? `<table class="res stat-t"><tr><th>Bana</th><th>Heat</th><th>Körtid</th><th>Bästa varv</th></tr>${rows.map(([id, r]) => `<tr><td>${tname(id)}</td><td>${r.n}</td><td>${fmt(r.sec / 60, 0)} min</td><td>${S.records[id] ? fmtTime(S.records[id]) : '–'}</td></tr>`).join('')}</table>` : '<p class="dim">Kör ditt första heat så börjar listan fyllas.</p>'}</section>`; }
+function countRace(trackId, res) { const st = stats(), d = Math.max(0, res.dur || 0); st.sec += d; st.races++; if (res.pos === 1 && res.finished) st.wins++; const t = st.tracks[trackId] || (st.tracks[trackId] = { n: 0, sec: 0 }); t.n++; t.sec += d; save(); }
 function record(track, lap) { if (!S.records[track] || lap < S.records[track]) { S.records[track] = lap; save(); } }
 
 function startRace(o) {
   const cs = activeCar(), insp = currentInsp(), s = insp.spec;
   const numStr = formatCarNum(cs.num, insp.cls);
   U.view = 'race'; document.body.classList.add('racing'); app().innerHTML = '';
+  const done = o.onDone;
   U.race = new Race(app(), {
-    ...o, record: S.records[o.trackId], settings: S.settings,
-    player: { name: `${S.name || 'Du'} (#${numStr})`, spec: s, paint: paintOf(cs.paint).rgb, bw: cs.bw || 'wb', aids: { ...S.aids } },
+    ...o, onDone: res => { countRace(o.trackId, res); done(res); }, record: S.records[o.trackId], settings: S.settings,
+    player: { name: `${S.name || 'Du'} (#${numStr})`, num: numStr, spec: s, paint: paintOf(cs.paint).rgb, bw: cs.bw || 'wb', aids: { ...S.aids } },
   });
 }
 
@@ -670,7 +683,8 @@ function settings() {
   const st = S.settings;
   return `<section class="panel"><h2>Förare (samma namn hela säsongen enligt Sääntökirja s. 3)</h2><div class="row"><span class="lbl">Ditt förarnamn</span><input class="txt" type="text" maxlength="18" value="${(S.name || '').replace(/"/g, '&quot;')}" data-in="name"></div></section>
   <section class="panel"><h2>Ljud</h2><label class="sl"><span>Motorljud <b>${st.vol} %</b></span><input type="range" min="0" max="100" step="5" value="${st.vol}" data-in="vol"></label></section>
-  <section class="panel"><h2>Grafik</h2><div class="row">${[['hog', 'Hög'], ['lag', 'Låg']].map(q => `<button class="chip s ${st.quality === q[0] ? 'on' : ''}" data-act="quality" data-arg="${q[0]}">${q[1]}</button>`).join('')}</div><p class="dim">Låg ger färre träd, mindre damm och lägre upplösning – bra på äldre telefoner.</p></section>
+  <section class="panel"><h2>Grafik</h2><div class="row">${[['hog', 'Hög'], ['lag', 'Låg']].map(q => `<button class="chip s ${st.quality === q[0] ? 'on' : ''}" data-act="quality" data-arg="${q[0]}">${q[1]}</button>`).join('')}</div><p class="dim">Låg ger färre träd, inga skuggor och grövre terräng – bra på äldre telefoner.</p></section>
+  <section class="panel"><h2>Upplösning</h2><div class="row">${[['auto', 'Auto (skärmens)'], ['1440', '1440p'], ['1080', '1080p'], ['720', '720p'], ['540', '540p']].map(q => `<button class="chip s ${(st.res || 'auto') === q[0] ? 'on' : ''}" data-act="res" data-arg="${q[0]}">${q[1]}</button>`).join('')}</div><p class="dim">Hur många bildrader 3D-vyn renderas med. Lägre ger högre bildfrekvens, högre ger skarpare bild. HUD:en påverkas inte.</p></section>
   <section class="panel"><h2>Pekskärmskontroller</h2><div class="row">${[['auto', 'Auto'], ['on', 'På'], ['off', 'Av']].map(q => `<button class="chip s ${st.touch === q[0] ? 'on' : ''}" data-act="touch" data-arg="${q[0]}">${q[1]}</button>`).join('')}</div></section>
   <section class="panel"><h2>Sparning</h2><p class="dim">Pengar, bilar, delar, katsastuskortti, varningar och resultat sparas lokalt i webbläsaren.</p><div class="row"><button class="btn ghost danger" data-act="reset">Återställ sparning</button></div></section>`;
 }
@@ -699,6 +713,7 @@ const ACT = {
   },
   'ev-start'(a) { evStart(a); window.scrollTo(0, 0); },
   'ev-run'() { evRun(); return false; },
+  'ev-tyres'() { const ev = U.ev; if (ev && S.money >= 40) { S.money -= 40; ev.wear = [0, 0]; save(); toast('Fräscha däck monterade.'); } },
   'ev-repair'() {
     const ev = U.ev, cost = Math.ceil(ev.dmg * 1.0 + (ev.radLeak ? 20 : 0) + (ev.exhaustLoose ? 15 : 0));
     if (S.money >= cost) { S.money -= cost; ev.dmg = 0; ev.radLeak = false; ev.exhaustLoose = false; save(); toast('Bilen är lagad och avgasröret fäst (≤110 dB).'); }
@@ -809,7 +824,7 @@ const ACT = {
     const t = U.task; t.vals = [...document.querySelectorAll('[data-ans]')].map(i => i.value); const r = checkTask(t);
     if (r.all) { const n = S.dyno[U.taskDiff - 1], pay = n < 6 ? t.reward : Math.round(t.reward * 0.25); S.money += pay; S.dyno[U.taskDiff - 1]++; save(); U.taskMsg = `✓ Rätt! +${eur(pay)}`; } else U.taskMsg = 'Inte helt rätt – rätta svaren visas vid fälten. Ta en ny uppgift.';
   },
-  quality(a) { S.settings.quality = a; save(); }, touch(a) { S.settings.touch = a; save(); },
+  quality(a) { S.settings.quality = a; save(); }, res(a) { S.settings.res = a; save(); }, touch(a) { S.settings.touch = a; save(); },
   reset() { if (U.confirmReset) { reset(); U.confirmReset = false; toast('Sparningen är återställd.'); U.view = 'menu'; } else { U.confirmReset = true; toast('Tryck en gång till för att radera allt.'); setTimeout(() => U.confirmReset = false, 4000); } },
 };
 
