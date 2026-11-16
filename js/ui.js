@@ -284,7 +284,7 @@ function makeOpps(n, li, diff, cls) {
   const poolKey = cls === 'super' || cls === 'supersenior' ? 'super' : cls === 'kardaani' ? 'kardaani' : 'vetari';
   const pool = [...AI_POOL[poolKey][Math.max(0, Math.min(3, li))], 'mazda626', 'passat_rx', 'mondeo_st'];
   return names.map(name => {
-    const cid = pick(pool), sp = buildSpec(cid, { build: full, upg: poolKey === 'super' ? { superkit: 1, ...(ps.drv === 'awd' ? { awd: 1 } : {}) } : {} }, tune), hp = curve(sp).hp; // Super-AI kör fyrhjulsdrift om spelaren gör det
+    const cid = pick(pool), sp = buildSpec(cid, { build: full, upg: poolKey === 'super' ? { superkit: 1, ...(ps.drv === 'awd' ? { awd: 1 } : {}) } : Math.random() < 0.7 ? { rokkivaxel: 1 } : {} }, tune), hp = curve(sp).hp; // Super-AI kör fyrhjulsdrift om spelaren gör det
     const d = Math.max(0.01, Math.min(1, diff + (Math.random() - 0.5) * 0.08));
     return { name, paint: pick(PAINTS.filter(p => p.id !== mine)).rgb, bw: Math.random() < 0.35 ? 'bw' : 'wb', diff: d, skill: 0.6 + 0.4 * d, spec: sp,
       powScale: Math.max(0.4, Math.min(3, php / hp * (0.92 + Math.random() * 0.16))) };
@@ -791,6 +791,8 @@ function setup() {
   return `<section class="panel"><span class="kick">GARAGE · GRATIS ATT ÄNDRA</span><h1>Bilinställningar – ${car.name}</h1>
     <div class="pills"><div><span>Effekt</span><b>${fmt(k.hp)} hk</b><small>${s.engName}</small></div><div><span>Vikt</span><b>${fmt(s.mass - 75)} kg</b><small>${fmt(k.kgHp, 1)} kg/hk</small></div>
       <div><span>0–100 km/h</span><b>${fmt(acc(s), 1)} s</b><small>asfalt</small></div><div><span>Greppbegränsad till</span><b>${fmt(spinTo(s, 1.0))} km/h</b><small>på grus – därefter avgör effekten</small></div><div><span>Fart vid varvstopp i högsta</span><b>${fmt(top)} km/h</b></div><div><span>Grepp fram / bak</span><b>${fmt(s.muF * 100)} / ${fmt(s.muR * 100)} %</b><small>${s.tyre}</small></div></div>
+    <p class="dim">Fart vid varvstopp per växel (i utväxlingsordning): ${s.gears.map((g, i) => `<b>${s.gearLabels?.[i] ?? i + 1}${s.gearLabels?.[i] === '5' && s.halfGear ? ' (2½)' : ''}:</b> ${fmt(s.redline / (g * s.final) / 9.5493 * s.rw * 3.6)} km/h`).join(' · ')}. Maxeffekt vid ca ${fmt(k.peakP ? k.peakP.rpm : s.redline * 0.85)} rpm.
+      ${s.halfGear ? '' : s.cls === 'super' ? '' : ' Tips: 2½-växel på femmans plats (Garage → Utväxling) håller en klen motor på maxeffekt på rakorna.'}</p>
     <div class="row wrap"><button class="btn small ghost" data-act="setup-reset">Återställ standard</button><button class="btn small ghost" data-act="go" data-arg="garage">‹ Garaget</button></div></section>
   <section class="panel"><h2>Däck</h2><div class="cards">${Object.values(TYRES).map(x => `<div class="card ${t.tyre === x.id ? 'sel own' : ''}"><div class="c-top"><span>GREPP ${fmt(x.grip * 100)} %</span><b>${t.tyre === x.id ? 'MONTERADE' : 'GRATIS'}</b></div><strong>${x.name}</strong><p>${x.desc}</p>${t.tyre === x.id ? '' : `<button class="btn small" data-act="tyre" data-arg="${x.id}">Montera</button>`}</div>`).join('')}</div></section>
   <section class="panel"><h2>Chassi, växellåda & bromsar</h2><div class="sliders">${SETUP_UI.map(([n, key, lo, hi, st, f, d]) => `<label><span>${n} <b>${f(t[key])}</b></span><input type="range" min="${lo}" max="${hi}" step="${st}" value="${t[key]}" data-in="su:${key}"><small>${d}</small></label>`).join('')}</div></section>

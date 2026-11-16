@@ -48,6 +48,7 @@ export function buildSpec(carId, cs, tune) {
     if (fx.brake) s.brake += fx.brake; if (fx.dmg) s.dmg = Math.min(s.dmg, fx.dmg);
     if (fx.superReady) s.superReady = 1;
     if (fx.awd) s.drv = 'awd';
+    if (fx.halfGear) s.halfGear = 1;
     if (fx.rallyTire) s.rallyTire = 1;
     if (fx.chop) s.chop = 1;
     if (fx.tq) s.tqUp += fx.tq;
@@ -67,6 +68,11 @@ export function buildSpec(carId, cs, tune) {
   s.tqS *= 1 + s.tqUp;
   // tyngre/lättare motor flyttar vikt fram/bak (motorn sitter fram): mer grepp på framaxeln men mer understyrning
   if (eng && eng.w != null) { const dw = eng.w - (engById(c.defaultEng)?.w ?? 140); s.front = Math.min(0.72, Math.max(0.45, (s.front * (s.mass - dw) + dw * 0.95) / s.mass)); }
+  // 2½-växel: femmans plats får ett drev mellan tvåan och trean (växlas 2 → 5 → 3 i utväxlingsordning)
+  if (s.halfGear && s.gears.length >= 5) {
+    const g = s.gears, half = Math.sqrt(g[1] * g[2]), rest = g.filter((_, i) => i !== 4);
+    s.gears = [rest[0], rest[1], half, ...rest.slice(2)]; s.gearLabels = ['1', '2', '5', ...rest.slice(2).map((_, i) => String(i < 2 ? i + 3 : i + 4))];
+  }
   applySetup(s, tune);
   return s;
 }

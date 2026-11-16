@@ -1054,7 +1054,7 @@ export class Race {
     // 2. Växel, 15-LED Shift Bar, RPM, Fart & Temperatur
     const spdKmh = Math.round(Math.hypot(p.vx, p.vy) * 3.6);
     const rpmRound = Math.round(p.rpm / 50) * 50;
-    const gearStr = p.rev ? 'R' : String(p.gear);
+    const gearStr = p.rev ? 'R' : String(p.spec.gearLabels?.[p.gear - 1] ?? p.gear);
     $('hGear').textContent = gearStr;
     $('hRpmT').textContent = rpmRound;
     $('hSpd').textContent = spdKmh;

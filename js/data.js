@@ -301,6 +301,9 @@ export const UPG = [
       desc: 'Mellan framskärmarnas överkant får man sätta 1 st max 20×50×2 mm rör för kylare och huvlås (får ej stagas bakåt). +16 kW kylkapacitet.' },
     { name: 'Kylaren flyttad bak + extra fläkt', price: 0, fx: { cool: 24, radSafe: 1 },
       desc: 'Kylaren sitter skyddad bakom kupén. Extra fläkt märks i katsastuskortti (och får då plockas ur vid myyntitilaisuus!). +24 kW och skyddad vid frontsmällar.' } ] },
+  { id: 'rokkivaxel', name: '2½-växel på femmans plats', komp: 'utvaxling', levels: [
+    { name: '2½-växel på femmans plats', price: 0, fx: { halfGear: 1 },
+      desc: 'Vanligt i myyntiluokat: i hög fart varvar tvåan för högt och trean är nästan för lång för en klen motor. Femmans drev byts mot ett drev mellan tvåan och trean, så man växlar 2 → 5 (2½) och håller motorn vid maxeffekten på rakorna. Super-bilar med mycket effekt kör i stället trean som effektiv växel.' } ] },
   { id: 'vaxel', name: 'Växellåda', komp: 'utvaxling', levels: [
     { name: 'Kort slutväxel', price: 0, fx: { final: 1.12 }, desc: 'Slutväxeln 12 % kortare. Mer drivkraft i varje växel (F = T·i/r), lägre toppfart – rätt val på rokkibanor.' },
     { name: 'Kort slutväxel & tätstegad låda', price: 0, fx: { final: 1.12, shift: 0.14, eff: 0.02 }, desc: 'Kortare växelväg halverar växlingstiden och drivlinan förlorar mindre.' } ] },
