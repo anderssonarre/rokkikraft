@@ -64,7 +64,7 @@ function build(def) {
     SArr[i] = t < 0.5 ? rawS[jj] : rawS[(jj + 1) % M];
   }
 
-  const w = i => ((i % n) + n) % n;
+  const w = i => (((Math.round(i) | 0) % n) + n) % n;
   const curv = (X, Z) => {
     const K = new Float32Array(n);
     for (let i = 0; i < n; i++) {

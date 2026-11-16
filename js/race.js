@@ -30,7 +30,7 @@ export function makeCar(def, trk, slot, isPlayer, gridRows = 2, totalCars = 6) {
   return {
     name: def.name, paint: def.paint, bw: def.bw || 'wb', isPlayer, spec: s, tq, cool, marg, upRpm,
     x, z, h, vx: 0, vy: 0, r: 0, ax: 0, ay: 0, rpm: s.idle, gear: 1, thr: 0, brk: 0, steer: 0, hb: 0,
-    i: trk.n - back, pf: trk.n - back, lat, prog: -back, onSurf: true,
+    i: trk.w(Math.round(trk.n - back)), pf: trk.n - back, lat, prog: -back, onSurf: true,
     jokerDone: false, coneDown: false, jump: false, retired: false, kaato: false,
     sanction: '', sanctionT: Infinity, warnCount: 0,
     finished: false, finishT: 0, flag: '', dmg: 0, temp: 82, exhaustLoose: false,
