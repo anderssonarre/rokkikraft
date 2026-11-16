@@ -1,7 +1,7 @@
 // Heatet: körfysik, AI, kollisioner, lisälenkki, varningskoder (A1–B9), Vi/Li/K/KA,
 // autentisk 3D In-Car kupévy med roterande mockaratt samt Pro Telemetri-HUD inspirerad av referensbilden.
 import { getTrack } from './track.js';
-import { initGL, M4, carMesh, worldMesh, cockpitMesh, steerWheelMesh } from './gl.js';
+import { initGL, M4, carMesh, worldMesh, cockpitMesh, steerWheelMesh, pendantMesh } from './gl.js';
 import { torqueTable, engineAt, fmt } from './engine.js';
 
 const G = 9.81, DT = 1 / 240;
@@ -315,8 +315,8 @@ export class Race {
               <div style="font-size:.56rem;color:#9ca3af;margin-top:2px" id="mValBsfc">Förbrukning: 0 g/s · bsfc 0 g/kWh</div>
             </div>
 
-            <!-- MITTEN BOTTEN: In-Car Digital Ratt-/Dash-display (som i referensbilden!) -->
-            <div class="hud-wheel-cluster" id="hWheelCluster">
+            <!-- MITTEN BOTTEN: Digital Dash-display (visas i Huvkamera så GoPro In-Car-kupén är helt fri!) -->
+            <div class="hud-wheel-cluster" id="hWheelCluster" style="display:none">
               <div class="wc-btns">
                 <i style="color:#38bdf8;background:#0284c7"></i><i style="color:#facc15;background:#eab308"></i>
                 <i style="color:#22c55e;background:#16a34a"></i><i style="color:#ef4444;background:#dc2626"></i>
@@ -400,6 +400,7 @@ export class Race {
       this.world = this.R.mesh(worldMesh(trk, q));
       this.cockpit = this.R.mesh(cockpitMesh());
       this.steerWheel = this.R.mesh(steerWheelMesh());
+      this.pendant = this.R.mesh(pendantMesh());
       this.meshes = {};
     }
     this.env = trk.winter
@@ -444,7 +445,7 @@ export class Race {
     const btn = this.$('hCamBtn');
     if (btn) btn.textContent = `🎥 ${CAM_NAMES[this.cam]} [C]`;
     const wc = this.$('hWheelCluster');
-    if (wc) wc.style.display = this.cam === 0 ? '' : 'none';
+    if (wc) wc.style.display = this.cam === 1 ? '' : 'none';
   }
 
   bind() {
@@ -807,16 +808,16 @@ export class Race {
       const v = Math.hypot(c.vx, c.vy), slide = Math.abs(c.vy) + c.slip * 6 + (c.lock ? 5 : 0);
       const st = this.trk.surfTypeAt ? this.trk.surfTypeAt(c.i) : this.trk.surface;
       const surf = this.trk.surfAt ? this.trk.surfAt(c.i) : this.trk.surf;
-      const rate = st === 'asfalt' ? (slide > 3 ? slide * 2 : 0) : (v > 3 ? v * 0.45 : 0) + slide * 3;
+      const rate = st === 'asfalt' ? (slide > 3 ? slide * 2 : 0) : (v > 2.2 ? v * 0.65 : 0) + slide * 3.8;
       c.pe = (c.pe || 0) + rate * dt * (this.q ? 1 : 0.5);
-      while (c.pe > 1 && pl.length < 250) {
+      while (c.pe > 1 && pl.length < 255) {
         c.pe -= 1;
-        const bx = c.x - Math.cos(c.h) * 1.7 + (Math.random() - 0.5) * 1.4, bz = c.z - Math.sin(c.h) * 1.7 + (Math.random() - 0.5) * 1.4;
-        pl.push({ x: bx, y: 0.25, z: bz, vx: (Math.random() - 0.5) * 1.5, vy: 0.8 + Math.random() * 1.2, vz: (Math.random() - 0.5) * 1.5, life: 0, max: 0.6 + Math.random() * 0.7, s: 0.35 + Math.random() * 0.3, d: surf.dust });
+        const bx = c.x - Math.cos(c.h) * 1.7 + (Math.random() - 0.5) * 1.5, bz = c.z - Math.sin(c.h) * 1.7 + (Math.random() - 0.5) * 1.5;
+        pl.push({ x: bx, y: 0.28, z: bz, vx: (Math.random() - 0.5) * 1.8, vy: 0.9 + Math.random() * 1.4, vz: (Math.random() - 0.5) * 1.8, life: 0, max: 0.75 + Math.random() * 0.85, s: 0.45 + Math.random() * 0.40, d: surf.dust });
       }
       if (c.pe > 1) c.pe = 0;
     }
-    for (let i = pl.length - 1; i >= 0; i--) { const p = pl[i]; p.life += dt; if (p.life > p.max) { pl[i] = pl[pl.length - 1]; pl.pop(); continue; } p.x += p.vx * dt; p.y += p.vy * dt; p.z += p.vz * dt; p.s += dt * 1.3; }
+    for (let i = pl.length - 1; i >= 0; i--) { const p = pl[i]; p.life += dt; if (p.life > p.max) { pl[i] = pl[pl.length - 1]; pl.pop(); continue; } p.x += p.vx * dt; p.y += p.vy * dt; p.z += p.vz * dt; p.s += dt * 1.65; }
   }
 
   render(dt) {
@@ -832,18 +833,18 @@ export class Race {
 
     let eye, at, up = [0, 1, 0], fov = 1.05;
     if (this.cam === 0) {
-      // IN-CAR KUPÉVY (Hjälmkamera på vänster förarsida [-0.12, 1.07, -0.32] i bilens lokala ram!)
+      // GOPRO ROLL-BAR IN-CAR KUPÉVY (Exakt samma vinkel som i de 4 GoPro-referensbilderna: [-0.30, 1.03, -0.10]!)
       const vib = Math.sin(this.t * 45) * 0.0018 * (p.rpm / 6000);
       const transformPt = (lx, ly, lz) => [
         pMat[0] * lx + pMat[4] * ly + pMat[8] * lz + pMat[12],
         pMat[1] * lx + pMat[5] * ly + pMat[9] * lz + pMat[13],
         pMat[2] * lx + pMat[6] * ly + pMat[10] * lz + pMat[14],
       ];
-      eye = transformPt(-0.24, 1.04 + vib, -0.26);
-      // Titta svängt med styrutslaget in mot kurvans apex
-      at = transformPt(14.0, 0.68 + vib, -0.20 + p.steer * 1.4);
+      eye = transformPt(-0.30, 1.03 + vib, -0.10);
+      // Titta framåt-vänster över 3-ekrade mockaratten, förararmarna, DIY-aluminiumpanelen och ut genom vindrutan & sidorutan!
+      at = transformPt(10.0, 0.62 + vib, -0.32 + p.steer * 0.95);
       up = [pMat[4], pMat[5], pMat[6]];
-      fov = 1.12;
+      fov = 1.18;
     } else if (this.cam === 1) {
       // HUVKAMERA (framme på motorhuven)
       const c = Math.cos(p.h), s = Math.sin(p.h);
@@ -890,13 +891,18 @@ export class Race {
       R.particles(A, pl.length);
     }
 
-    // Rita 3D In-Car Kupé + Roterande Mockaratt överst med ren djupbuffert i kameraläge 0!
+    // Rita 3D GoPro In-Car Kupé + Roterande 3-ekrad Mockaratt med handskar/underarmar + Dinglande Doftkort!
     if (this.cam === 0 && this.cockpit && this.steerWheel) {
       R.clearDepth();
       R.draw(this.cockpit, pMat, p.paint, true);
-      // Ratten sitter på [0.16, 0.81, -0.32] i kupén, lutad 0.26 rad uppåt och roterar med styrutslaget p.steer!
-      const wLocal = M4.localRotX(0.20, 0.80, -0.26, 0.22, -p.steer * 1.45);
+      // Ratten sitter vid [0.16, 0.79, -0.31], lutad 0.22 rad uppåt och roterar med styrutslaget p.steer!
+      const wLocal = M4.localRotX(0.16, 0.79, -0.31, 0.22, -p.steer * 0.85);
       R.draw(this.steerWheel, M4.mul(pMat, wLocal), p.paint, true);
+      if (this.pendant) {
+        const sway = clamp((p.ay || 0) * 0.045 + Math.sin(this.t * 6.0) * 0.03, -0.45, 0.45);
+        const pLocal = M4.localRotX(0.25, 1.07, -0.02, 0.0, sway);
+        R.draw(this.pendant, M4.mul(pMat, pLocal), p.paint, true);
+      }
     }
   }
 

@@ -357,21 +357,40 @@ export function carMesh(body, opts = {}) {
 
   // 6. KILPAILUNUMEROT (Sääntökirja s. 8):
   // I bakre sidorutorna (≥20 cm, EJ i dörren!), vindrutans övre kant på passagerarsidan samt bakrutan!
+  // Vi ritar tydliga tvåsiffriga tävlingsnummer (t.ex. "78" / "84") på stor vit bottenplatta precis som i referensfoton!
   const numBg = opts.bw === 'bw' ? [0.08, 0.08, 0.09, 1] : [0.96, 0.96, 0.94, 1];
-  const numFg = opts.bw === 'bw' ? [0.95, 0.95, 0.93, 1] : [0.08, 0.08, 0.09, 1];
+  const numFg = opts.bw === 'bw' ? [0.95, 0.95, 0.93, 1] : [0.06, 0.06, 0.08, 1];
   for (const sgn of [-1, 1]) {
     const z = sgn * ((W - 0.15) / 2 - Math.abs(0.18) * 0.08);
-    const x0 = cx - cl * 0.34, x1 = cx - 0.04, y0 = 0.83, y1 = 1.16;
-    if (sgn < 0) {
-      m.quad([x0, y0, z], [x0, y1, z], [x1, y1, z], [x1, y0, z], numBg);
-      m.quad([x0 + 0.07, y0 + 0.06, z - 0.004], [x0 + 0.07, y1 - 0.06, z - 0.004], [x1 - 0.07, y1 - 0.06, z - 0.004], [x1 - 0.07, y0 + 0.06, z - 0.004], numFg);
-    } else {
-      m.quad([x0, y0, z], [x1, y0, z], [x1, y1, z], [x0, y1, z], numBg);
-      m.quad([x0 + 0.07, y0 + 0.06, z + 0.004], [x1 - 0.07, y0 + 0.06, z + 0.004], [x1 - 0.07, y1 - 0.06, z + 0.004], [x0 + 0.07, y1 - 0.06, z + 0.004], numFg);
-    }
+    const x0 = cx - cl * 0.35, x1 = cx - 0.03, y0 = 0.81, y1 = 1.17;
+    const zOff = z + sgn * 0.005;
+    const qSide = (xa, ya, xb, yb, col) => {
+      if (sgn < 0) m.quad([xa, ya, zOff], [xa, yb, zOff], [xb, yb, zOff], [xb, ya, zOff], col);
+      else m.quad([xa, ya, zOff], [xb, ya, zOff], [xb, yb, zOff], [xa, yb, zOff], col);
+    };
+    if (sgn < 0) m.quad([x0, y0, z], [x0, y1, z], [x1, y1, z], [x1, y0, z], numBg);
+    else m.quad([x0, y0, z], [x1, y0, z], [x1, y1, z], [x0, y1, z], numBg);
+    // Siffra 1 ("7") och Siffra 2 ("8") på den vita rutan
+    const xm = (x0 + x1) * 0.5;
+    qSide(xm + 0.02, y1 - 0.09, x1 - 0.04, y1 - 0.05, numFg); // "7" topp
+    qSide(xm + 0.04, y0 + 0.06, xm + 0.09, y1 - 0.05, numFg); // "7" stam
+    qSide(x0 + 0.05, y1 - 0.09, xm - 0.02, y1 - 0.05, numFg); // "8" topp
+    qSide(x0 + 0.05, (y0 + y1) * 0.5 - 0.02, xm - 0.02, (y0 + y1) * 0.5 + 0.02, numFg); // "8" midja
+    qSide(x0 + 0.05, y0 + 0.06, xm - 0.02, y0 + 0.10, numFg); // "8" botten
+    qSide(x0 + 0.05, y0 + 0.06, x0 + 0.085, y1 - 0.05, numFg); // "8" vänster
+    qSide(xm - 0.055, y0 + 0.06, xm - 0.02, y1 - 0.05, numFg); // "8" höger
   }
   m.box(cx + cl / 2 - inF * 0.38, 1.14, 0.34, 0.08, 0.11, 0.30, numBg);
   m.box(cx - cl / 2 + inR * 0.38, 1.12, 0.0, 0.08, 0.12, 0.34, numBg);
+
+  // Rokkiralli tvåtonslack / folkrace-detaljer (svart/vit huv- eller bakluckefält & grusstänk nertill längs sidorna)
+  m.box(0, 0.21,  W * 0.495, L * 0.52, 0.09, 0.015, [0.34, 0.29, 0.22, 1]);
+  m.box(0, 0.21, -W * 0.495, L * 0.52, 0.09, 0.015, [0.34, 0.29, 0.22, 1]);
+  if (opts.bars) {
+    // Kontrastfärgade rallyrutor/ränder på motorhuven (som på bilarna i referensbild 1 och 4!)
+    m.box(L * 0.26, 0.784,  0.24, L * 0.38, 0.008, 0.18, [0.94, 0.95, 0.96, 1]);
+    m.box(L * 0.26, 0.784, -0.24, L * 0.38, 0.008, 0.18, [0.94, 0.95, 0.96, 1]);
+  }
 
   // 7. NASCAR-VERKKO i förardörrens öppning (vänster sida z < 0)
   {
@@ -436,130 +455,207 @@ export function carMesh(body, opts = {}) {
   return m.data();
 }
 
-// ---------- 3D In-Car Rally-/Rokkirallikupé (inspirerad av referensbilden!) ----------
-// Koordinater i bilens lokala ram (+x framåt, +y upp, +z höger; kameran sitter vid förarplatsen [-0.10, 1.07, -0.32])
+// ---------- 3D GoPro In-Car Rokkiralli-kupé (efter de 4 autentiska GoPro-referensbilderna!) ----------
+// Koordinater i bilens lokala ram (+x framåt, +y upp, +z höger; GoPro-kameran sitter vid [-0.30, 1.03, -0.10] på störtbågen!)
 export function cockpitMesh() {
   const m = new MB(), P = s => [s, 0, 0, 0];
-  const flock = [0.14, 0.16, 0.19, 1], dark = [0.08, 0.09, 0.11, 1], cage = [0.12, 0.13, 0.16, 1];
-  const padRed = [0.78, 0.14, 0.12, 1], steel = [0.55, 0.58, 0.62, 1], mirrorGlass = [0.55, 0.70, 0.85, 0.5];
+  const flock = [0.16, 0.17, 0.19, 1], dark = [0.08, 0.09, 0.11, 1], cage = [0.17, 0.19, 0.21, 1];
+  const steel = [0.64, 0.67, 0.71, 1], alu = [0.74, 0.76, 0.79, 1], mirrorGlass = [0.46, 0.60, 0.74, 0.5];
+  const floorSheet = [0.22, 0.21, 0.20, 1], rustPrimer = [0.46, 0.22, 0.18, 1];
 
-  // 1. Motorhuv och framskärmar som syns framför vindrutan (lackade i bilens färg med klarlack!)
-  m.box(1.12, 0.62, 0, 1.32, 0.14, 1.56, P(1.0), 0.10, 0.0, P(1.04), 0.04);
-  // Upphöjda framskärmskammar (som i referensbilden) + luftgaller + huvsprintar (sokat)
-  m.box(1.18, 0.72, -0.66, 1.10, 0.055, 0.18, P(1.06), 0.08, 0.04);
-  m.box(1.18, 0.72,  0.66, 1.10, 0.055, 0.18, P(1.06), 0.08, 0.04);
-  m.box(1.15, 0.762, 0.0,  0.34, 0.015, 0.52, dark);
-  m.box(1.56, 0.755, -0.46, 0.06, 0.015, 0.06, steel);
-  m.box(1.56, 0.755,  0.46, 0.06, 0.015, 0.06, steel);
-  // Vindrutetorkare nere vid rutan
-  m.tube([0.52, 0.81, -0.52], [0.55, 0.83, -0.02], 0.01, 0.008, dark, 6);
-  m.tube([0.52, 0.81,  0.05], [0.55, 0.83,  0.55], 0.01, 0.008, dark, 6);
+  // 1. Motorhuv och framskärmar som syns precis utanför vindrutan + svarta vindrutetorkare
+  m.box(1.12, 0.63, 0, 1.28, 0.13, 1.54, P(0.98), 0.10, 0.0, P(1.04), 0.04);
+  m.box(1.15, 0.758, 0.0, 0.34, 0.015, 0.52, dark);
+  m.box(1.54, 0.752, -0.46, 0.06, 0.015, 0.06, steel);
+  m.box(1.54, 0.752,  0.46, 0.06, 0.015, 0.06, steel);
+  // Dubbla vindrutetorkare med torkarblad och torkararmar längs vindrutans nederkant (som i foto 1, 2, 3, 4!)
+  m.tube([0.52, 0.80, -0.52], [0.55, 0.84, -0.02], 0.009, 0.007, dark, 6);
+  m.tube([0.53, 0.83, -0.32], [0.55, 0.85,  0.08], 0.007, 0.006, [0.12, 0.13, 0.15, 1], 6);
+  m.tube([0.52, 0.80,  0.02], [0.55, 0.84,  0.54], 0.009, 0.007, dark, 6);
+  m.tube([0.53, 0.83,  0.18], [0.55, 0.85,  0.56], 0.007, 0.006, [0.12, 0.13, 0.15, 1], 6);
+  // Stenskott / sprickmönster i högra hörnet av vindrutan (som i foto 4!)
+  m.tube([0.48, 0.84, 0.55], [0.42, 0.96, 0.48], 0.0025, 0.002, [0.85, 0.88, 0.92, 1], 4);
+  m.tube([0.48, 0.84, 0.55], [0.44, 0.91, 0.61], 0.0025, 0.002, [0.85, 0.88, 0.92, 1], 4);
+  m.tube([0.45, 0.89, 0.52], [0.39, 0.92, 0.42], 0.0020, 0.0018, [0.82, 0.86, 0.90, 1], 4);
 
-  // 2. Flockad mörkgrå rally-instrumentbräda + mätarkeps framför föraren
-  m.box(0.42, 0.64, 0, 0.42, 0.18, 1.52, flock, 0.04, 0.02);
-  // Mätarhuskeps (binnacle) framför ratten (z = -0.32)
-  m.box(0.36, 0.81, -0.32, 0.26, 0.11, 0.44, flock, 0.02, 0.02, [0.11, 0.13, 0.16, 1], 0.03);
-  // Mätartavla + shift-lights (grön-gul-röd LED-rad överst i mätarhuset!)
-  m.box(0.24, 0.82, -0.32, 0.02, 0.085, 0.38, [0.04, 0.06, 0.09, 1]);
-  for (let i = 0; i < 9; i++) {
-    const lc = i < 4 ? [0.15, 0.88, 0.42, 1] : i < 7 ? [0.98, 0.78, 0.10, 1] : [0.95, 0.18, 0.22, 1];
-    m.box(0.23, 0.892, -0.44 + i * 0.03, 0.015, 0.014, 0.022, lc);
+  // 2. Rensat Rokkiralli-golv, kardantunnel & TVÅ PARALLELLA BLANKA BRÄNSLE-/BROMSRÖR på passagerargolvet (foto 2 & 4!)
+  m.box(0.05, 0.30, 0.0, 1.05, 0.04, 1.38, floorSheet);
+  m.box(0.08, 0.34, 0.0, 0.98, 0.14, 0.24, [0.18, 0.18, 0.19, 1]); // Kardantunnel i plåt
+  m.box(0.14, 0.34, 0.34, 0.82, 0.05, 0.44, rustPrimer); // Rensad rödbrun/plåtren golvbrunn på passagerarsidan
+  // Två parallella blanka aluminium-/stålrör (bensalinjat / jarruputket) längs höger golv med röda/svarta klammer!
+  m.tube([-0.28, 0.37, 0.22], [0.46, 0.48, 0.18], 0.013, 0.013, alu, 8);
+  m.tube([-0.28, 0.37, 0.26], [0.46, 0.48, 0.22], 0.013, 0.013, steel, 8);
+  m.box(0.02, 0.40, 0.22, 0.04, 0.032, 0.075, [0.86, 0.24, 0.14, 1]); // Rött fästklammer (foto 2 & 4)
+  m.box(0.24, 0.44, 0.20, 0.04, 0.032, 0.075, dark);
+
+  // 3. Rensad plåt-instrumentbräda (lackad i bilens färg P() som den röda plåtbrädan i foto 4 + flockad överdel & luftutblås som i foto 1 & 3!)
+  m.box(0.45, 0.64, 0.0, 0.32, 0.15, 1.44, P(0.92), 0.02, 0.02, P(0.98), 0.02);
+  m.box(0.47, 0.77, 0.0, 0.28, 0.045, 1.40, flock, 0.03, 0.01);
+  // Mitten-luftutblås med ribbor (foto 1 & 3) + liten GPS-puck ovanpå brädan (foto 3)
+  m.box(0.36, 0.75, -0.02, 0.06, 0.055, 0.22, dark);
+  for (let r = 0; r < 4; r++) {
+    m.box(0.328, 0.76 + r * 0.011, -0.02, 0.01, 0.004, 0.19, [0.22, 0.24, 0.27, 1]);
+  }
+  m.box(0.36, 0.815, -0.06, 0.05, 0.025, 0.065, dark); // GPS-box
+
+  // Mätarhuskeps (binnacle) framför ratten (z = -0.31) med analoga runda mätartavlor & rostig/plåtren fästkonsol (foto 2, 3, 4)
+  m.box(0.37, 0.76, -0.31, 0.22, 0.11, 0.42, flock, 0.02, 0.02, [0.12, 0.14, 0.16, 1], 0.03);
+  m.box(0.27, 0.76, -0.31, 0.02, 0.09, 0.36, [0.06, 0.07, 0.09, 1]);
+  // 3 runda analoga mätare (varvräknare i mitten, vattentemp & oljetryck på sidorna + röda visare!)
+  for (const [gz, gr] of [[-0.41, 0.032], [-0.31, 0.042], [-0.21, 0.032]]) {
+    m.tube([0.265, 0.80, gz], [0.252, 0.80, gz], gr, gr, [0.14, 0.16, 0.19, 1], 12, true);
+    m.tube([0.254, 0.80, gz], [0.248, 0.80, gz], gr * 0.82, gr * 0.82, [0.92, 0.93, 0.95, 1], 12, true);
+    m.tube([0.246, 0.80, gz], [0.245, 0.80 + gr * 0.55, gz + gr * 0.4], 0.004, 0.002, [0.92, 0.16, 0.12, 1], 4);
   }
 
-  // 3. Mittkonsol med huvudströmbrytare (röd nyckel), startknapp, vippströmbrytare & Monit Rally-trippmätare
-  m.box(0.34, 0.56, 0.04, 0.18, 0.26, 0.28, dark);
-  m.box(0.25, 0.73, -0.04, 0.02, 0.045, 0.045, [0.92, 0.12, 0.10, 1]); // Röd huvudströmbrytare
+  // 4. HEMABYGGD ALUMIININEN KATKAISIJAPANEELI (DIY borstad aluminiumlåda i mitten som i foto 2 & 4!)
+  // Vinklad mot föraren med röd huvudströmbrytarnyckel (päävirtakytkin), vit dragvajer, stor röd varningslampa, blå LED & vippströmbrytare!
+  m.box(0.28, 0.57, 0.04, 0.14, 0.17, 0.24, alu);
+  m.box(0.212, 0.575, 0.04, 0.012, 0.16, 0.23, [0.78, 0.80, 0.83, 1]); // Frontplåt i borstad aluminium
+  // Röd huvudströmbrytare (päävirtakytkin) uppe till vänster på aluminiumlådan + vit dragvajer (foto 4!)
+  m.tube([0.22, 0.69, -0.03], [0.185, 0.69, -0.03], 0.014, 0.014, [0.85, 0.86, 0.88, 1], 8, true);
+  m.box(0.178, 0.69, -0.03, 0.022, 0.038, 0.012, [0.92, 0.12, 0.10, 1]); // Röd nyckel
+  m.tube([0.185, 0.70, -0.03], [0.28, 0.73, -0.18], 0.003, 0.003, [0.95, 0.95, 0.95, 1], 4); // Vit dragvajer
+  // Stor rektangulär röd kontroll-/varningslampa uppe till höger på aluminiumpanelen (foto 4!)
+  m.box(0.202, 0.69, 0.08, 0.015, 0.032, 0.085, [0.96, 0.12, 0.12, 1]);
+  // Lysande blå LED-indikator (foto 1!) + rad med 4 metall-vippströmbrytare & orange säkringsblock (foto 2 & 4!)
+  m.box(0.202, 0.64, 0.01, 0.014, 0.018, 0.018, [0.18, 0.58, 1.0, 1]);
   for (let sw = 0; sw < 4; sw++) {
-    m.box(0.25, 0.68, -0.02 + sw * 0.045, 0.025, 0.015, 0.015, steel);
+    const sz = -0.045 + sw * 0.038;
+    m.box(0.204, 0.615, sz, 0.014, 0.016, 0.016, dark);
+    m.tube([0.204, 0.623, sz], [0.184, 0.632, sz], 0.004, 0.003, steel, 6);
   }
-  // Monit Rally-trippmätare på höger sida av brädan (blå belyst skärm + knappar)
-  m.box(0.38, 0.82, 0.34, 0.08, 0.11, 0.22, dark);
-  m.box(0.34, 0.835, 0.34, 0.015, 0.065, 0.14, [0.18, 0.68, 0.95, 1]);
-  m.box(0.34, 0.80, 0.25, 0.018, 0.07, 0.025, [0.10, 0.48, 0.85, 1]);
-  m.box(0.34, 0.80, 0.43, 0.018, 0.07, 0.025, [0.88, 0.15, 0.15, 1]);
+  m.box(0.203, 0.605, 0.11, 0.016, 0.042, 0.024, [0.86, 0.48, 0.10, 1]); // Orange relä/indikator nere till höger (foto 4)
+  // Stag från aluminiumlådan upp till brädan (foto 4)
+  m.tube([0.22, 0.73, 0.09], [0.34, 0.79, 0.11], 0.006, 0.006, alu, 6);
 
-  // Sekventiell växelspak & hydraulisk handbromsspaksrör till höger om ratten
-  m.tube([0.14, 0.48, -0.08], [0.08, 0.83, -0.08], 0.012, 0.014, steel, 8);
-  m.box(0.08, 0.83, -0.08, 0.038, 0.065, 0.038, [0.12, 0.12, 0.14, 1]);
-  m.tube([0.16, 0.50, -0.01], [0.12, 0.86, -0.01], 0.011, 0.013, [0.85, 0.14, 0.12, 1], 8);
+  // 5. VIT PASSAGERARSKYLT ("MATKUSTAJA" / "Eventtec" med svart ram på höger sida av brädan som i foto 1 & 4!) + Monit-box (foto 3)
+  m.box(0.39, 0.65, 0.30, 0.02, 0.115, 0.19, [0.95, 0.96, 0.97, 1]);
+  m.box(0.382, 0.658, 0.30, 0.015, 0.098, 0.172, [0.14, 0.15, 0.18, 1]);
+  // Textrader / logotyp på skylten (vit text + röd detalj som "Eventtec" i foto 4 & "MATKUSTAJA" i foto 1)
+  m.box(0.374, 0.715, 0.30, 0.01, 0.024, 0.135, [0.95, 0.96, 0.97, 1]);
+  m.box(0.374, 0.680, 0.32, 0.01, 0.022, 0.095, [0.95, 0.96, 0.97, 1]);
+  m.box(0.374, 0.680, 0.245, 0.01, 0.024, 0.028, [0.92, 0.22, 0.14, 1]);
+  // Blå/röd digital rallybox ovanpå höger brädkant (som i foto 3!)
+  m.box(0.41, 0.80, 0.37, 0.06, 0.075, 0.15, dark);
+  m.box(0.378, 0.812, 0.37, 0.012, 0.045, 0.085, [0.58, 0.74, 0.92, 1]);
+  m.box(0.378, 0.804, 0.308, 0.014, 0.058, 0.032, [0.12, 0.48, 0.88, 1]);
+  m.box(0.378, 0.804, 0.432, 0.014, 0.058, 0.032, [0.88, 0.18, 0.16, 1]);
 
-  // 4. Störtbur (Turvakaaret: A-stolpar (3), vindrutetvärrör (4), takrör (5, 7), dörrsträvor (6) & Nascar-verkko!)
-  // Vänster & höger A-stolpe i störtburen + röd FIA-vaddering (inramar vindrutan exakt som i referensbilden!)
-  m.tube([0.52, 0.72, -0.68], [0.18, 1.24, -0.58], 0.028, 0.026, cage, 10);
-  m.tube([0.40, 0.86, -0.65], [0.24, 1.12, -0.60], 0.034, 0.034, padRed, 10);
-  m.tube([0.52, 0.72,  0.68], [0.18, 1.24,  0.58], 0.028, 0.026, cage, 10);
-  // Övre tvärrör vid vindrutans överkant (punkt 4 i Kaaret-ritningen, med svag båge mitt i synfältets överkant som i referensbilden!)
-  m.tube([0.18, 1.23, -0.58], [0.28, 1.19, -0.18], 0.030, 0.028, cage, 10);
-  m.tube([0.28, 1.19, -0.18], [0.28, 1.19,  0.10], 0.028, 0.028, cage, 10);
-  m.tube([0.28, 1.19,  0.10], [0.18, 1.23,  0.58], 0.028, 0.030, cage, 10);
-  // Vit Katsastuskortti-etikett på störtbågen uppe till vänster
-  m.box(0.22, 1.21, -0.38, 0.03, 0.022, 0.11, [0.95, 0.95, 0.92, 1]);
-  // Längsgående takrör (5, 7) och innertak
-  m.tube([0.18, 1.24, -0.58], [-0.55, 1.26, -0.58], 0.024, 0.024, cage, 8);
-  m.tube([0.18, 1.24,  0.58], [-0.55, 1.26,  0.58], 0.024, 0.024, cage, 8);
-  m.box(-0.18, 1.28, 0, 0.82, 0.03, 1.28, [0.11, 0.13, 0.16, 1]);
-  // Backspegel i vindrutans överkant
-  m.box(0.26, 1.15, 0.02, 0.035, 0.055, 0.22, dark);
-  m.box(0.24, 1.15, 0.02, 0.01, 0.045, 0.20, mirrorGlass);
+  // 6. Växelspak med damask + hög vit HYDRAULISK HANDBROMS (hydraulikäsijarru i metallkonsol som i foto 1, 2 & 4!)
+  m.box(0.04, 0.42, -0.02, 0.16, 0.09, 0.12, [0.72, 0.74, 0.77, 1]); // Metallkonsol på kardantunneln
+  m.tube([0.08, 0.45, -0.06], [0.02, 0.68, -0.08], 0.012, 0.010, dark, 8); // Växelspak
+  m.box(0.02, 0.67, -0.08, 0.036, 0.05, 0.036, [0.14, 0.15, 0.17, 1]);
+  // Hög vit/ljusgrå hydraulisk handbromsspak till höger (exakt som i foto 1!)
+  m.box(0.12, 0.48, 0.10, 0.13, 0.10, 0.09, [0.68, 0.70, 0.73, 1]);
+  m.tube([0.12, 0.56, 0.10], [0.15, 0.76, 0.11], 0.015, 0.014, [0.88, 0.90, 0.92, 1], 8, true);
 
-  // Nascar-verkko i vänster sidoruta (förardörren z = -0.68) + 0,5 mm metalldörrplåt
-  m.box(0.05, 0.55, -0.70, 0.85, 0.36, 0.04, [0.18, 0.20, 0.23, 1]);
-  m.box(0.05, 0.55,  0.70, 0.85, 0.36, 0.04, [0.18, 0.20, 0.23, 1]);
-  for (let s = 0; s < 4; s++) {
-    m.box(0.18, 0.82 + s * 0.08, -0.67, 0.52, 0.016, 0.01, [0.12, 0.13, 0.16, 1]);
-  }
-  for (let v = 0; v < 4; v++) {
-    m.box(-0.02 + v * 0.13, 0.94, -0.67, 0.014, 0.28, 0.01, [0.12, 0.13, 0.16, 1]);
-  }
+  // 7. Svetsad Störtbur (Turvakaaret: A-stolpar, dörrsträvor oviputket, rensad passagerardörr i plåt & takrör som i foto 1, 2, 4!)
+  // Vänster & höger A-stolpe i störtburen
+  m.tube([0.48, 0.68, -0.64], [0.16, 1.22, -0.55], 0.028, 0.026, cage, 10);
+  m.tube([0.48, 0.36,  0.62], [0.46, 0.74,  0.62], 0.028, 0.028, cage, 10); // Höger främre burben ner till golvet (foto 4!)
+  m.tube([0.46, 0.72,  0.62], [0.16, 1.22,  0.55], 0.028, 0.026, cage, 10); // Höger A-stolpe längs vindrutan
+  m.tube([0.44, 0.90,  0.60], [0.22, 1.22,  0.54], 0.022, 0.022, cage, 8);  // A-stolps-stödsträva (foto 3 & 4!)
+  // Övre tvärrör vid vindrutans överkant + vit Katsastuskortti-etikett uppe till vänster (foto 3!)
+  m.tube([0.16, 1.21, -0.55], [0.16, 1.21,  0.55], 0.028, 0.028, cage, 10);
+  m.box(0.18, 1.205, -0.34, 0.025, 0.022, 0.11, [0.94, 0.95, 0.92, 1]);
+  // Innertak med tvärgående takbalk och skumskydd (foto 2 & 3)
+  m.box(-0.08, 1.25, 0, 0.72, 0.03, 1.24, [0.12, 0.13, 0.15, 1]);
+  // Rensad passagerardörr (gutted sheet-metal door panel till höger z = 0.65) + DIAGONAL DÖRRSTRÄVA (oviputki) som i foto 1, 2 & 4!
+  m.box(0.06, 0.34,  0.66, 0.92, 0.42, 0.035, P(0.75)); // Ytterdörrplåt i bilens färg
+  m.box(0.08, 0.38,  0.64, 0.78, 0.34, 0.02, [0.28, 0.25, 0.26, 1]); // Urkapad rå insida av passagerardörren (foto 1, 2, 4)
+  m.box(0.06, 0.74,  0.64, 0.88, 0.045, 0.045, [0.18, 0.20, 0.22, 1]); // Övre dörrlist under sidorutan
+  // Två störtbursrör över passagerardörren (oviputket, foto 1, 2 & 4!)
+  m.tube([0.45, 0.56, 0.60], [-0.28, 0.42, 0.58], 0.026, 0.026, steel, 10);
+  m.tube([0.45, 0.40, 0.60], [-0.28, 0.34, 0.58], 0.024, 0.024, cage, 8);
+  // Rund ventilationsplåt i höger sidoruta (som i foto 2!)
+  m.tube([0.28, 0.94, 0.63], [0.28, 0.94, 0.645], 0.055, 0.055, [0.20, 0.22, 0.25, 1], 12, true);
+  m.tube([0.28, 0.94, 0.628], [0.28, 0.94, 0.647], 0.020, 0.020, [0.68, 0.70, 0.74, 1], 10, true);
 
-  // 5. Vänster & höger yttre sidospeglar (synliga i framkant av rutan precis som i referensbilden!)
-  for (const sgn of [-1, 1]) {
-    const zBase = sgn * 0.64, zOut = sgn * 0.78;
-    const xMir = sgn < 0 ? 0.44 : 0.56;
-    m.tube([xMir + 0.04, 0.78, zBase], [xMir, 0.88, zOut], 0.018, 0.016, P(0.95), 8);
-    m.tube([xMir - 0.02, 0.75, zBase], [xMir, 0.84, zOut], 0.016, 0.014, P(0.95), 8);
-    // Spegelhus i bilens lack + spegelglas vänt mot föraren
-    m.box(xMir + 0.01, 0.84, zOut + sgn * 0.02, 0.09, 0.095, 0.16, P(1.02), 0.02, 0.01, P(1.06), 0.01);
-    m.box(xMir - 0.038, 0.848, zOut + sgn * 0.02, 0.012, 0.075, 0.138, mirrorGlass);
-  }
+  // 8. Bred invändig backspegel (taustapeili) i vindrutans överkant (foto 1, 2 & 4!)
+  m.tube([0.22, 1.21, -0.03], [0.26, 1.13, -0.03], 0.012, 0.010, dark, 6);
+  m.box(0.26, 1.09, -0.03, 0.028, 0.062, 0.21, dark);
+  m.box(0.244, 1.094, -0.03, 0.008, 0.052, 0.194, mirrorGlass);
+
+  // 9. FÖRARENS HJÄLM (med vit Sparco-skärmkant till vänster i bild!) & SVARTA RACINGOVERALL-AXLAR (foto 1 & 2!)
+  // Ligger på vänster sida (x = -0.15..0.02, z = -0.46..-0.30) så att GoPro-kameran vid [-0.30, 1.03, -0.10] ser hjälmkanten och overallen till vänster!
+  const suitBlack = [0.10, 0.11, 0.13, 1], suitFold = [0.15, 0.16, 0.19, 1], sparcoBlue = [0.12, 0.38, 0.78, 1];
+  // Hjälmskal (vit/svart rallyhjälm med mörkt visir och skärm uppe till vänster som i foto 1 & 2!)
+  m.tube([-0.14, 1.04, -0.39], [-0.03, 1.06, -0.37], 0.105, 0.095, [0.92, 0.93, 0.95, 1], 12, true); // Vitt hjälmskal (foto 1)
+  m.tube([-0.12, 1.11, -0.38], [-0.01, 1.12, -0.35], 0.092, 0.082, [0.12, 0.14, 0.16, 1], 12, true); // Mörk hjälmtopp / skärm (foto 2)
+  m.tube([-0.03, 1.11, -0.35], [0.02,  1.10, -0.33], 0.078, 0.068, [0.95, 0.96, 0.98, 1], 10, true); // Vit Sparco-skärmkant
+  m.tube([-0.04, 1.03, -0.35], [0.01,  1.04, -0.33], 0.075, 0.065, [0.06, 0.07, 0.09, 1], 10, true); // Mörkt visir
+  // Förarens ryggstöd (kuppipenkki) och svarta racingoverall-axlar & överarmar med blå/vit Sparco-epålett (foto 1 & 2!)
+  m.box(-0.18, 0.52, -0.32, 0.10, 0.44, 0.34, suitBlack);
+  // Vänster & höger överarm som sträcker sig framåt från förarens axlar mot ratten
+  m.tube([-0.15, 0.79, -0.43], [0.03, 0.78, -0.42], 0.058, 0.050, suitBlack, 10, true);
+  m.tube([-0.15, 0.76, -0.22], [0.03, 0.77, -0.21], 0.062, 0.052, suitBlack, 10, true);
+  // Blå/vit Sparco-dekal på axeln/ärmen nere till vänster (exakt som i foto 1 & 2!)
+  m.box(-0.10, 0.805, -0.26, 0.055, 0.025, 0.045, sparcoBlue);
+  m.box(-0.10, 0.828, -0.26, 0.048, 0.006, 0.038, [0.95, 0.96, 0.98, 1]);
+  // Veck i overall-ärmarna för realistisk textilkänsla
+  m.tube([-0.06, 0.77, -0.21], [-0.02, 0.775, -0.21], 0.056, 0.054, suitFold, 10);
+  m.tube([-0.06, 0.78, -0.42], [-0.02, 0.782, -0.42], 0.053, 0.051, suitFold, 10);
 
   return m.data();
 }
 
-// ---------- 3D Roterande Mockaratt med telemetridisplay & förarhandskar ----------
-// Ritas i lokal origo (0,0,0) och roteras kring X-axeln med bilens styrutslag!
+// ---------- 3D Djup 3-ekrad Mockaratt (Deep-Dish Rally Wheel) + Förarhandskar & Underarmar ----------
+// Ritas i lokal origo (0,0,0) vid [0.16, 0.79, -0.31] och roteras med bilens styrutslag!
 export function steerWheelMesh() {
   const m = new MB();
-  const suede = [0.11, 0.12, 0.14, 1], metal = [0.20, 0.22, 0.26, 1], yellow = [0.98, 0.82, 0.08, 1];
-  const glove = [0.18, 0.20, 0.24, 1], gloveGrip = [0.95, 0.52, 0.08, 1];
-  const R = 0.165, seg = 20;
+  const suede = [0.09, 0.10, 0.12, 1], spokeMetal = [0.18, 0.20, 0.23, 1], yellow = [0.98, 0.84, 0.08, 1];
+  const blueRing = [0.12, 0.56, 0.94, 1], suitBlack = [0.10, 0.11, 0.13, 1], cuffWhite = [0.92, 0.94, 0.96, 1];
+  const gloveBlack = [0.13, 0.14, 0.16, 1], gloveWhite = [0.90, 0.92, 0.94, 1], gloveNeon = [0.82, 0.94, 0.14, 1];
+  const R = 0.165, dish = 0.055, seg = 24;
 
-  // Rattkrans (20 segment med gul centrummarkering högst upp!)
+  // 1. Rattnav (rattstångshylsa + blå anodiserad centrumring som i foto 3!)
+  m.tube([dish + 0.08, 0, 0], [dish, 0, 0], 0.042, 0.046, [0.12, 0.13, 0.15, 1], 12, true);
+  m.tube([dish, 0, 0], [dish - 0.008, 0, 0], 0.044, 0.044, spokeMetal, 12, true);
+  m.tube([dish - 0.008, 0, 0], [dish - 0.014, 0, 0], 0.028, 0.028, blueRing, 12, true);
+  m.tube([dish - 0.014, 0, 0], [dish - 0.016, 0, 0], 0.016, 0.016, [0.05, 0.06, 0.08, 1], 10, true);
+
+  // 2. 3 djupa lättade rallyekrar (kl. 9, kl. 3 och kl. 6) från navet (x = dish) ut till kransen (x = 0)
+  for (const ang of [0, Math.PI, -Math.PI * 0.5]) {
+    const sy = Math.sin(ang), sz = Math.cos(ang);
+    m.tube([dish - 0.005, sy * 0.035, sz * 0.035], [0.004, sy * (R - 0.015), sz * (R - 0.015)], 0.018, 0.014, spokeMetal, 6);
+    // Silverfärgade lättningshål / bultdetaljer på ekrarna (som i foto 4!)
+    m.box(dish * 0.5, sy * R * 0.52, sz * R * 0.52, 0.012, 0.012, 0.012, [0.65, 0.68, 0.72, 1]);
+  }
+
+  // 3. Mockakrans (24 segment med gul centrummarkering högst upp som i foto 3!)
   for (let i = 0; i < seg; i++) {
     const a0 = (i / seg) * Math.PI * 2, a1 = ((i + 1) / seg) * Math.PI * 2;
     const p0 = [0, Math.sin(a0) * R, Math.cos(a0) * R];
     const p1 = [0, Math.sin(a1) * R, Math.cos(a1) * R];
-    const isTop = Math.sin((a0 + a1) * 0.5) > 0.95;
-    m.tube(p0, p1, 0.021, 0.021, isTop ? yellow : suede, 8);
+    const isTop = Math.sin((a0 + a1) * 0.5) > 0.96 && Math.abs(Math.cos((a0 + a1) * 0.5)) < 0.28;
+    m.tube(p0, p1, 0.020, 0.020, isTop ? yellow : suede, 8);
   }
-  // Ekrar & rattnav med telemetriknappar (inspirerat av ratten i referensbilden!)
-  m.box(0.005, 0.0, 0.0, 0.018, 0.04, R * 1.85, metal);
-  m.box(0.005, -R * 0.45, 0.0, 0.018, R * 0.9, 0.045, metal);
-  // Centralt telemetrihus / knappsats mitt i ratten
-  m.box(-0.008, 0.01, 0.0, 0.025, 0.105, 0.145, [0.07, 0.08, 0.10, 1]);
-  m.box(-0.022, 0.01, 0.0, 0.006, 0.072, 0.095, [0.04, 0.12, 0.18, 1]); // Belyst LCD-skärm i ratten
-  // Färgade telemetriknappar (vänster & höger rad som i referensbilden!)
-  const btnCols = [[0.15, 0.55, 0.95, 1], [0.95, 0.78, 0.10, 1], [0.15, 0.85, 0.45, 1], [0.92, 0.20, 0.20, 1]];
-  for (let b = 0; b < 4; b++) {
-    const y = 0.042 - b * 0.022;
-    m.box(-0.022, y, -0.058, 0.008, 0.012, 0.012, btnCols[b]);
-    m.box(-0.022, y,  0.058, 0.008, 0.012, 0.012, btnCols[(b + 2) % 4]);
-  }
-  // Vänster och höger rallyhandske som greppar ratten vid kl. 9 och kl. 3
+
+  // 4. Förarens racinghandskar (med vit/neongul handryggsdekal som i foto 1, 2 & 3) + svarta overall-underarmar!
   for (const sgn of [-1, 1]) {
-    m.box(-0.01, 0.015, sgn * R, 0.062, 0.078, 0.055, glove, 0.01, 0.01);
-    m.box(-0.042, 0.015, sgn * R, 0.012, 0.048, 0.042, gloveGrip);
+    const hz = sgn * (R - 0.005), hy = 0.025;
+    // Handske som greppar rattkransen
+    m.box(-0.008, hy - 0.01, hz, 0.056, 0.072, 0.052, gloveBlack, 0.01, 0.01);
+    // Vit/neongul grafik på handryggen (som OMP/Sparco-handskarna i foto 2 & 3!)
+    m.box(-0.036, hy - 0.005, hz, 0.008, 0.046, 0.038, gloveWhite);
+    m.box(-0.041, hy + 0.002, hz, 0.005, 0.024, 0.022, gloveNeon);
+    // Vit handledsmudd + svart racingoverall-underarm bakåt mot förarens armbågar
+    m.tube([-0.025, hy - 0.01, hz], [-0.065, hy - 0.02, hz * 0.92], 0.034, 0.038, cuffWhite, 8, true);
+    m.tube([-0.060, hy - 0.02, hz * 0.92], [-0.165, hy - 0.04, hz * 0.72], 0.044, 0.054, suitBlack, 10, true);
   }
+  return m.data();
+}
+
+// ---------- Dinglande Doftgran / Hängsmycke under backspegeln (foto 1 & 4!) ----------
+// Ritas i lokal origo vid fästpunkten [0.25, 1.07, -0.02] och pendlar i sidled med lateral G-kraft!
+export function pendantMesh() {
+  const m = new MB();
+  // Snöre från backspegelfästet + rött/rosa kort med vit/ljus figur (som i foto 1 & 4!)
+  m.tube([0, 0, 0], [0, -0.055, 0], 0.002, 0.002, [0.85, 0.85, 0.85, 1], 4);
+  m.box(0, -0.145, 0, 0.004, 0.095, 0.056, [0.68, 0.14, 0.16, 1]);
+  m.box(-0.003, -0.125, 0, 0.003, 0.045, 0.038, [0.94, 0.84, 0.82, 1]);
+  m.box(-0.004, -0.108, 0.010, 0.003, 0.012, 0.014, [0.92, 0.18, 0.22, 1]);
   return m.data();
 }
 
