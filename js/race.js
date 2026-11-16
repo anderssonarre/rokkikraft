@@ -47,7 +47,7 @@ export function makeCar(def, trk, slot, isPlayer, gridRows = 2, totalCars = 6) {
 
 export function phys(c, dt, trk) {
   const s = c.spec, surf = trk.surfAt ? trk.surfAt(c.i) : trk.surf;
-  const L = s.wb, a = L * (1 - s.front), b = L * s.front, m = s.mass, fwd = s.drv === 'fwd';
+  const L = s.wb, a = L * (1 - s.front), b = L * s.front, m = s.mass, fwd = s.drv === 'fwd', awd = s.drv === 'awd';
   const st = trk.surfTypeAt ? trk.surfTypeAt(c.i) : trk.surface;
   // lätta bilar har en liten fördel i kurvorna (lastkänslighet), skador försämrar väghållningen
   const mu = surf.mu * s.mu * (c.gripF || 1) * (c.onSurf ? 1 : 0.72 + 0.12 * s.susp) * (s.surfK ? s.surfK[st] || 1 : 1) * Math.pow(1150 / m, 0.12) * (1 - Math.max(0, (c.dmg || 0) - 30) * 0.0025), crr = c.onSurf ? surf.crr : 0.09 - 0.03 * s.susp;
@@ -68,15 +68,17 @@ export function phys(c, dt, trk) {
     if (cl > 0.05) rpm = Math.max(rpm * (1 - cl), s.idle + c.thr * (s.redline - 400 - s.idle) * cl);
     if (c.shiftT > 0) c.shiftT -= dt;
     else if (rpm < s.redline) Fd = c.tq(rpm) * c.thr * c.pow * gr * s.eff / s.rw * (1 - cl);
-    if (c.thr < 0.05 && c.vx > 1) Fd -= (0.97 + 0.15 * rpm / 1000) * 1e5 * s.Vd * 1e-3 / 12.566 * gr / s.rw;
+    if (c.thr < 0.05 && c.vx > 1) Fd -= (0.97 + 0.15 * rpm / 1000) * 1e5 * s.Vd * 1e-3 / 12.566 * gr / s.rw * (1 - cl);
     const wk = trk.wetK ? (st === 'asfalt' ? trk.wetK[0] : trk.wetK[1]) : 1;
     const capF = mu * wk * Fzf * (s.muF || 1), capR = mu * wk * Fzr * (s.muR || 1), muE = mu * wk;
     // Differential. Öppen diff: i kurva avlastas innerhjulet och det spinner först → mindre drivkraft ut ur kurvan.
     // Svetsad diff (lukkoperä): båda hjulen drar alltid fullt, men axeln vill gå rakt och släpper plötsligt.
     const welded = !!s.trac, latUse = Math.min(1, Math.abs(c.vx * c.r) / (muE * G + 0.1));
-    const capD = (fwd ? capF : capR) * (welded ? 1 : 1 - 0.4 * latUse);
+    // Fyrhjulsdrift: båda axlarnas grepp kan användas för drivning (mittdiff fördelar ~40/60 och flyttar över kraft till axeln som greppar)
+    const capD = awd ? (capF + capR) * (welded ? 1 : 1 - 0.2 * latUse) : (fwd ? capF : capR) * (welded ? 1 : 1 - 0.4 * latUse);
     let slip = 0, latD = 1;
-    if (c.aids.tc) { const need = Math.abs(shape(fwd ? af : ar)); const lim = capD * 0.97 * Math.sqrt(Math.max(0.08, 1 - 0.92 * need * need)); if (Fd > lim) Fd = lim; }
+    // antispinn: lämnar sidogrepp kvar på bakaxeln så bilen inte blir instabil på raksträckor
+    if (c.aids.tc) { const nf = Math.abs(shape(af)), nr = Math.abs(shape(ar)), need = Math.abs(shape(fwd ? af : ar)), lim = awd ? 0.95 * capF * Math.sqrt(Math.max(0.08, 1 - 0.92 * nf * nf)) + 0.86 * capR * Math.sqrt(Math.max(0.05, 1 - 0.95 * nr * nr)) : capD * (fwd ? 0.97 : 0.94) * Math.sqrt(Math.max(0.08, 1 - 0.92 * need * need)); if (Fd > lim) Fd = lim; }
     // hjulspinn: på löst grus gräver däcket och tappar lite drivkraft, på asfalt/is mer; sidogreppet försvinner
     else if (Fd > capD) { slip = Math.min(2, Fd / capD - 1); Fd = capD * (st === 'grus' ? 0.97 - 0.03 * Math.min(1, slip) : 0.92 - 0.1 * Math.min(1, slip)); latD = 1 / (1 + (fwd ? 1.4 : 2.6) * slip); } // hjulspinn: glidfriktion < statisk, sidogreppet försvinner
     if (Fd < -capD) Fd = -capD;
@@ -84,22 +86,26 @@ export function phys(c, dt, trk) {
     let Fbf = 0, Fbr = 0, lockF = false, lockR = false; const sg = c.vx >= 0 ? 1 : -1;
     if (c.brk > 0) { const Fb = c.brk * 1.12 * m * G * s.brake; Fbf = Fb * s.bias; Fbr = Fb * (1 - s.bias);
       if (Fbf > capF) { if (c.aids.abs) Fbf = capF * 0.96; else { lockF = true; Fbf = capF * 0.82; } }
-      const prop = capR * (fwd ? 0.8 : 0.92); // lastkännande bromskraftsfördelare: framhjulsdrivna bilar är extra bakbromsade-snåla → drar rakt
-      if (Fbr > prop && !c.aids.abs && fwd) Fbr = prop;
-      if (Fbr > capR) { if (c.aids.abs) Fbr = capR * 0.96; else { lockR = true; Fbr = capR * 0.82; } } }
+      const prop = capR * (fwd ? 0.8 : 0.9); // lastkännande bromskraftsfördelare: framhjulsdrivna bilar är extra bakbromsade-snåla → drar rakt
+      if (Fbr > prop && !c.aids.abs) Fbr = prop;
+      if (c.aids.abs && Fbr > capR * 0.8) Fbr = capR * 0.8; // ABS/EBD håller bakhjulen under låsgränsen så bilen är styrbar
+      if (Fbr > capR) { if (c.aids.abs) Fbr = capR * 0.8; else { lockR = true; Fbr = capR * 0.82; } } }
     if (c.hb) { lockR = true; Fbr = capR * 0.85; }
     c.lock = lockF || lockR;
-    const Fxf = (fwd ? Fd : 0) - sg * Fbf, Fxr = (fwd ? 0 : Fd) - sg * Fbr;
+    let dF = fwd ? Fd : 0, dR = fwd ? 0 : Fd;
+    // aktiv mittdiff: mer kraft till axeln som har greppmarginal kvar
+    if (awd) { const sF = capF * (1 - 0.9 * Math.abs(shape(af))) + 1, sR = capR * (1 - 0.9 * Math.abs(shape(ar))) + 1, kF = Fd < 0 ? 0.7 : Math.min(0.75, 0.45 * 2 * sF / (sF + sR)); dF = Fd * kF; dR = Fd * (1 - kF); const rMax = capR * 0.8; if (Math.abs(dR) > rMax) { dF += dR - Math.sign(dR) * rMax; dR = Math.sign(dR) * rMax; } if (Math.abs(dF) > capF) { dR += dF - Math.sign(dF) * capF; dF = Math.sign(dF) * capF; } }
+    const Fxf = dF - sg * Fbf, Fxr = dR - sg * Fbr;
     const latF = (al, cap, Fx, sc) => -cap * Math.sqrt(Math.max(0.12, 1 - (Fx / cap) ** 2)) * sc * shape(al);
     // Svetsad diff på drivaxeln: gas eller motorbroms mitt i kurvan gör att båda hjulen tappar sidogrepp samtidigt
-    let wl = 1; if (welded && Math.abs(c.vx) > 4) { const u = Math.abs(fwd ? Fxf : Fxr) / Math.max(1, fwd ? capF : capR); wl = 1 / (1 + 2.0 * u * u * (0.25 + latUse)); }
-    const Fyf = latF(af, capF, Fxf, (fwd ? latD * wl : 1) * (lockF ? 0.3 : 1));
+    let wl = 1; if (welded && !awd && Math.abs(c.vx) > 4) { const u = Math.abs(fwd ? Fxf : Fxr) / Math.max(1, fwd ? capF : capR); wl = 1 / (1 + 2.0 * u * u * (0.25 + latUse)); }
+    const Fyf = latF(af, capF, Fxf, (fwd || awd ? latD : 1) * (fwd ? wl : 1) * (lockF ? 0.3 : 1));
     const Fyr = latF(ar, capR, Fxr, (fwd ? 1 : latD * wl) * (lockR ? 0.35 : 1) * 1.05);
     const drag = 0.6 * s.CdA * c.vx * Math.abs(c.vx) + (Math.abs(c.vx) > 0.2 ? crr * m * G * sg : 0);
     const cd = Math.cos(delta), sd = Math.sin(delta);
     const axn = (Fxf * cd - Fyf * sd + Fxr - drag) / m, ayn = (Fyf * cd + Fxf * sd + Fyr) / m;
     let Mz = a * (Fyf * cd + Fxf * sd) - b * Fyr;
-    if (welded && !fwd) { // låst axel motverkar girning så länge hjulen greppar (understyr in i kurvan) – sedan släpper det
+    if (welded && !fwd && !awd) { // låst axel motverkar girning så länge hjulen greppar (understyr in i kurvan) – sedan släpper det
       const tw = 0.74, need = Math.abs(c.r) * tw / Math.max(3, Math.abs(c.vx)), grip = Math.max(0, capR - Math.abs(Fxr)) * 0.5;
       Mz -= Math.sign(c.r) * Math.min(1, need / 0.05) * grip * tw * 0.6;
     }
@@ -221,9 +227,14 @@ export function aiDrive(c, race, dt) {
   }
   if (wantJ && idx >= j.i1 && idx <= j.i2 && j.uShape) vt = Math.min(vt, ai.vJ * 0.62);
   vt = Math.min(vt, cap);
-  if (v < vt - 0.4) { c.thr = clamp(1 - Math.abs(c.steer) * 0.45, 0.35, 1) * (ai.thrMax || 1); c.brk = 0; }
+  // starka bilar: AI:n doserar gasen i kurvor och när bilen glider (annars spinner/understyr den av banan)
+  ai.pwr ??= c.tq(c.upRpm) * c.upRpm / 9549 / c.spec.mass;
+  const thrK = clamp(1 - Math.abs(c.steer) * (0.45 + Math.min(0.4, ai.pwr * 1.1)), 0.2, 1) * clamp(1 - (Math.abs(Math.atan2(c.vy, Math.max(3, c.vx))) - (c.spec.drv === 'awd' ? 0.32 : 0.2)) * 3, 0.3, 1);
+  const thr0 = c.thr, brk0 = c.brk;
+  if (v < vt - 0.4) { c.thr = thrK * (ai.thrMax || 1); c.brk = 0; }
   else if (v > vt + 0.8) { c.thr = 0; c.brk = clamp((v - vt) / 3.5, 0.15, 1); }
-  else { c.thr = 0.35; c.brk = 0; }
+  else { c.thr = clamp(0.035 / ai.pwr, 0.08, 0.35) * thrK; c.brk = 0; } // håll farten: mindre gas ju starkare bil
+  c.thr = thr0 + clamp(c.thr - thr0, -4 * dt, 5 * dt); c.brk = brk0 + clamp(c.brk - brk0, -6 * dt, 4 * dt); // mjuka pedalrörelser (som en förare)
   if (v < 1.2 && race.t > 2) { ai.stuck += dt; if (ai.stuck > 2.5) { race.resetCar(c); ai.stuck = 0; } } else ai.stuck = 0;
 }
 

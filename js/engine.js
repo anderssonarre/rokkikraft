@@ -47,12 +47,13 @@ export function buildSpec(carId, cs, tune) {
     if (fx.trac) s.trac = 1; if (fx.kg) s.mass += fx.kg; if (fx.mu) s.mu += fx.mu; if (fx.susp) s.susp = fx.susp;
     if (fx.brake) s.brake += fx.brake; if (fx.dmg) s.dmg = Math.min(s.dmg, fx.dmg);
     if (fx.superReady) s.superReady = 1;
+    if (fx.awd) s.drv = 'awd';
     if (fx.rallyTire) s.rallyTire = 1;
     if (fx.chop) s.chop = 1;
     if (fx.tq) s.tqUp += fx.tq;
   }
   // Om bilen fått turbo, rallydäck/slicks eller lukkoperä på framhjulsdrift klassas den som Super-bil om superReady är monterad
-  if ((s.boost > 0 || s.rallyTire || (s.trac && s.drv === 'fwd')) && s.superReady) {
+  if ((s.boost > 0 || s.rallyTire || s.drv === 'awd' || (s.trac && s.drv === 'fwd')) && s.superReady) {
     s.cls = 'super';
   }
   s.final *= tune.finalScale; s.lambda = tune.lambda; s.ign = Math.min(tune.ign, s.ignMax); s.fuel = fuelById(tune.fuel); s.bias = tune.bias;
@@ -85,6 +86,7 @@ export function checkInspection(carId, cs, driverCls = 'auto') {
   if (!rules.diffFwd && s.trac && s.drv === 'fwd') issues.push(`Lukkoperä (svetsad diff) på framhjulsdriven bil är endast tillåten i Super Rock!`);
   if (!rules.rallyTires && s.rallyTire) issues.push(`Rallydäck/slicks på sommaren är endast tillåtna i Super Rock!`);
   if (s.regMass > rules.maxMass) issues.push(`Tjänstevikt enligt regbevis (${s.regMass} kg) överstiger maxgränsen 1 800 kg i myyntiluokat.`);
+  if (s.drv === 'awd' && actCls !== 'super') issues.push('Fyrhjulsdrift är bara tillåten i Super-klassen.');
   if ((actCls === 'super' || actCls === 'supersenior') && !s.superReady) {
     issues.push(`${rules.name} kräver Super-luokan kaaret (8 fästpunkter & takkryss), 6-punktsbälte och sidospeglar.`);
   }

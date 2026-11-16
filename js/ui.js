@@ -19,7 +19,7 @@ const shuffle = a => { a = [...a]; for (let i = a.length - 1; i > 0; i--) { cons
 const U = { view: 'menu', kompOpen: null, quick: { track: 'tammisaari', laps: 3, opp: 5, ai: 75, joker: 1 }, ev: null, task: null, taskDiff: 1, taskMsg: '', preview: null, race: null, toast: '' };
 
 // Hastighet upp till vilken drivhjulen spinner (greppbegränsat) – över den begränsas accelerationen av effekten: v = P·η / (μ·Fz_drivaxel)
-const spinTo = (sp, mu) => { const k = curve(sp), axle = sp.drv === 'fwd' ? sp.front : 1 - sp.front, g = (sp.drv === 'fwd' ? sp.muF : sp.muR) || 1;
+const spinTo = (sp, mu) => { const k = curve(sp), axle = sp.drv === 'awd' ? 1 : sp.drv === 'fwd' ? sp.front : 1 - sp.front, g = (sp.drv === 'awd' ? Math.min(sp.muF, sp.muR) : sp.drv === 'fwd' ? sp.muF : sp.muR) || 1;
   return Math.round(k.hp * 735.5 * 0.88 / (mu * g * sp.mass * 9.81 * axle * 0.9) * 3.6); };
 const accC = {}; const acc = sp => { const k = JSON.stringify([sp.id, sp.engId, sp.mass, sp.tqS, sp.muF, sp.rw, sp.gears, sp.final, sp.drv]); return accC[k] ??= accel0100(sp); };
 const spec = (id = S.active) => buildSpec(id, S.cars[id], S.cars[id]?.tune);
@@ -284,7 +284,7 @@ function makeOpps(n, li, diff, cls) {
   const poolKey = cls === 'super' || cls === 'supersenior' ? 'super' : cls === 'kardaani' ? 'kardaani' : 'vetari';
   const pool = [...AI_POOL[poolKey][Math.max(0, Math.min(3, li))], 'mazda626', 'passat_rx', 'mondeo_st'];
   return names.map(name => {
-    const cid = pick(pool), sp = buildSpec(cid, { build: full, upg: poolKey === 'super' ? { superkit: 1 } : {} }, tune), hp = curve(sp).hp;
+    const cid = pick(pool), sp = buildSpec(cid, { build: full, upg: poolKey === 'super' ? { superkit: 1, ...(ps.drv === 'awd' ? { awd: 1 } : {}) } : {} }, tune), hp = curve(sp).hp; // Super-AI kör fyrhjulsdrift om spelaren gör det
     const d = Math.max(0.01, Math.min(1, diff + (Math.random() - 0.5) * 0.08));
     return { name, paint: pick(PAINTS.filter(p => p.id !== mine)).rgb, bw: Math.random() < 0.35 ? 'bw' : 'wb', diff: d, skill: 0.6 + 0.4 * d, spec: sp,
       powScale: Math.max(0.4, Math.min(3, php / hp * (0.92 + Math.random() * 0.16))) };

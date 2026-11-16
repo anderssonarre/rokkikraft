@@ -304,6 +304,9 @@ export const UPG = [
   { id: 'vaxel', name: 'Växellåda', komp: 'utvaxling', levels: [
     { name: 'Kort slutväxel', price: 0, fx: { final: 1.12 }, desc: 'Slutväxeln 12 % kortare. Mer drivkraft i varje växel (F = T·i/r), lägre toppfart – rätt val på rokkibanor.' },
     { name: 'Kort slutväxel & tätstegad låda', price: 0, fx: { final: 1.12, shift: 0.14, eff: 0.02 }, desc: 'Kortare växelväg halverar växlingstiden och drivlinan förlorar mindre.' } ] },
+  { id: 'awd', name: 'Fyrhjulsdrift (endast Super)', komp: 'drivning', onlySuper: true, levels: [
+    { name: 'Fyrhjulsdrift med mittdiff (40/60)', price: 1200, fx: { awd: 1, kg: 75, eff: -0.03 },
+      desc: 'Kraften går till alla fyra hjulen, så nästan hela bilens vikt kan användas för att dra. Med mycket effekt är det skillnaden mellan hjulspinn och att flyga ut ur kurvorna. +75 kg, lite större förluster i drivlinan. Bara i Super.' } ] },
   { id: 'diff', name: 'Differential (Lukkoperä)', komp: 'drivning', rwdOrSuper: true, levels: [
     { name: 'Svetsad diff / Lukkoperä', price: 0, fx: { trac: 1 },
       desc: 'REGEL: Lukkoperä är ENDAST tillåten i bakhjulsdrivna bilar (Kardaani) samt i Super-luokka (där den även är tillåten på framhjulsdrivna bilar). Förbjuden på framhjulsdrivna Vetari-bilar!' } ] },
