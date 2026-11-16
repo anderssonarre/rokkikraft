@@ -41,7 +41,8 @@ function starters(st) {
   [['mazda626', 'vit', 26], ['passat_rx', 'bla', 33], ['mondeo_st', 'rod', 22]].forEach(([id, paint, num]) => {
     if (!st.cars[id]) st.cars[id] = { build: { ...full }, upg: {}, paint, num, bw: 'wb', katsastusNo: 100 + Math.floor(Math.random() * 890), tune: defaultTune() };
   });
-  for (const c of Object.values(st.cars)) c.tune = { ...defaultTune(), ...(c.tune || {}) };
+  for (const c of Object.values(st.cars)) { c.tune = { ...defaultTune(), ...(c.tune || {}) }; if (!st.v4 && c.tune.bias === 0.62) c.tune.bias = 0.70; }
+  st.v4 = 1;
   if (!st.v3) { st.v3 = 1; st.active = st.active === 'sunny' && !st.career?.res ? 'mazda626' : st.active; }
   return st;
 }

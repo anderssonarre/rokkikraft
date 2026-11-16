@@ -86,9 +86,9 @@ export function phys(c, dt, trk) {
     let Fbf = 0, Fbr = 0, lockF = false, lockR = false; const sg = c.vx >= 0 ? 1 : -1;
     if (c.brk > 0) { const Fb = c.brk * 1.12 * m * G * s.brake; Fbf = Fb * s.bias; Fbr = Fb * (1 - s.bias);
       if (Fbf > capF) { if (c.aids.abs) Fbf = capF * 0.96; else { lockF = true; Fbf = capF * 0.82; } }
-      const prop = capR * (fwd ? 0.8 : 0.9); // lastkännande bromskraftsfördelare: framhjulsdrivna bilar är extra bakbromsade-snåla → drar rakt
+      const prop = capR * (fwd ? 0.55 : 0.85); // lastkännande bromskraftsfördelare: framhjulsdrivna bilar är extra bakbromsade-snåla → drar rakt
       if (Fbr > prop && !c.aids.abs) Fbr = prop;
-      if (c.aids.abs && Fbr > capR * 0.8) Fbr = capR * 0.8; // ABS/EBD håller bakhjulen under låsgränsen så bilen är styrbar
+      const ebd = capR * (fwd ? 0.45 : 0.6); if (c.aids.abs && Fbr > ebd) Fbr = ebd; // ABS/EBD håller bakhjulen under låsgränsen så bilen är styrbar
       if (Fbr > capR) { if (c.aids.abs) Fbr = capR * 0.8; else { lockR = true; Fbr = capR * 0.82; } } }
     if (c.hb) { lockR = true; Fbr = capR * 0.85; }
     c.lock = lockF || lockR;
@@ -229,10 +229,10 @@ export function aiDrive(c, race, dt) {
   vt = Math.min(vt, cap);
   // starka bilar: AI:n doserar gasen i kurvor och när bilen glider (annars spinner/understyr den av banan)
   ai.pwr ??= c.tq(c.upRpm) * c.upRpm / 9549 / c.spec.mass;
-  const thrK = clamp(1 - Math.abs(c.steer) * (0.45 + Math.min(0.4, ai.pwr * 1.1)), 0.2, 1) * clamp(1 - (Math.abs(Math.atan2(c.vy, Math.max(3, c.vx))) - (c.spec.drv === 'awd' ? 0.32 : 0.2)) * 3, 0.3, 1);
+  const thrK = clamp(1 - Math.abs(c.steer) * (0.45 + Math.min(0.4, ai.pwr * 1.1)), 0.2, 1) * clamp(1 - (Math.abs(Math.atan2(c.vy, Math.max(3, c.vx))) - (c.spec.drv === 'awd' ? 0.35 : 0.28)) * 3, 0.35, 1);
   const thr0 = c.thr, brk0 = c.brk;
   if (v < vt - 0.4) { c.thr = thrK * (ai.thrMax || 1); c.brk = 0; }
-  else if (v > vt + 0.8) { c.thr = 0; c.brk = clamp((v - vt) / 3.5, 0.15, 1); }
+  else if (v > vt + 0.5) { c.thr = 0; c.brk = clamp((v - vt) / 2, 0.2, 1); }
   else { c.thr = clamp(0.035 / ai.pwr, 0.08, 0.35) * thrK; c.brk = 0; } // håll farten: mindre gas ju starkare bil
   c.thr = thr0 + clamp(c.thr - thr0, -4 * dt, 5 * dt); c.brk = brk0 + clamp(c.brk - brk0, -6 * dt, 4 * dt); // mjuka pedalrörelser (som en förare)
   if (v < 1.2 && race.t > 2) { ai.stuck += dt; if (ai.stuck > 2.5) { race.resetCar(c); ai.stuck = 0; } } else ai.stuck = 0;
@@ -461,7 +461,7 @@ export class Race {
         // svårighet 1–100 %: 1 % kör ca 4–5 km/h-krypfart med vingliga linjer (≈5 min/varv), 100 % pressar däcken till gränsen
         const d = c.diff, mu = trk.surf.mu * c.spec.mu * Math.min(c.spec.muF || 1, c.spec.muR || 1), k = d != null ? 0.55 + 0.44 * Math.pow(d, 1.2) : c.skill, top = d != null ? 2.2 + 47.8 * Math.pow(d, 1.3) : 50;
         c.ai.thrMax = d != null ? 0.3 + 0.7 * Math.pow(d, 1.5) : 1; c.ai.noise = d != null ? 0.9 * (1 - d) ** 2 : 0; c.ai.agg = d != null ? d : 0.8; c.ai.wob = 0;
-        c.ai.prof = trk.profile(mu * G * 0.90 * k * k, mu * G * 0.75 * k, d != null && d < 0.99 ? top : 90); c.ai.vJ = Math.sqrt(mu * G * 0.85 * k * k * 21); c.ai.aB = mu * G * 0.6 * k;
+        c.ai.prof = trk.profile(mu * G * 0.90 * k * k, mu * G * 0.85 * k, d != null && d < 0.99 ? top : 90); c.ai.vJ = Math.sqrt(mu * G * 0.85 * k * k * 21); c.ai.aB = mu * G * 0.6 * k;
         c.ai.jokerLap = Math.floor(Math.random() * cfg.laps);
       }
     }

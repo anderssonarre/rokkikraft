@@ -6,7 +6,7 @@ export const engById = id => ENGINES[id] || null;
 export const fuelById = id => FUELS.find(f => f.id === id) || FUELS[0];
 
 export const SETUP_DEF = { spring: 5, damper: 5, camber: -1.5, toeF: 0, toeR: 0.1, rideF: 14, rideR: 14, rake: 0, gearSpread: 1, brakeF: 1, rim: 38, width: 20, tyre: 'std' };
-export function defaultTune() { return { lambda: 0.95, ign: 0, fuel: 'b95', finalScale: 1, bias: 0.62, ...SETUP_DEF }; }
+export function defaultTune() { return { lambda: 0.95, ign: 0, fuel: 'b95', finalScale: 1, bias: 0.70, ...SETUP_DEF }; }
 const hpCache = {};
 
 // Slår ihop grundbil + motorval/motorbyte + bygge + uppgraderingar + trimning till en färdig specifikation.

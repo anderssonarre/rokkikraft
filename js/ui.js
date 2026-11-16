@@ -687,7 +687,7 @@ function garage() {
         return `<div class="card ${isOwn ? 'own' : ''} ${isCur ? 'sel' : ''}"><div class="c-top"><span>${fmt(eDef.Vd, 1)} L · ${eDef.cyl}-CYL${eDef.boost ? ' TURBO' : ' SUG'}</span><b>${isCur ? 'MONTERAD' : isOwn ? 'ÄGD' : eur(eDef.price)}</b></div>
           <strong>${eDef.name}</strong><p>${eDef.desc}</p>
           <ul><li><b>${fmt(kTest.hp)} hk</b> · ${fmt(kTest.peakT.T)} Nm</li><li>${fmt(eDef.Vd, 1)} L · ${eDef.cyl} cylindrar · ${eDef.valves || eDef.cyl * (eDef.Vd >= 1.8 ? 4 : 2)} ventiler</li>
-            <li>Bilens vikt ${fmt(sTest.mass - 75)} kg · ${fmt(kTest.kgHp, 1)} kg/hk (${fmt(kTest.hp / (sTest.mass - 75) * 1000)} hk/ton)</li><li>0–100 km/h ≈ <b>${fmt(acc(sTest), 1)} s</b> (asfalt)</li><li>Hjulspinn upp till ≈ ${fmt(spinTo(sTest, 0.78))} km/h på grus, ${fmt(spinTo(sTest, 1.02))} km/h på asfalt</li></ul>
+            <li>Bilens vikt ${fmt(sTest.mass - 75)} kg · ${fmt(kTest.kgHp, 1)} kg/hk (${fmt(kTest.hp / (sTest.mass - 75) * 1000)} hk/ton)</li><li>0–100 km/h ≈ <b>${fmt(acc(sTest), 1)} s</b> (asfalt)</li><li>Hjulspinn upp till ≈ ${fmt(spinTo(sTest, 1.0))} km/h på grus, ${fmt(spinTo(sTest, 1.02))} km/h på asfalt</li></ul>
           <div class="row">${isCur ? '' : isOwn ? `<button class="btn small" data-act="eng-pick" data-arg="${eid}">Montera i bilen</button>` : `<button class="btn small" data-act="eng-buy" data-arg="${eid}" ${S.money >= eDef.price ? '' : 'disabled'}>Köp & montera (${eur(eDef.price)})</button>`}</div></div>`;
       }).join('')}</div></section>`;
   }
@@ -790,7 +790,7 @@ function setup() {
   const top = s.redline / (s.gears[s.gears.length - 1] * s.final) / 9.5493 * s.rw * 3.6;
   return `<section class="panel"><span class="kick">GARAGE · GRATIS ATT ÄNDRA</span><h1>Bilinställningar – ${car.name}</h1>
     <div class="pills"><div><span>Effekt</span><b>${fmt(k.hp)} hk</b><small>${s.engName}</small></div><div><span>Vikt</span><b>${fmt(s.mass - 75)} kg</b><small>${fmt(k.kgHp, 1)} kg/hk</small></div>
-      <div><span>0–100 km/h</span><b>${fmt(acc(s), 1)} s</b><small>asfalt</small></div><div><span>Greppbegränsad till</span><b>${fmt(spinTo(s, 0.78))} km/h</b><small>på grus – därefter avgör effekten</small></div><div><span>Fart vid varvstopp i högsta</span><b>${fmt(top)} km/h</b></div><div><span>Grepp fram / bak</span><b>${fmt(s.muF * 100)} / ${fmt(s.muR * 100)} %</b><small>${s.tyre}</small></div></div>
+      <div><span>0–100 km/h</span><b>${fmt(acc(s), 1)} s</b><small>asfalt</small></div><div><span>Greppbegränsad till</span><b>${fmt(spinTo(s, 1.0))} km/h</b><small>på grus – därefter avgör effekten</small></div><div><span>Fart vid varvstopp i högsta</span><b>${fmt(top)} km/h</b></div><div><span>Grepp fram / bak</span><b>${fmt(s.muF * 100)} / ${fmt(s.muR * 100)} %</b><small>${s.tyre}</small></div></div>
     <div class="row wrap"><button class="btn small ghost" data-act="setup-reset">Återställ standard</button><button class="btn small ghost" data-act="go" data-arg="garage">‹ Garaget</button></div></section>
   <section class="panel"><h2>Däck</h2><div class="cards">${Object.values(TYRES).map(x => `<div class="card ${t.tyre === x.id ? 'sel own' : ''}"><div class="c-top"><span>GREPP ${fmt(x.grip * 100)} %</span><b>${t.tyre === x.id ? 'MONTERADE' : 'GRATIS'}</b></div><strong>${x.name}</strong><p>${x.desc}</p>${t.tyre === x.id ? '' : `<button class="btn small" data-act="tyre" data-arg="${x.id}">Montera</button>`}</div>`).join('')}</div></section>
   <section class="panel"><h2>Chassi, växellåda & bromsar</h2><div class="sliders">${SETUP_UI.map(([n, key, lo, hi, st, f, d]) => `<label><span>${n} <b>${f(t[key])}</b></span><input type="range" min="${lo}" max="${hi}" step="${st}" value="${t[key]}" data-in="su:${key}"><small>${d}</small></label>`).join('')}</div></section>
@@ -1031,7 +1031,7 @@ const ACT = {
   },
   paint(a) { activeCar().paint = a; save(); },
   tyre(a) { activeCar().tune.tyre = a; save(); },
-  'setup-reset'() { const t = activeCar().tune; Object.assign(t, SETUP_DEF, { finalScale: 1, bias: 0.62 }); save(); },
+  'setup-reset'() { const t = activeCar().tune; Object.assign(t, SETUP_DEF, { finalScale: 1, bias: 0.70 }); save(); },
   'num-bw'(a) { activeCar().bw = a; save(); },
   buy(a) {
     const u = UPG.find(x => x.id === a), cs = activeCar(), lvl = cs.upg[a] || 0, L = u.levels[lvl];
