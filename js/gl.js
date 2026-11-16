@@ -457,7 +457,7 @@ export function carMesh(body, opts = {}) {
 
 // ---------- 3D GoPro In-Car Rokkiralli-kupé (efter de 4 autentiska GoPro-referensbilderna!) ----------
 // Koordinater i bilens lokala ram (+x framåt, +y upp, +z höger; GoPro-kameran sitter vid B-stolpen [-0.62, 1.06, 0.02]!)
-export function cockpitMesh() {
+export function cockpitMesh({ driverView = false } = {}) {
   const m = new MB(), P = s => [s, 0, 0, 0];
   const flock = [0.15, 0.16, 0.18, 1], dark = [0.08, 0.09, 0.11, 1], cage = [0.16, 0.18, 0.20, 1];
   const steel = [0.64, 0.67, 0.71, 1], alu = [0.75, 0.77, 0.80, 1], mirrorGlass = [0.46, 0.60, 0.74, 0.5];
@@ -577,10 +577,13 @@ export function cockpitMesh() {
   // GoPro-kameran sitter vid [-0.62, 1.06, 0.02], så hjälmen vid x = -0.34, y = 1.04, z = -0.38 ligger perfekt i vänster bildkant!
   const suitBlack = [0.10, 0.11, 0.13, 1], suitFold = [0.15, 0.16, 0.19, 1], sparcoBlue = [0.12, 0.38, 0.78, 1];
   // Hjälmskal (vit/mörk rallyhjälm med mörkt visir och skärm uppe till vänster som i foto 1 & 2!)
+  // Dölj det egna huvudet när kameran sitter vid förarens ögon.
+  if (!driverView) {
   m.tube([-0.38, 1.01, -0.40], [-0.20, 1.03, -0.37], 0.115, 0.105, [0.92, 0.93, 0.95, 1], 12, true); // Vitt hjälmskal (foto 1)
   m.tube([-0.36, 1.08, -0.39], [-0.18, 1.09, -0.35], 0.102, 0.090, [0.12, 0.14, 0.16, 1], 12, true); // Mörk hjälmtopp / skärm (foto 2)
   m.tube([-0.22, 1.08, -0.35], [-0.15, 1.07, -0.33], 0.088, 0.076, [0.95, 0.96, 0.98, 1], 10, true); // Vit Sparco-skärmkant
   m.tube([-0.23, 0.99, -0.35], [-0.16, 1.00, -0.33], 0.085, 0.072, [0.06, 0.07, 0.09, 1], 10, true); // Mörkt visir
+  }
   // Förarstolens ryggstöd (kuppipenkki) & förarens svarta racingoverall-axlar och överarmar med blå/vit Sparco-epålett (foto 1 & 2!)
   m.box(-0.42, 0.42, -0.34, 0.10, 0.44, 0.32, suitBlack);
   // Vänster & höger överarm som sträcker sig framåt från förarens axlar [-0.32] fram till underarmarna vid [0.00]

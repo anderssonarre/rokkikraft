@@ -206,7 +206,7 @@ export function aiDrive(c, race, dt) {
   if (v < 1.2 && race.t > 2) { ai.stuck += dt; if (ai.stuck > 2.5) { race.resetCar(c); ai.stuck = 0; } } else ai.stuck = 0;
 }
 
-export const CAM_NAMES = ['IN-CAR KUPÉ', 'HUVKAMERA', 'BAKOM NÄRA', 'BAKOM HÖG', 'FÖRSTAPERSON'];
+export const CAM_NAMES = ['IN-CAR KUPÉ', 'HUVKAMERA', 'BAKOM NÄRA', 'BAKOM HÖG', 'FÖRSTAPERSON · FÖRARPLATS'];
 export const DEFAULT_CAM = 4;
 
 export class Race {
@@ -401,7 +401,7 @@ export class Race {
     ensureTerrain(trk);
     const q = cfg.settings?.quality === 'lag' ? 0 : 1; this.q = q;
     this.view = new View3(this.cv, trk, { quality: q, res: cfg.settings?.res || 'auto' }); this.R = this.view.ok ? this.view : null;
-    if (this.R) this.view.setCockpit([cockpitMesh(), steerWheelMesh(), pendantMesh()], cfg.player.paint);
+    if (this.R) this.view.setCockpit([cockpitMesh(), steerWheelMesh(), pendantMesh(), cockpitMesh({ driverView: true })], cfg.player.paint);
     this.env = trk.winter
       ? { zenith: [0.46, 0.62, 0.82], fog: [0.82, 0.88, 0.94], fd: 0.000014, light: [0.42, 0.78, 0.32] }
       : { zenith: [0.18, 0.44, 0.78], fog: [0.64, 0.78, 0.92], fd: 0.000009, light: [0.48, 0.82, 0.36] };
@@ -447,7 +447,7 @@ export class Race {
     const btn = this.$('hCamBtn');
     if (btn) btn.textContent = `🎥 ${CAM_NAMES[this.cam]} [C]`;
     const wc = this.$('hWheelCluster');
-    if (wc) wc.style.display = this.cam === 1 || this.cam === DEFAULT_CAM ? '' : 'none';
+    if (wc) wc.style.display = this.cam === 1 ? '' : 'none';
     if (persist) this.cfg.onCameraChange?.(this.cam);
   }
 
@@ -851,11 +851,13 @@ export class Race {
 
     let eye, at, up = [0, 1, 0], fov = 1.05;
     if (this.cam === DEFAULT_CAM) {
-      // Förarens ögonhöjd, fri sikt och stabil horisont utan karossvibrationer.
-      // Blicken följer bilens riktning direkt, även vid sladd eller backning.
-      const c = Math.cos(p.h), s = Math.sin(p.h), look = 25;
-      eye = [p.x + c * 0.1 + s * 0.31, pY + 1.35, p.z + s * 0.1 - c * 0.31];
-      at = [eye[0] + c * look, eye[1] + look * (p.slope || 0), eye[2] + s * look];
+      // Förarens ögon bakom ratten, innanför taket och vindrutan.
+      // Samma stabila bilram för kamera och kupé: ingen extra skakning/krängning.
+      const m = M4.car(p.x, pY, p.z, p.h, 0, pSl);
+      const point = (x, y, z) => [m[0]*x + m[4]*y + m[8]*z + m[12], m[1]*x + m[5]*y + m[9]*z + m[13], m[2]*x + m[6]*y + m[10]*z + m[14]];
+      eye = point(-0.30, 1.08, -0.31);
+      at = point(25, 0.95, -0.31);
+      up = [m[4], m[5], m[6]];
       fov = 1.15;
     } else if (this.cam === 0) {
       // GOPRO ROLL-BAR IN-CAR KUPÉVY (Monterad vid B-stolpen [-0.62, 1.06, 0.02] med vidvinkel precis som i de 4 GoPro-referensbilderna!)
@@ -889,7 +891,11 @@ export class Race {
     for (const c of this.cars) this.view.poseCar(c.obj, c.x, c.y, c.z, c.h, clamp(-c.vx * c.r * 0.0045, -0.07, 0.07), clamp(c.ax * 0.004, -0.045, 0.045) + Math.atan(c.slope || 0), c.steer, c.wspin, c.brk > 0.1, !(c === p && (this.cam === 0 || this.cam === 1 || this.cam === DEFAULT_CAM)));
     let cockpit = null;
     if (this.cam === 0) { const sway = clamp((p.ay || 0) * 0.045 + Math.sin(this.t * 6.0) * 0.03, -0.45, 0.45);
-      cockpit = [pMat, M4.mul(pMat, M4.localRotX(0.16, 0.78, -0.31, 0.22, -p.steer * 0.85)), M4.mul(pMat, M4.localRotX(0.30, 1.06, -0.02, 0.0, sway))]; }
+      cockpit = [pMat, M4.mul(pMat, M4.localRotX(0.16, 0.78, -0.31, 0.22, -p.steer * 0.85)), M4.mul(pMat, M4.localRotX(0.30, 1.06, -0.02, 0.0, sway)), null]; }
+    if (this.cam === DEFAULT_CAM) {
+      const m = M4.car(p.x, pY, p.z, p.h, 0, pSl);
+      cockpit = [null, M4.mul(m, M4.localRotX(0.16, 0.78, -0.31, 0.22, -p.steer * 0.85)), null, m];
+    }
     this.view.frame({ eye, at, up, fov, focus: [p.x, pY, p.z], particles: this.pl, dust: this.trk.surf.dust, cockpit });
   }
 
