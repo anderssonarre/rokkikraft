@@ -1,18 +1,27 @@
-// Motormodell: MEP-kedjan FUELMEP → QMEP → IMEPg → BMEP, samma tankegång som i Kolvkraft.
-import { CARS, UPG, BUILD, FUELS } from './data.js';
+// Motormodell: MEP-kedjan FUELMEP → QMEP → IMEPg → BMEP samt klass- och besiktningskontroll enligt Sääntökirja 2026.
+import { CARS, UPG, BUILD, FUELS, CLASS_RULES } from './data.js';
 
-export const carById = id => CARS.find(c => c.id === id);
+export const carById = id => CARS.find(c => c.id === id) || CARS[0];
 export const fuelById = id => FUELS.find(f => f.id === id) || FUELS[0];
 
 export function defaultTune() { return { lambda: 0.95, ign: 0, fuel: 'b95', finalScale: 1, bias: 0.62 }; }
 
 // Slår ihop grundbil + bygge + uppgraderingar + trimning till en färdig specifikation.
 export function buildSpec(carId, cs, tune) {
-  const c = carById(carId); cs = cs || { build: {}, upg: {} }; tune = { ...defaultTune(), ...(tune || {}) };
-  const s = { id: c.id, name: c.name, cls: c.cls, body: c.body, Vd: c.Vd, cyl: c.cyl, redline: c.redline, rc: c.rc,
-    etaPeak: c.etaPeak, peakRpm: c.peakRpm, low: 0, mass: c.mass + 75, wb: c.wb, front: c.front, final: c.final, gears: c.gears,
+  const c = carById(carId);
+  cs = cs || { build: {}, upg: {} };
+  tune = { ...defaultTune(), ...(tune || {}) };
+  const drv = c.drv || (c.cls === 'vetari' ? 'fwd' : 'rwd');
+  const s = {
+    id: c.id, name: c.name, cls: c.cls, drv, body: c.body,
+    Vd: c.Vd, cyl: c.cyl, redline: c.redline, rc: c.rc,
+    etaPeak: c.etaPeak, peakRpm: c.peakRpm, low: 0,
+    mass: c.mass + 75, regMass: c.regMass || (c.mass + 90),
+    wb: c.wb, front: c.front, final: c.final, gears: c.gears,
     CdA: c.CdA, cool: c.cool, boost: c.boost || 0, bs: c.boostStart || 2500, bf: c.boostFull || 3800, ic: c.ic || 0, pmepF: 1,
-    ignMax: 5, knockCtl: 0, radSafe: 0, shift: 0.28, eff: 0.88, trac: 0, mu: 1, susp: 0, brake: 1, dmg: 1 };
+    ignMax: 5, knockCtl: 0, radSafe: 0, shift: 0.28, eff: 0.88, trac: 0, mu: 1, susp: 0, brake: 1, dmg: 1,
+    superReady: c.cls === 'super' ? 1 : 0, rallyTire: 0, chop: 0,
+  };
   for (const b of BUILD) if (cs.build && cs.build[b.id]) s.mass += b.kg;
   for (const u of UPG) {
     const lvl = (cs.upg && cs.upg[u.id]) || 0; if (!lvl) continue;
@@ -24,11 +33,44 @@ export function buildSpec(carId, cs, tune) {
     if (fx.cool) s.cool += fx.cool; if (fx.radSafe) s.radSafe = 1;
     if (fx.final) s.final *= fx.final; if (fx.shift) s.shift = fx.shift; if (fx.eff) s.eff += fx.eff;
     if (fx.trac) s.trac = 1; if (fx.kg) s.mass += fx.kg; if (fx.mu) s.mu += fx.mu; if (fx.susp) s.susp = fx.susp;
-    if (fx.brake) s.brake += fx.brake; if (fx.dmg) s.dmg = fx.dmg;
+    if (fx.brake) s.brake += fx.brake; if (fx.dmg) s.dmg = Math.min(s.dmg, fx.dmg);
+    if (fx.superReady) s.superReady = 1;
+    if (fx.rallyTire) s.rallyTire = 1;
+    if (fx.chop) s.chop = 1;
+  }
+  // Om bilen fått turbo, rallydäck/slicks eller lukkoperä på framhjulsdrift klassas den som Super-bil om superReady är monterad
+  if ((s.boost > 0 || s.rallyTire || (s.trac && s.drv === 'fwd')) && s.superReady) {
+    s.cls = 'super';
   }
   s.final *= tune.finalScale; s.lambda = tune.lambda; s.ign = Math.min(tune.ign, s.ignMax); s.fuel = fuelById(tune.fuel); s.bias = tune.bias;
   s.rw = 0.29; s.idle = 900;
   return s;
+}
+
+// Kontrollerar exakt mot Sääntökirja 21.04.2026 om bilen är godkänd för vald klass.
+export function checkInspection(carId, cs, driverCls = 'auto') {
+  const s = buildSpec(carId, cs, cs?.tune);
+  const actCls = (driverCls && driverCls !== 'auto') ? driverCls : s.cls;
+  const rules = CLASS_RULES[actCls] || CLASS_RULES.vetari;
+  const issues = [];
+  for (const b of BUILD) {
+    if (!cs?.build?.[b.id]) issues.push(`Saknar besiktningspunkt: ${b.name}`);
+  }
+  if (rules.drv === 'fwd' && s.drv !== 'fwd') issues.push(`${rules.name} tillåter endast framhjulsdrivna (etuveto) bilar.`);
+  if (rules.drv === 'rwd' && s.drv !== 'rwd') issues.push(`${rules.name} tillåter endast bakhjulsdrivna (takaveto) bilar.`);
+  if (!rules.turbo && s.boost > 0) issues.push(`Turbo är förbjudet i ${rules.name} (endast tillåtet i Super Rock / Super Senior!).`);
+  if (!rules.diffFwd && s.trac && s.drv === 'fwd') issues.push(`Lukkoperä (svetsad diff) på framhjulsdriven bil är endast tillåten i Super Rock!`);
+  if (!rules.rallyTires && s.rallyTire) issues.push(`Rallydäck/slicks på sommaren är endast tillåtna i Super Rock!`);
+  if (s.regMass > rules.maxMass) issues.push(`Tjänstevikt enligt regbevis (${s.regMass} kg) överstiger maxgränsen 1 800 kg i myyntiluokat.`);
+  if ((actCls === 'super' || actCls === 'supersenior') && !s.superReady) {
+    issues.push(`${rules.name} kräver Super-luokan kaaret (8 fästpunkter & takkryss), 6-punktsbälte och sidospeglar.`);
+  }
+  return { ok: issues.length === 0, issues, cls: actCls, rules, spec: s };
+}
+
+export function formatCarNum(num, cls) {
+  const p = CLASS_RULES[cls]?.prefix || '';
+  return p + num;
 }
 
 const smooth = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
@@ -69,8 +111,10 @@ export function engineAt(s, rpm) {
   const Qb = fuelmep * 1e5 * Vd * cps / 1000;  // kW
   const mf = Qb / (f.lhv * 1000);              // kg/s
   const qCool = htmep * 1e5 * Vd * cps / 1000;
+  // Uppskattad ljudnivå vid 4500 rpm (max 110 dB enligt Sääntökirja!)
+  const db4500 = Math.round(98 + (1 - s.pmepF) * 14);
   return { rpm, T, P, bmep, imep, pmep, fmep, fuelmep, qmep, clmep: fuelmep - qmep, exmep, htmep, etaV, boost, Ti: Ti - 273,
-    margin, ign, etab: bmep / fuelmep, bsfc: P > 0 ? mf * 3600 * 1000 / P : 0, qCool, mf, Qb, af: lam * f.afs };
+    margin, ign, etab: bmep / fuelmep, bsfc: P > 0 ? mf * 3600 * 1000 / P : 0, qCool, mf, Qb, af: lam * f.afs, db4500 };
 }
 
 export function curve(s) {
@@ -79,7 +123,8 @@ export function curve(s) {
     const e = engineAt(s, r); pts.push(e);
     if (e.P > pk.P) pk = e; if (e.T > tk.T) tk = e; if (e.margin < minMargin) minMargin = e.margin; if (e.qCool > maxCool) maxCool = e.qCool;
   }
-  return { pts, peakP: pk, peakT: tk, minMargin, maxCool, hp: pk.P * 1.36, kgHp: s.mass / (pk.P * 1.36) };
+  const e4500 = engineAt(s, 4500);
+  return { pts, peakP: pk, peakT: tk, minMargin, maxCool, hp: pk.P * 1.36, kgHp: s.mass / (pk.P * 1.36), db4500: e4500.db4500 };
 }
 
 // Momenttabell för körfysiken.

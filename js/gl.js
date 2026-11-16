@@ -1,4 +1,5 @@
 // Liten egen WebGL-renderare: platta färger, riktat ljus, dimma. Inga externa bibliotek.
+import { SURF } from './data.js';
 
 export const M4 = {
   persp(fov, asp, n, f) { const t = 1 / Math.tan(fov / 2), o = new Float32Array(16); o[0] = t / asp; o[5] = t; o[10] = (f + n) / (n - f); o[11] = -1; o[14] = 2 * f * n / (n - f); return o; },
@@ -76,91 +77,240 @@ export function initGL(canvas) {
   return R;
 }
 
-// ---------- bilmodell ----------
-// lokalt: +x fram, y upp, z höger. Lackade ytor har alfa 0.
+// ---------- bilmodell enligt Sääntökirja 2026 ----------
+// lokalt: +x fram, y upp, z höger (z < 0 är förarsidan/vänster). Lackade ytor har alfa 0.
 export function carMesh(body, opts = {}) {
-  const m = new MB(), P = s => [s, 0, 0, 0], glass = [0.10, 0.14, 0.18, 1], dark = [0.09, 0.09, 0.10, 1], steel = [0.32, 0.33, 0.35, 1];
-  const L = body === 'wagon' ? 4.5 : body === 'sedan' ? 4.3 : 3.95, W = 1.66;
+  const m = new MB(), P = s => [s, 0, 0, 0], glass = [0.12, 0.16, 0.21, 1], dark = [0.09, 0.09, 0.10, 1], steel = [0.34, 0.35, 0.38, 1];
+  const L = body === 'wagon' ? (opts.chop ? 4.15 : 4.5) : body === 'sedan' ? 4.3 : 3.95, W = 1.66;
   // underrede + kaross
   m.box(0, 0.28, 0, L, 0.52, W, P(1.0), 0.06, 0.06, P(0.92));
-  // hytt
+  // hytt (om farmariauton typistys är gjord på wagon är D-stolpen borttagen och C-stolpen förstärkt med apukaari!)
   let cx, cl, inF, inR;
   if (body === 'hatch') { cl = L * 0.60; cx = -L * 0.5 + cl / 2 + 0.12; inF = 0.62; inR = 0.30; }
   else if (body === 'sedan') { cl = L * 0.50; cx = -0.25; inF = 0.60; inR = 0.55; }
+  else if (opts.chop) { cl = L * 0.52; cx = -0.15; inF = 0.62; inR = 0.42; }
   else { cl = L * 0.68; cx = -L * 0.5 + cl / 2 + 0.08; inF = 0.62; inR = 0.12; }
   m.box(cx, 0.80, 0, cl, 0.50, W - 0.14, glass, inF, inR, P(0.96));
-  // stolpar/takram i lack: tunn list runt taket
+  // takram i lack
   m.box(cx + (inR - inF) / 2, 1.295, 0, cl - inF - inR + 0.04, 0.03, W - 0.10, P(1.0));
-  // dörrnummerskylt (vit ruta)
-  for (const z of [W / 2 + 0.006, -W / 2 - 0.006]) { const x0 = cx - 0.42, x1 = cx + 0.30, y0 = 0.40, y1 = 0.76, w = [0.95, 0.95, 0.93, 1];
-    if (z < 0) m.quad([x0, y0, z], [x0, y1, z], [x1, y1, z], [x1, y0, z], w); else m.quad([x0, y0, z], [x1, y0, z], [x1, y1, z], [x0, y1, z], w); }
-  // stötfångare
+  // Apukaari vid C-stolpen om farmariauton typistys
+  if (body === 'wagon' && opts.chop) {
+    m.box(cx - cl / 2 + 0.15, 0.80, 0, 0.06, 0.48, W - 0.18, steel);
+  }
+  // KILPAILUNUMEROT (Sääntökirja s. 8):
+  // Placeras i BAKRE SIDORUTORNA (min 20 cm, EJ i dörren!), vindrutans övre kant på passagerarsidan (z > 0) samt bakrutan!
+  const numBg = opts.bw === 'bw' ? [0.08, 0.08, 0.09, 1] : [0.96, 0.96, 0.94, 1];
+  const numFg = opts.bw === 'bw' ? [0.95, 0.95, 0.93, 1] : [0.08, 0.08, 0.09, 1];
+  for (const z of [(W - 0.13) / 2, -(W - 0.13) / 2]) {
+    const x0 = cx - cl * 0.36, x1 = cx - 0.04, y0 = 0.84, y1 = 1.18;
+    if (z < 0) {
+      m.quad([x0, y0, z], [x0, y1, z], [x1, y1, z], [x1, y0, z], numBg);
+      m.quad([x0 + 0.08, y0 + 0.06, z - 0.003], [x0 + 0.08, y1 - 0.06, z - 0.003], [x1 - 0.08, y1 - 0.06, z - 0.003], [x1 - 0.08, y0 + 0.06, z - 0.003], numFg);
+    } else {
+      m.quad([x0, y0, z], [x1, y0, z], [x1, y1, z], [x0, y1, z], numBg);
+      m.quad([x0 + 0.08, y0 + 0.06, z + 0.003], [x1 - 0.08, y0 + 0.06, z + 0.003], [x1 - 0.08, y1 - 0.06, z + 0.003], [x0 + 0.08, y1 - 0.06, z + 0.003], numFg);
+    }
+  }
+  // Nummer i vindrutans övre kant på passagerarsidan (apukuljettajan puolelle yläreunaan) + bakrutan
+  m.box(cx + cl / 2 - inF * 0.35, 1.14, 0.36, 0.08, 0.12, 0.32, numBg);
+  m.box(cx - cl / 2 + inR * 0.35, 1.12, 0.0, 0.08, 0.13, 0.36, numBg);
+  // NASCAR-VERKKO i förardörrens öppning (vänster sida z < 0, obligatoriskt sedan 2024!)
+  {
+    const z = -(W - 0.135) / 2, x0 = cx - 0.02, x1 = cx + 0.42;
+    for (let s = 0; s < 3; s++) {
+      const y = 0.85 + s * 0.11;
+      m.box((x0 + x1) / 2, y, z, x1 - x0, 0.025, 0.015, [0.15, 0.15, 0.18, 1]);
+    }
+  }
+  // KEULAN VAHVISTUS (endast INNANFÖR rambenen: max 60x60mm + stålnät/plåt, inga balkar utanför rambenen!)
   const bum = opts.bars ? steel : dark;
-  m.box(L / 2 + 0.05, 0.30, 0, 0.14, 0.20, W + (opts.bars ? 0.06 : -0.04), bum); m.box(-L / 2 - 0.05, 0.30, 0, 0.14, 0.20, W - 0.04, bum);
-  // lysen
-  m.box(L / 2 + 0.01, 0.58, 0.55, 0.04, 0.13, 0.34, [0.95, 0.92, 0.75, 1]); m.box(L / 2 + 0.01, 0.58, -0.55, 0.04, 0.13, 0.34, [0.95, 0.92, 0.75, 1]);
-  m.box(-L / 2 - 0.01, 0.60, 0.58, 0.04, 0.12, 0.30, [0.75, 0.08, 0.06, 1]); m.box(-L / 2 - 0.01, 0.60, -0.58, 0.04, 0.12, 0.30, [0.75, 0.08, 0.06, 1]);
-  // hjul
+  const frontW = opts.bars ? W - 0.24 : W - 0.06; // Innanför rambenens yttermått!
+  m.box(L / 2 + 0.03, 0.30, 0, 0.10, 0.20, frontW, bum);
+  if (opts.bars) {
+    // 2 vertikala rör vid rambenen + tvärrör mellan skärmarna + stålnät i fronten
+    m.box(L / 2 + 0.02, 0.45,  frontW * 0.44, 0.05, 0.28, 0.05, steel);
+    m.box(L / 2 + 0.02, 0.45, -frontW * 0.44, 0.05, 0.28, 0.05, steel);
+    m.box(L / 2 + 0.01, 0.56, 0, 0.03, 0.20, frontW, [0.22, 0.23, 0.25, 1]);
+  } else {
+    // Alla glaslyktor och plastgrill är bortplockade enligt "POISTETTAVAT OSAT AUTOSTA"
+    m.box(L / 2 + 0.01, 0.56, 0, 0.02, 0.16, W - 0.20, dark);
+  }
+  // Bakre stötfångare + bogseröglor (hinauslenkit fram och bak innanför karosslinjen)
+  m.box(-L / 2 - 0.04, 0.30, 0, 0.12, 0.20, W - 0.06, dark);
+  m.box(L / 2 + 0.02, 0.26, 0.35, 0.08, 0.05, 0.08, [0.95, 0.2, 0.1, 1]);
+  m.box(-L / 2 - 0.02, 0.26, -0.35, 0.08, 0.05, 0.08, [0.95, 0.2, 0.1, 1]);
+  //Huvsprintar (sokat) på motorhuven
+  m.box(L / 2 - 0.18, 0.805, 0.48, 0.06, 0.015, 0.06, steel);
+  m.box(L / 2 - 0.18, 0.805, -0.48, 0.06, 0.015, 0.06, steel);
+  // AUTON TURVALLISUUS: Röda bromsljus (min 21W) + orange/röda bakljus flyttade till bakrutan/taket!
+  m.box(cx - cl / 2 + 0.05, 1.24,  0.42, 0.06, 0.08, 0.22, [0.92, 0.08, 0.06, 1]);
+  m.box(cx - cl / 2 + 0.05, 1.24, -0.42, 0.06, 0.08, 0.22, [0.92, 0.08, 0.06, 1]);
+  m.box(cx - cl / 2 + 0.05, 1.24,  0.0,  0.06, 0.07, 0.26, [0.98, 0.55, 0.05, 1]);
+  // Sidospeglar (obligatoriskt i Junior och Super!)
+  if (opts.mirrors) {
+    m.box(cx + 0.28, 0.82,  W / 2 + 0.06, 0.10, 0.08, 0.14, P(0.9));
+    m.box(cx + 0.28, 0.82, -W / 2 - 0.06, 0.10, 0.08, 0.14, P(0.9));
+  }
+  // Hjul + stänkskydd (roiskeläpät)
   const wb = L * 0.60;
-  for (const x of [wb / 2, -wb / 2]) for (const z of [W / 2 - 0.08, -W / 2 + 0.08]) { m.box(x, 0, z, 0.60, 0.60, 0.22, dark, 0.14, 0.14); m.box(x, 0.18, z + (z > 0 ? 0.10 : -0.10), 0.26, 0.24, 0.04, steel); }
+  for (const x of [wb / 2, -wb / 2]) for (const z of [W / 2 - 0.08, -W / 2 + 0.08]) {
+    m.box(x, 0, z, 0.60, 0.60, 0.22, dark, 0.14, 0.14);
+    m.box(x, 0.18, z + (z > 0 ? 0.10 : -0.10), 0.26, 0.24, 0.04, steel);
+    m.box(x - 0.33, 0.10, z, 0.03, 0.22, 0.22, dark); // styva roiskeläpät
+  }
   return m.data();
 }
 
 // ---------- banvärlden ----------
 export function worldMesh(trk, quality = 1) {
-  const m = new MB(), n = trk.n, w = trk.w, S = trk.surf, winter = trk.winter;
+  const m = new MB(), n = trk.n, w = trk.w, winter = trk.winter;
   const rnd = mulberry(hash(trk.id));
   const ground = winter ? [0.90, 0.93, 0.96, 1] : [0.27, 0.42, 0.20, 1];
   const verge = winter ? [0.84, 0.88, 0.93, 1] : (trk.surface === 'asfalt' ? [0.33, 0.45, 0.24, 1] : [0.45, 0.42, 0.28, 1]);
   const bank = winter ? [0.96, 0.97, 1.0, 1] : [0.36, 0.30, 0.22, 1];
-  const tc = S.col, tc2 = [tc[0] * 0.93, tc[1] * 0.93, tc[2] * 0.93, 1], tc1 = [tc[0], tc[1], tc[2], 1];
   const G = 900; m.quad([-G, -0.06, -G], [-G, -0.06, G], [G, -0.06, G], [G, -0.06, -G], ground);
   const pt = (i, lat, y) => { const ii = w(i); return [trk.X[ii] + trk.NX[ii] * lat, y, trk.Z[ii] + trk.NZ[ii] * lat]; };
-  // en remsa mellan två sidoavstånd (funktioner av index); vänd automatiskt så att ovansidan syns
   const strip = (la, lb, y, colf, i0 = 0, i1 = n, ya = y, yb = y) => { for (let i = i0; i < i1; i++) {
     const a = pt(i, la(i), ya), b = pt(i, lb(i), yb), c = pt(i + 1, lb(i + 1), yb), d = pt(i + 1, la(i + 1), ya), col = colf(i);
     m.quad(a, b, c, d, col); m.quad(a, d, c, b, col); } };
   const lim = i => trk.limits(w(i));
-  const hw = trk.hw, vg = trk.verge;
+  const hwAt = i => trk.hwAt ? trk.hwAt(i) : trk.hw;
+  const vg = trk.verge;
+
+  // Innerfält / gräsyta
   strip(i => lim(i)[0] - vg, i => lim(i)[1] + vg, -0.03, () => verge);
-  strip(() => -hw, () => hw, 0, i => (i >> 2) & 1 ? tc1 : tc2);
-  // kantlinjer
-  const edge = winter ? [0.55, 0.70, 0.85, 1] : trk.surface === 'asfalt' ? [0.92, 0.92, 0.9, 1] : [0.40, 0.33, 0.24, 1];
-  strip(() => -hw, () => -hw + 0.35, 0.012, () => edge); strip(() => hw - 0.35, () => hw, 0.012, () => edge);
-  // lisälenkki
-  const j = trk.joker, jc = [tc[0] * 1.07, tc[1] * 1.05, tc[2] * 1.0, 1];
+
+  // Körbana med stöd för variabel bredd (t.ex. Rantasalmi 12–22 m) och blandat underlag (grus + asfalt!)
+  strip(i => -hwAt(i), i => hwAt(i), 0, i => {
+    const st = trk.surfTypeAt ? trk.surfTypeAt(i) : trk.surface;
+    const sc = (SURF[st] || trk.surf).col;
+    const shade = ((i >> 2) & 1) ? 1.0 : 0.93;
+    return [sc[0] * shade, sc[1] * shade, sc[2] * shade, 1];
+  });
+
+  // Kantlinjer (vita på asfaltpartier, jord/is på grus/is)
+  const edgeCol = i => {
+    const st = trk.surfTypeAt ? trk.surfTypeAt(i) : trk.surface;
+    return winter ? [0.55, 0.70, 0.85, 1] : st === 'asfalt' ? [0.92, 0.92, 0.90, 1] : [0.40, 0.33, 0.24, 1];
+  };
+  strip(i => -hwAt(i), i => -hwAt(i) + 0.35, 0.012, edgeCol);
+  strip(i => hwAt(i) - 0.35, i => hwAt(i), 0.012, edgeCol);
+
+  // Separat asfalterad startraka (L = Lähtö, t.ex. Rantasalmi & Tammisaari)
+  if (trk.startChute) {
+    const sc = trk.startChute, dx = sc.x1 - sc.x0, dz = sc.z1 - sc.z0, l = Math.hypot(dx, dz) || 1;
+    const nx = -dz / l, nz = dx / l, chw = (sc.w || 14) / 2;
+    const col = SURF[sc.surface || 'asfalt'].col;
+    const A = [sc.x0 - nx * chw, 0.008, sc.z0 - nz * chw], B = [sc.x0 + nx * chw, 0.008, sc.z0 + nz * chw];
+    const C = [sc.x1 + nx * chw, 0.008, sc.z1 + nz * chw], D = [sc.x1 - nx * chw, 0.008, sc.z1 - nz * chw];
+    m.quad(A, B, C, D, [col[0], col[1], col[2], 1]); m.quad(A, D, C, B, [col[0], col[1], col[2], 1]);
+  }
+
+  // Sakkolenkki / Lisälenkki (markerad med tydlig rödaktig/ljus grusfärg och kantlinjer)
+  const j = trk.joker, tc = trk.surf.col, jc = [Math.min(1, tc[0] * 1.18), tc[1] * 0.95, tc[2] * 0.88, 1];
   strip(i => trk.bulge(i) - j.w / 2, i => trk.bulge(i) + j.w / 2, 0.006, () => jc, j.i1, j.i2);
-  // startlinje (schackrutor)
-  for (let q = 0; q < 10; q++) for (let r = 0; r < 2; r++) { const la = -hw + q * (2 * hw / 10), lb = la + 2 * hw / 10, c = (q + r) & 1 ? [0.95, 0.95, 0.95, 1] : [0.08, 0.08, 0.08, 1];
-    const a = pt(0, la, 0.02), b = pt(0, lb, 0.02); const o = [trk.TX[0] * 0.6 * (r + 1), 0, trk.TZ[0] * 0.6 * (r + 1)], o0 = [trk.TX[0] * 0.6 * r, 0, trk.TZ[0] * 0.6 * r];
-    const A = [a[0] + o0[0], 0.02, a[2] + o0[2]], B = [b[0] + o0[0], 0.02, b[2] + o0[2]], C = [b[0] + o[0], 0.02, b[2] + o[2]], Dq = [a[0] + o[0], 0.02, a[2] + o[2]];
-    m.quad(A, B, C, Dq, c); m.quad(A, Dq, C, B, c); }
-  // vallar
-  for (const side of [0, 1]) { const f = i => lim(i)[side] + (side ? vg : -vg), g = i => f(i) + (side ? 1.6 : -1.6), top = i => f(i) + (side ? 0.8 : -0.8);
-    strip(f, top, 0, () => bank, 0, n, 0, 0.9); strip(top, g, 0, () => [bank[0] * 0.85, bank[1] * 0.85, bank[2] * 0.85, 1], 0, n, 0.9, 0); }
-  // däckstaplar på ön mellan banan och lisälenkkin + koner
-  for (let i = j.i1 + 4; i < j.i2 - 3; i += 3) { const b = trk.bulge(i); if (Math.abs(b) < hw + j.w / 2 + 2.5) continue;
-    const lat = (Math.sign(b) * hw + (b - Math.sign(b) * j.w / 2)) / 2, p = pt(i, lat, 0);
-    m.box(p[0], 0, p[2], 0.9, 0.7, 0.9, i % 2 ? [0.1, 0.1, 0.1, 1] : [0.85, 0.85, 0.85, 1], 0.1, 0.1); }
-  for (const i of [j.i1 + 1, j.i1 + 3, j.i2 - 3, j.i2 - 1]) { const p = pt(i, j.side * (hw + 0.4), 0); m.cone(p[0], 0, p[2], 0.28, 0.75, [0.98, 0.42, 0.05, 1], 5); }
-  // pilskylt vid infarten till lisälenkkin
-  { const p = pt(j.i1 - 2, j.side * (hw + 2.4), 0); m.box(p[0], 0, p[2], 0.14, 1.3, 0.14, [0.3, 0.3, 0.3, 1]); m.box(p[0], 1.3, p[2], 1.5, 0.8, 1.5, [1.0, 0.82, 0.05, 1], 0.5, 0.5); }
-  // startportal
-  { const a = pt(0, -hw - 1.2, 0), b = pt(0, hw + 1.2, 0), red = [0.8, 0.1, 0.08, 1];
+  strip(i => trk.bulge(i) - j.w / 2, i => trk.bulge(i) - j.w / 2 + 0.3, 0.014, () => [0.9, 0.22, 0.15, 1], j.i1, j.i2);
+  strip(i => trk.bulge(i) + j.w / 2 - 0.3, i => trk.bulge(i) + j.w / 2, 0.014, () => [0.9, 0.22, 0.15, 1], j.i1, j.i2);
+
+  // Startlinje / mållinje (schackrutor)
+  for (const idx of [0, trk.finishIdx || 0]) {
+    const hwi = hwAt(idx);
+    for (let q = 0; q < 10; q++) for (let r = 0; r < 2; r++) {
+      const la = -hwi + q * (2 * hwi / 10), lb = la + 2 * hwi / 10, c = (q + r) & 1 ? [0.95, 0.95, 0.95, 1] : [0.08, 0.08, 0.08, 1];
+      const a = pt(idx, la, 0.02), b = pt(idx, lb, 0.02);
+      const o = [trk.TX[idx] * 0.6 * (r + 1), 0, trk.TZ[idx] * 0.6 * (r + 1)], o0 = [trk.TX[idx] * 0.6 * r, 0, trk.TZ[idx] * 0.6 * r];
+      const A = [a[0] + o0[0], 0.02, a[2] + o0[2]], B = [b[0] + o0[0], 0.02, b[2] + o0[2]], C = [b[0] + o[0], 0.02, b[2] + o[2]], Dq = [a[0] + o[0], 0.02, a[2] + o[2]];
+      m.quad(A, B, C, Dq, c); m.quad(A, Dq, C, B, c);
+    }
+  }
+
+  // Vallar (penkat)
+  for (const side of [0, 1]) {
+    const f = i => lim(i)[side] + (side ? vg : -vg), g = i => f(i) + (side ? 1.6 : -1.6), top = i => f(i) + (side ? 0.8 : -0.8);
+    strip(f, top, 0, () => bank, 0, n, 0, 0.9);
+    strip(top, g, 0, () => [bank[0] * 0.85, bank[1] * 0.85, bank[2] * 0.85, 1], 0, n, 0.9, 0);
+  }
+
+  // Däckstaplar på ön mellan banan och lisälenkkin + koner (keilat – får ej vältas!)
+  for (let i = j.i1 + 4; i < j.i2 - 3; i += 3) {
+    const b = trk.bulge(i), hwi = hwAt(i);
+    if (Math.abs(b) < hwi + j.w / 2 + 2.2) continue;
+    const lat = (Math.sign(b) * hwi + (b - Math.sign(b) * j.w / 2)) / 2, p = pt(i, lat, 0);
+    m.box(p[0], 0, p[2], 0.9, 0.65, 0.9, i % 2 ? [0.12, 0.12, 0.12, 1] : [0.88, 0.18, 0.14, 1], 0.1, 0.1);
+  }
+  for (const i of [j.i1 + 1, j.i1 + 3, j.i2 - 3, j.i2 - 1]) {
+    const p = pt(i, j.side * (hwAt(i) + 0.4), 0);
+    m.cone(p[0], 0, p[2], 0.28, 0.75, [0.98, 0.42, 0.05, 1], 5);
+  }
+  // Pilskylt vid infarten till lisälenkkin (tydligt utmärkt enligt LISÄLENKKI-regeln)
+  {
+    const p = pt(j.i1 - 2, j.side * (hwAt(j.i1) + 2.4), 0);
+    m.box(p[0], 0, p[2], 0.14, 1.3, 0.14, [0.3, 0.3, 0.3, 1]);
+    m.box(p[0], 1.3, p[2], 1.5, 0.8, 1.5, [1.0, 0.82, 0.05, 1], 0.5, 0.5);
+  }
+  // STOP-merkki vid depåinfarten efter mållinjen (obligatoriskt på varje bana enligt Sääntökirja s. 12!)
+  {
+    const stopIdx = w((trk.finishIdx || 0) + 10);
+    const p = pt(stopIdx, trk.outSign * (hwAt(stopIdx) + 2.6), 0);
+    m.box(p[0], 0, p[2], 0.12, 1.6, 0.12, [0.7, 0.7, 0.7, 1]);
+    m.box(p[0], 1.6, p[2], 0.9, 0.9, 0.15, [0.88, 0.10, 0.08, 1]);
+    m.box(p[0], 1.85, p[2], 0.65, 0.25, 0.18, [0.96, 0.96, 0.96, 1]);
+  }
+  // Startportal
+  {
+    const hw0 = hwAt(0), a = pt(0, -hw0 - 1.2, 0), b = pt(0, hw0 + 1.2, 0), red = [0.8, 0.1, 0.08, 1];
     m.box(a[0], 0, a[2], 0.35, 5.2, 0.35, red); m.box(b[0], 0, b[2], 0.35, 5.2, 0.35, red);
-    const steps = 14; for (let q = 0; q < steps; q++) { const t = (q + 0.5) / steps; m.box(a[0] + (b[0] - a[0]) * t, 4.7, a[2] + (b[2] - a[2]) * t, 1.05, 0.55, 1.05, q % 2 ? [0.95, 0.95, 0.95, 1] : [0.1, 0.1, 0.1, 1]); } }
-  // flaggposter
-  for (let i = 30; i < n; i += Math.round(n / 7)) { const l = lim(i), p = pt(i, l[0] - vg - 3.2, 0); m.box(p[0], 0, p[2], 1.6, 1.1, 1.6, [0.95, 0.75, 0.1, 1]); m.box(p[0], 1.1, p[2], 1.9, 0.12, 1.9, [0.25, 0.25, 0.25, 1]); }
-  // depå/kiosk-bodar och publikvall vid starten
-  for (let q = 0; q < 5; q++) { const p = pt(-18 + q * 8, trk.outSign * (hw + vg + 9 + (q % 2) * 2), 0); const c = [[0.62, 0.16, 0.12, 1], [0.85, 0.8, 0.7, 1], [0.2, 0.35, 0.55, 1]][q % 3];
-    m.box(p[0], 0, p[2], 5, 2.6, 4, c, 0, 0, [0.2, 0.2, 0.22, 1]); }
-  // skog
+    const steps = 14;
+    for (let q = 0; q < steps; q++) {
+      const t = (q + 0.5) / steps;
+      m.box(a[0] + (b[0] - a[0]) * t, 4.7, a[2] + (b[2] - a[2]) * t, 1.05, 0.55, 1.05, q % 2 ? [0.95, 0.95, 0.95, 1] : [0.1, 0.1, 0.1, 1]);
+    }
+  }
+  // Flaggposter (lippupisteet – antingen banans exakta numrerade poster eller jämnt fördelade)
+  if (trk.posts && trk.posts.length) {
+    for (const fp of trk.posts) {
+      m.box(fp.x, 0, fp.z, 1.6, 1.2, 1.6, [0.95, 0.75, 0.1, 1]);
+      m.box(fp.x, 1.2, fp.z, 1.9, 0.14, 1.9, [0.25, 0.25, 0.25, 1]);
+    }
+  } else {
+    for (let i = 30; i < n; i += Math.round(n / 7)) {
+      const l = lim(i), p = pt(i, l[0] - vg - 3.2, 0);
+      m.box(p[0], 0, p[2], 1.6, 1.1, 1.6, [0.95, 0.75, 0.1, 1]);
+      m.box(p[0], 1.1, p[2], 1.9, 0.12, 1.9, [0.25, 0.25, 0.25, 1]);
+    }
+  }
+  // Byggnader (Tuomaritorni, Toimisto, Johto, Kioski, Katsastus/Varikko)
+  if (trk.buildings && trk.buildings.length) {
+    for (const b of trk.buildings) {
+      m.box(b.x, 0, b.z, b.sx, b.sy, b.sz, b.col, 0, 0, [0.22, 0.22, 0.25, 1]);
+    }
+  } else {
+    const hw0 = hwAt(0);
+    for (let q = 0; q < 5; q++) {
+      const p = pt(-18 + q * 8, trk.outSign * (hw0 + vg + 9 + (q % 2) * 2), 0);
+      const c = [[0.62, 0.16, 0.12, 1], [0.85, 0.8, 0.7, 1], [0.2, 0.35, 0.55, 1]][q % 3];
+      m.box(p[0], 0, p[2], 5, 2.6, 4, c, 0, 0, [0.2, 0.2, 0.22, 1]);
+    }
+  }
+  // Skog
   const trees = quality > 0 ? 420 : 150, dark = winter ? [0.20, 0.30, 0.25, 1] : [0.10, 0.27, 0.13, 1], light = winter ? [0.80, 0.86, 0.88, 1] : [0.14, 0.34, 0.16, 1];
-  const minD = hw + vg + j.D + j.w + 8;
+  const minD = 36;
   let ext = 0; for (let i = 0; i < n; i++) ext = Math.max(ext, Math.abs(trk.X[i]), Math.abs(trk.Z[i]));
-  for (let t = 0, tries = 0; t < trees && tries < trees * 12; tries++) {
+  for (let t = 0, tries = 0; t < trees && tries < trees * 14; tries++) {
     const x = (rnd() * 2 - 1) * (ext + 150), z = (rnd() * 2 - 1) * (ext + 150); let ok = true;
-    for (let i = 0; i < n; i += 4) { const dx = x - trk.X[i], dz = z - trk.Z[i]; if (dx * dx + dz * dz < minD * minD) { ok = false; break; } }
+    for (let i = 0; i < n; i += 3) {
+      const dx = x - trk.X[i], dz = z - trk.Z[i];
+      if (dx * dx + dz * dz < minD * minD) { ok = false; break; }
+      const b = trk.bulge(i);
+      if (b !== 0) {
+        const jx = trk.X[i] + trk.NX[i] * b, jz = trk.Z[i] + trk.NZ[i] * b;
+        if ((x - jx) ** 2 + (z - jz) ** 2 < 24 * 24) { ok = false; break; }
+      }
+    }
+    if (ok && trk.startChute) {
+      const sc = trk.startChute;
+      if (Math.hypot(x - (sc.x0 + sc.x1) / 2, z - (sc.z0 + sc.z1) / 2) < 48) ok = false;
+    }
     if (!ok) continue; t++;
     const h = 7 + rnd() * 8, r = 1.6 + rnd() * 1.4;
     m.box(x, 0, z, 0.5, h * 0.3, 0.5, [0.25, 0.17, 0.10, 1]);
