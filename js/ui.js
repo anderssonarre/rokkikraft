@@ -1,9 +1,10 @@
 // Alla menyvyer + tävlingsdagens logik enligt ROKKIRALLI RY SÄÄNTÖKIRJA (21.04.2026).
-import { CARS, ENGINES, CLASSES, CLASS_RULES, BUILD, UPG, FUELS, PAINTS, TRACKS, SURF, CAREER, FINALS, calcPoints, PRIZE_SHARE, CODES, MARKS, DRIVERS, KOMP } from './data.js';
-import { buildSpec, engineAt, curve, carById, engById, fuelById, defaultTune, fmt, checkInspection, formatCarNum } from './engine.js';
+import { TYRES, CARS, ENGINES, CLASSES, CLASS_RULES, BUILD, UPG, FUELS, PAINTS, TRACKS, SURF, CAREER, FINALS, calcPoints, PRIZE_SHARE, CODES, MARKS, DRIVERS, KOMP } from './data.js';
+import { buildSpec, engineAt, curve, carById, engById, fuelById, defaultTune, fmt, checkInspection, formatCarNum, SETUP_DEF } from './engine.js';
 import { S, save, reset, activeCar } from './state.js';
 import { getTrack } from './track.js';
-import { Race, fmtTime, CAM_NAMES, DEFAULT_CAM } from './race.js';
+import { Race, fmtTime, accel0100 } from './race.js';
+import { CAM_NAMES, DEFAULT_CAM } from './race.js';
 import { newTask, checkTask } from './dyno.js';
 import { Room, makeCode, cleanCode } from './net.js';
 
@@ -15,6 +16,7 @@ const pick = a => a[Math.floor(Math.random() * a.length)];
 const shuffle = a => { a = [...a]; for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
 const U = { view: 'menu', kompOpen: null, quick: { track: 'tammisaari', laps: 3, opp: 5, ai: 85, joker: 1 }, ev: null, task: null, taskDiff: 1, taskMsg: '', preview: null, race: null, toast: '' };
 
+const accC = {}; const acc = sp => { const k = JSON.stringify([sp.id, sp.engId, sp.mass, sp.tqS, sp.muF, sp.rw, sp.gears, sp.final, sp.drv]); return accC[k] ??= accel0100(sp); };
 const spec = (id = S.active) => buildSpec(id, S.cars[id], S.cars[id]?.tune);
 const stockSpec = id => buildSpec(id, { build: { strip: 1, cage: 1, seat: 1, net: 1, switch: 1 }, upg: {} }, defaultTune());
 const currentInsp = () => checkInspection(S.active, activeCar(), S.driverCls);
@@ -25,9 +27,9 @@ const topLevel = () => { let t = 0; CAREER.forEach((l, i) => { if (levelOpen(i))
 // ---------- ram ----------
 export function render() {
   const racing = U.view === 'race'; document.body.classList.toggle('racing', racing); if (racing) return;
-  const V = { menu, karriar, event: eventView, garage, trim, dyno, komp, settings, online }[U.view] || menu;
+  const V = { menu, karriar, event: eventView, garage, trim, dyno, komp, settings, online, setup }[U.view] || menu;
   app().innerHTML = `<header class="topbar">${U.view !== 'menu' && U.view !== 'event' ? '<button class="back" data-act="go" data-arg="menu">‹ Meny</button>' : '<span class="brand">ROKKI<b>KRAFT</b></span>'}
-    <span class="top-title">${{ karriar: 'Karriär & Banor', event: 'Tävlingsdag', garage: 'Garage & Besiktning', trim: 'Trimning', dyno: 'Räknebänken', komp: 'Kompendium & Sääntökirja', settings: 'Inställningar', online: 'Online – rumskod' }[U.view] || ''}</span>
+    <span class="top-title">${{ karriar: 'Karriär & Banor', event: 'Tävlingsdag', garage: 'Garage & Besiktning', trim: 'Trimning', dyno: 'Räknebänken', komp: 'Kompendium & Sääntökirja', settings: 'Inställningar', setup: 'Bilinställningar', online: 'Online – rumskod' }[U.view] || ''}</span>
     <span class="wallet">${S.warnings > 0 ? `<i style="color:#ff6a3d">⚠ ${S.warnings}/3 varningar</i>` : ''}${S.vouchers > 0 ? `<i style="color:#5ce080">🎟 ${S.vouchers} hyvityskuitti</i>` : ''}<b>${eur(S.money)}</b><i>${CAREER[topLevel()].name}</i></span></header>
     <main class="view v-${U.view}">${V()}</main>${U.toast ? `<div class="toast">${U.toast}</div>` : ''}`;
   if (U.toast) { clearTimeout(U.toastT); U.toastT = setTimeout(() => { U.toast = ''; document.querySelector('.toast')?.remove(); }, 2800); }
@@ -568,7 +570,7 @@ function garage() {
       ${!ok ? `<div class="warnbox" style="margin:8px 0">${insp.issues.map(x => `• ${x}`).join('<br>')}</div>` : ''}
       ${pv ? `<div class="pvbox">Förhandsvisar <b>${pv.u.levels[pv.lvl - 1].name}</b> <button class="btn small ghost" data-act="pv-off">Stäng</button></div>` : ''}
       ${statRows(pv ? pv.s : s, pv ? pv.k : k, pv ? k : null)}
-      <div class="row"><button class="btn" data-act="go" data-arg="trim">Trimma motorn →</button><button class="btn ghost" data-act="komp-open" data-arg="kaaret">Ritning: Turvakaaret →</button></div></div>
+      <div class="row"><button class="btn" data-act="go" data-arg="setup">🔧 Bilinställningar & däck →</button><button class="btn ghost" data-act="go" data-arg="trim">Trimma motorn →</button><button class="btn ghost" data-act="komp-open" data-arg="kaaret">Ritning: Turvakaaret →</button></div></div>
     <div class="g-curve"><canvas id="curve" width="640" height="380" data-pv="${pv ? '1' : ''}"></canvas><div class="legend"><i class="l1"></i>Moment (Nm)<i class="l2"></i>Effekt (kW)${pv ? '<i class="l3"></i>Före' : '<i class="l3"></i>Original'}</div></div></section>`;
 
   // Klassväljare
@@ -600,7 +602,7 @@ function garage() {
     const isSup = insp.cls === 'super' || insp.cls === 'supersenior' || s.superReady;
     const baseEngs = car.engines || [car.defaultEng];
     const supSwaps = isSup ? ['volvo_b230_bmwbox', 'bmw_m54b30', 'sierra_cosworth', 'volvo_v8_44', 'opel_20_16v'] : [];
-    const allEngIds = [...new Set([...baseEngs, ...supSwaps])].filter(id => ENGINES[id]);
+    const allEngIds = [...new Set([...baseEngs, ...supSwaps, ...Object.values(ENGINES).filter(e => e.gen && e.id !== 'vw30_v6').map(e => e.id)])].filter(id => ENGINES[id]);
     const curEngId = cs.eng || car.defaultEng;
     const ownedEngs = cs.ownedEngs || [car.defaultEng];
     h += `<section class="panel"><h2>Motoralternativ & Motorbyte (Tekniikanvaihto) – ${car.name}</h2>
@@ -610,7 +612,8 @@ function garage() {
         const sTest = buildSpec(S.active, { ...cs, eng: eid }, cs.tune), kTest = curve(sTest);
         return `<div class="card ${isOwn ? 'own' : ''} ${isCur ? 'sel' : ''}"><div class="c-top"><span>${fmt(eDef.Vd, 1)} L · ${eDef.cyl}-CYL${eDef.boost ? ' TURBO' : ' SUG'}</span><b>${isCur ? 'MONTERAD' : isOwn ? 'ÄGD' : eur(eDef.price)}</b></div>
           <strong>${eDef.name}</strong><p>${eDef.desc}</p>
-          <ul><li>Med nuvarande trim: <b>${fmt(kTest.hp)} hk · ${fmt(kTest.peakT.T)} Nm</b> (${fmt(kTest.kgHp, 1)} kg/hk)</li><li>Kompression ${fmt(eDef.rc, 1)}:1 · Varvstopp ${fmt(eDef.redline)} rpm${eDef.shift ? ' · Tätstegad BMW-låda' : ''}</li></ul>
+          <ul><li><b>${fmt(kTest.hp)} hk</b> · ${fmt(kTest.peakT.T)} Nm</li><li>${fmt(eDef.Vd, 1)} L · ${eDef.cyl} cylindrar · ${eDef.valves || eDef.cyl * (eDef.Vd >= 1.8 ? 4 : 2)} ventiler</li>
+            <li>Bilens vikt ${fmt(sTest.mass - 75)} kg · ${fmt(kTest.kgHp, 1)} kg/hk (${fmt(kTest.hp / (sTest.mass - 75) * 1000)} hk/ton)</li><li>0–100 km/h ≈ <b>${fmt(acc(sTest), 1)} s</b></li></ul>
           <div class="row">${isCur ? '' : isOwn ? `<button class="btn small" data-act="eng-pick" data-arg="${eid}">Montera i bilen</button>` : `<button class="btn small" data-act="eng-buy" data-arg="${eid}" ${S.money >= eDef.price ? '' : 'disabled'}>Köp & montera (${eur(eDef.price)})</button>`}</div></div>`;
       }).join('')}</div></section>`;
   }
@@ -689,6 +692,36 @@ function trim() {
     ${bar('Bränsle (FUELMEP)', e.fuelmep, e.fuelmep, 'f1')}${bar('Förbränt (QMEP)', e.qmep, e.fuelmep, 'f2')}${bar('Oförbränt (CLMEP)', e.clmep, e.fuelmep, 'f6')}${bar('Avgas (ExMEP)', e.exmep, e.fuelmep, 'f3')}${bar('Kylvatten (HTMEP)', e.htmep, e.fuelmep, 'f4')}
     ${bar('Indikerat (IMEPg)', e.imep, e.fuelmep, 'f2')}${bar('Pumpning (PMEP)', e.pmep, e.fuelmep, 'f6')}${bar('Friktion (FMEP)', e.fmep, e.fuelmep, 'f6')}${bar('Broms (BMEP)', e.bmep, e.fuelmep, 'f5')}
     <p class="dim">FUELMEP ${fmt(e.fuelmep, 1)} → QMEP ${fmt(e.qmep, 1)} → IMEPg ${fmt(e.imep, 1)} → BMEP ${fmt(e.bmep, 1)} bar</p></section>`;
+}
+
+// ---------- bilinställningar (gratis) ----------
+const SETUP_UI = [
+  ['Fjädring', 'spring', 1, 10, 1, v => v <= 3 ? 'mjuk' : v >= 8 ? 'styv' : 'medel', 'Mjukt är bäst på grus och is, styvt på asfalt.'],
+  ['Dämpare', 'damper', 1, 10, 1, v => v <= 3 ? 'mjuk' : v >= 8 ? 'hård' : 'medel', 'Hårda dämpare håller bilen stilla på asfalt men studsar på gupp.'],
+  ['Camber', 'camber', -5, 1, 0.1, v => fmt(v, 1) + '°', 'Runt −2° ger mest grepp i kurvorna.'],
+  ['Toe fram', 'toeF', -1, 1, 0.05, v => (v > 0 ? '+' : '') + fmt(v, 2) + '° ' + (v > 0 ? 'toe-in' : v < 0 ? 'toe-out' : ''), 'Toe-out ger skarpare instyrning, toe-in stabilitet.'],
+  ['Toe bak', 'toeR', -1, 1, 0.05, v => (v > 0 ? '+' : '') + fmt(v, 2) + '°', 'Lite toe-in bak gör bilen stabil; toe-out gör den lös.'],
+  ['Markfrigång fram', 'rideF', 5, 30, 1, v => fmt(v) + ' cm', 'Lågt = lägre tyngdpunkt, men skrapar på grus under ca 9 cm.'],
+  ['Markfrigång bak', 'rideR', 5, 30, 1, v => fmt(v) + ' cm', ''],
+  ['Bakvagnens höjd (rake)', 'rake', -5, 10, 0.5, v => (v > 0 ? '+' : '') + fmt(v, 1) + ' cm', 'Högre bakvagn flyttar grepp framåt → mer överstyrning.'],
+  ['Växellåda – spridning', 'gearSpread', 0.8, 1.2, 0.01, v => fmt(v, 2) + '×', '<1 tätare växlar, >1 glesare.'],
+  ['Slutväxel', 'finalScale', 0.85, 1.2, 0.01, v => fmt(v, 2) + '×', 'Kort = acceleration, lång = toppfart.'],
+  ['Bromskraft', 'brakeF', 0.6, 1.3, 0.01, v => fmt(v * 100) + ' %', ''],
+  ['Bromsbalans fram', 'bias', 0.5, 0.75, 0.01, v => fmt(v * 100) + ' %', 'Mer bak gör att bilen svänger in vid inbromsning.'],
+  ['Fälgdiameter', 'rim', 20, 60, 1, v => fmt(v) + ' cm', 'Påverkar hjulradien och därmed utväxlingen.'],
+  ['Däckbredd', 'width', 5, 60, 1, v => fmt(v) + ' cm', 'Bredare = mer grepp men mer vikt och luftmotstånd.'],
+];
+function setup() {
+  const cs = activeCar(), t = cs.tune, s = spec(), k = curve(s), car = carById(S.active), chip = (cs.upg.chip || 0) > 0;
+  const top = s.redline / (s.gears[s.gears.length - 1] * s.final) / 9.5493 * s.rw * 3.6;
+  return `<section class="panel"><span class="kick">GARAGE · GRATIS ATT ÄNDRA</span><h1>Bilinställningar – ${car.name}</h1>
+    <div class="pills"><div><span>Effekt</span><b>${fmt(k.hp)} hk</b><small>${s.engName}</small></div><div><span>Vikt</span><b>${fmt(s.mass - 75)} kg</b><small>${fmt(k.kgHp, 1)} kg/hk</small></div>
+      <div><span>0–100 km/h</span><b>${fmt(acc(s), 1)} s</b></div><div><span>Fart vid varvstopp i högsta</span><b>${fmt(top)} km/h</b></div><div><span>Grepp fram / bak</span><b>${fmt(s.muF * 100)} / ${fmt(s.muR * 100)} %</b><small>${s.tyre}</small></div></div>
+    <div class="row wrap"><button class="btn small ghost" data-act="setup-reset">Återställ standard</button><button class="btn small ghost" data-act="go" data-arg="garage">‹ Garaget</button></div></section>
+  <section class="panel"><h2>Däck</h2><div class="cards">${Object.values(TYRES).map(x => `<div class="card ${t.tyre === x.id ? 'sel own' : ''}"><div class="c-top"><span>GREPP ${fmt(x.grip * 100)} %</span><b>${t.tyre === x.id ? 'MONTERADE' : 'GRATIS'}</b></div><strong>${x.name}</strong><p>${x.desc}</p>${t.tyre === x.id ? '' : `<button class="btn small" data-act="tyre" data-arg="${x.id}">Montera</button>`}</div>`).join('')}</div></section>
+  <section class="panel"><h2>Chassi, växellåda & bromsar</h2><div class="sliders">${SETUP_UI.map(([n, key, lo, hi, st, f, d]) => `<label><span>${n} <b>${f(t[key])}</b></span><input type="range" min="${lo}" max="${hi}" step="${st}" value="${t[key]}" data-in="su:${key}"><small>${d}</small></label>`).join('')}</div></section>
+  <section class="panel"><h2>Chiptrimning</h2><p>${chip ? '✓ Chiptrimmad (+12 % vridmoment).' : 'Omprogrammerad motorstyrning ger ca +12 % vridmoment och effekt.'}</p>
+    <div class="row">${chip ? '<button class="btn small ghost" data-act="unmount" data-arg="chip">Återställ originalprogram</button>' : `<button class="btn" data-act="buy" data-arg="chip" ${S.money >= 329 ? '' : 'disabled'}>Chiptrimma (329 €)</button>`}</div></section>`;
 }
 
 // ---------- räknebänken ----------
@@ -888,6 +921,8 @@ const ACT = {
     }
   },
   paint(a) { activeCar().paint = a; save(); },
+  tyre(a) { activeCar().tune.tyre = a; save(); },
+  'setup-reset'() { const t = activeCar().tune; Object.assign(t, SETUP_DEF, { finalScale: 1, bias: 0.62 }); save(); },
   'num-bw'(a) { activeCar().bw = a; save(); },
   buy(a) {
     const u = UPG.find(x => x.id === a), cs = activeCar(), lvl = cs.upg[a] || 0, L = u.levels[lvl];
@@ -929,7 +964,7 @@ const INP = {
 
 export function initUI() {
   document.addEventListener('click', e => { const el = e.target.closest('[data-act]'); if (!el || el.disabled) return; const f = ACT[el.dataset.act]; if (!f) return; if (f(el.dataset.arg, el) !== false) render(); });
-  document.addEventListener('change', e => { const el = e.target.closest('[data-in]'); if (!el) return; const f = INP[el.dataset.in]; if (f && f(el.value) !== false) render(); });
+  document.addEventListener('change', e => { const el = e.target.closest('[data-in]'); if (!el) return; if (el.dataset.in.startsWith('su:')) { activeCar().tune[el.dataset.in.slice(3)] = +el.value; save(); render(); return; } const f = INP[el.dataset.in]; if (f && f(el.value) !== false) render(); });
   document.addEventListener('input', e => { const el = e.target.closest('input[type=range][data-in]'); if (!el) return; const b = el.closest('label')?.querySelector('span b'); if (b && ['lambda', 'finalScale'].includes(el.dataset.in)) b.textContent = (+el.value).toFixed(2).replace('.', ','); });
   try { const c = cleanCode(new URLSearchParams(location.search).get('rum')); if (c.length === 4) { ON.code = c; U.view = 'online'; } } catch (e) { }
   render();

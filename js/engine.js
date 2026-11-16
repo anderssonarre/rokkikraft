@@ -1,11 +1,13 @@
 // Motormodell: MEP-kedjan FUELMEP → QMEP → IMEPg → BMEP samt klass- och besiktningskontroll enligt Sääntökirja 2026.
-import { CARS, ENGINES, UPG, BUILD, FUELS, CLASS_RULES } from './data.js';
+import { TYRES, CARS, ENGINES, UPG, BUILD, FUELS, CLASS_RULES } from './data.js';
 
 export const carById = id => CARS.find(c => c.id === id) || CARS[0];
 export const engById = id => ENGINES[id] || null;
 export const fuelById = id => FUELS.find(f => f.id === id) || FUELS[0];
 
-export function defaultTune() { return { lambda: 0.95, ign: 0, fuel: 'b95', finalScale: 1, bias: 0.62 }; }
+export const SETUP_DEF = { spring: 5, damper: 5, camber: -1.5, toeF: 0, toeR: 0.1, rideF: 14, rideR: 14, rake: 0, gearSpread: 1, brakeF: 1, rim: 38, width: 20, tyre: 'std' };
+export function defaultTune() { return { lambda: 0.95, ign: 0, fuel: 'b95', finalScale: 1, bias: 0.62, ...SETUP_DEF }; }
+const hpCache = {};
 
 // Slår ihop grundbil + motorval/motorbyte + bygge + uppgraderingar + trimning till en färdig specifikation.
 export function buildSpec(carId, cs, tune) {
@@ -25,12 +27,12 @@ export function buildSpec(carId, cs, tune) {
     etaPeak: eng ? eng.etaPeak : c.etaPeak,
     peakRpm: eng ? eng.peakRpm : c.peakRpm,
     low: 0,
-    mass: c.mass + 75 + (eng?.kg || 0), regMass: c.regMass || (c.mass + 90),
+    mass: c.mass + 75 + (eng ? (eng.w != null ? eng.w - (engById(c.defaultEng)?.w ?? 140) : (eng.kg || 0)) : 0), regMass: c.regMass || (c.mass + 90),
     wb: c.wb, front: c.front, final: c.final, gears: c.gears,
     CdA: c.CdA, cool: c.cool, boost: eng ? (eng.boost || 0) : (c.boost || 0),
     bs: c.boostStart || 2500, bf: c.boostFull || 3800, ic: c.ic || 0, pmepF: 1,
     ignMax: 5, knockCtl: 0, radSafe: 0, shift: eng?.shift || 0.28, eff: 0.88, trac: 0, mu: 1, susp: 0, brake: 1, dmg: 1,
-    superReady: c.cls === 'super' ? 1 : 0, rallyTire: 0, chop: 0,
+    superReady: c.cls === 'super' ? 1 : 0, rallyTire: 0, chop: 0, tqS: 1, tqUp: 0,
   };
   for (const b of BUILD) if (cs.build && cs.build[b.id]) s.mass += b.kg;
   for (const u of UPG) {
@@ -47,6 +49,7 @@ export function buildSpec(carId, cs, tune) {
     if (fx.superReady) s.superReady = 1;
     if (fx.rallyTire) s.rallyTire = 1;
     if (fx.chop) s.chop = 1;
+    if (fx.tq) s.tqUp += fx.tq;
   }
   // Om bilen fått turbo, rallydäck/slicks eller lukkoperä på framhjulsdrift klassas den som Super-bil om superReady är monterad
   if ((s.boost > 0 || s.rallyTire || (s.trac && s.drv === 'fwd')) && s.superReady) {
@@ -54,6 +57,14 @@ export function buildSpec(carId, cs, tune) {
   }
   s.final *= tune.finalScale; s.lambda = tune.lambda; s.ign = Math.min(tune.ign, s.ignMax); s.fuel = fuelById(tune.fuel); s.bias = tune.bias;
   s.rw = 0.29; s.idle = 900;
+  // Motorer med angiven effekt kalibreras så att standardtrimmet ger exakt den effekten
+  if (eng && eng.hp) {
+    if (!hpCache[eng.id]) { const b = { ...s, etaPeak: eng.etaPeak, peakRpm: eng.peakRpm, redline: eng.redline, low: 0, boost: 0, pmepF: 1, ign: 0, lambda: 0.95, fuel: fuelById('b95'), tqS: 1, tqUp: 0 };
+      hpCache[eng.id] = eng.hp / curve(b).hp; }
+    s.tqS = hpCache[eng.id];
+  }
+  s.tqS *= 1 + s.tqUp;
+  applySetup(s, tune);
   return s;
 }
 
@@ -86,6 +97,31 @@ export function formatCarNum(num, cls) {
 const smooth = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
 
 // Alla MEP-poster vid ett varvtal (fullgas). Tryck i bar.
+// Chassi- och däckinställningar → fysikparametrar (allt är gratis att ändra)
+export function applySetup(s, t) {
+  const ty = TYRES[t.tyre] || TYRES.std;
+  const rimR = t.rim / 200, side = Math.min(0.16, t.width / 100 * 0.55); // däckradie = fälgradie + däcksida
+  s.rw = Math.max(0.16, rimR + side);
+  const wF = Math.pow(t.width / 20, 0.22) * (t.width < 12 ? 0.85 + t.width / 80 : 1);          // bredare = mer grepp (avtagande)
+  const camF = 1 + 0.035 - 0.012 * (t.camber + 2) ** 2;                                         // optimum ca −2°
+  const lowCG = 1 + (16 - (t.rideF + t.rideR) / 2) * 0.004;                                     // lägre = lite mer grepp
+  const base = ty.grip * wF * camF * lowCG;
+  const rake = (t.rideR + t.rake - t.rideF) * 0.006;                                            // högre bak = mer överstyrning
+  s.muF = base * (1 + rake) * (1 - Math.abs(t.toeF) * 0.04);
+  s.muR = base * (1 - rake) * (1 + t.toeR * 0.05 - Math.max(0, -t.toeR) * 0.08);
+  s.steerK = 1 - t.toeF * 0.12;                                                                 // toe-out fram = skarpare instyrning
+  // fjädring/dämpning: mjukt på grus och is, styvt på asfalt. Låg bil skrapar på grus.
+  const sp = t.spring, dm = t.damper, scrape = Math.max(0, 9 - Math.min(t.rideF, t.rideR)) * 0.02;
+  s.surfK = { grus: 1 + 0.03 - 0.006 * (sp - 3.5) ** 2 / 2 - 0.004 * (dm - 4) ** 2 / 2 - scrape, asfalt: 1 + 0.03 - 0.004 * (sp - 7) ** 2 / 2 - 0.004 * (dm - 7) ** 2 / 2, is: 1 + 0.02 - 0.005 * (sp - 3) ** 2 / 2 - scrape };
+  s.roll = 1.15 - sp * 0.03; s.yawD = 0.8 + dm * 0.04;
+  s.brake *= t.brakeF; s.tyreWear = ty.wear * (t.width / 20) ** 0.3; s.tyre = ty.name;
+  s.mass += (t.width - 20) * 0.4 + (t.rim - 38) * 0.15;                                          // tyngre hjul
+  s.CdA += (t.width - 20) * 0.002;
+  // växellåda: spridning kring 2:an (1 = original)
+  if (t.gearSpread !== 1) { const g = s.gears, mid = g[Math.min(1, g.length - 1)]; s.gears = g.map(x => mid * Math.pow(x / mid, t.gearSpread)); }
+  s.setup = t;
+}
+
 export function engineAt(s, rpm) {
   const f = s.fuel, x = (rpm - s.peakRpm) / s.peakRpm;
   let etaV = s.etaPeak * (1 - (x < 0 ? 0.42 + s.low * 4 : 0.62) * x * x);
@@ -115,7 +151,7 @@ export function engineAt(s, rpm) {
   const fmep = 0.97 + 0.15 * n + 0.005 * n * n;
   const bmep = imep - pmep - fmep;
   const Vd = s.Vd * 1e-3;
-  const T = bmep * 1e5 * Vd / (4 * Math.PI);
+  const T = bmep * 1e5 * Vd / (4 * Math.PI) * (s.tqS || 1);
   const P = T * rpm * 2 * Math.PI / 60 / 1000;
   const cps = rpm / 120;                      // arbetscykler per sekund
   const Qb = fuelmep * 1e5 * Vd * cps / 1000;  // kW

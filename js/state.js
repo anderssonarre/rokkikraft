@@ -2,7 +2,7 @@
 import { defaultTune } from './engine.js';
 const KEY = 'rokkikraft-v2';
 const fresh = () => ({
-  v: 2, money: 1000, name: 'Du', active: 'sunny',
+  v: 2, money: 1000, name: 'Du', active: 'mazda626',
   driverCls: 'auto', // 'auto' (bilens klass: Vetari/Kardaani/Super) eller 'junior', 'lady', 'senior', 'supersenior'
   warnings: 0,       // Förarpersonliga varningar (nollas vid ren tävling; 3 st = hylky + lippumiespesti)
   lippumies: 0,      // 1 = måste stå flaggvakt en tävlingshelg innan nästa start
@@ -30,10 +30,20 @@ function load() {
           if (!s.cars[k].katsastusNo) s.cars[k].katsastusNo = 100 + Math.floor(Math.random() * 800);
         }
       }
-      return { ...f, ...s, settings: { ...f.settings, ...s.settings }, aids: { ...f.aids, ...s.aids } };
+      return starters({ ...f, ...s, settings: { ...f.settings, ...s.settings }, aids: { ...f.aids, ...s.aids } });
     }
   } catch (e) { }
-  return fresh();
+  return starters(fresh());
+}
+// Startbilarna (Mazda 626, Passat V6, Mondeo ST220) är gratis och finns alltid i garaget, färdigbesiktade.
+function starters(st) {
+  const full = { strip: 1, cage: 1, seat: 1, net: 1, switch: 1 };
+  [['mazda626', 'vit', 26], ['passat_rx', 'bla', 33], ['mondeo_st', 'rod', 22]].forEach(([id, paint, num]) => {
+    if (!st.cars[id]) st.cars[id] = { build: { ...full }, upg: {}, paint, num, bw: 'wb', katsastusNo: 100 + Math.floor(Math.random() * 890), tune: defaultTune() };
+  });
+  for (const c of Object.values(st.cars)) c.tune = { ...defaultTune(), ...(c.tune || {}) };
+  if (!st.v3) { st.v3 = 1; st.active = st.active === 'sunny' && !st.career?.res ? 'mazda626' : st.active; }
+  return st;
 }
 export const S = load();
 export function save() { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { } }

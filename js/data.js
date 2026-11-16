@@ -65,6 +65,25 @@ export const CLASS_RULES = {
 };
 
 export const CARS = [
+  // ===================== STARTBILAR (GRATIS) – RALLYCROSS =====================
+  { id: 'mazda626', name: 'Mazda 626 1989', nick: 'Sexhundra', cls: 'vetari', drv: 'fwd', body: 'sedan', price: 0, starter: 1,
+    Vd: 2.0, cyl: 5, redline: 6500, rc: 9.6, etaPeak: 0.88, peakRpm: 4600, mass: 1024, showMass: 998, regMass: 1090, wb: 2.52, front: 0.62,
+    final: 4.1, gears: [3.31, 1.83, 1.31, 1.03, 0.80], CdA: 0.66, cool: 50, boost: 0,
+    defaultEng: 'g20_5', engines: ['g20_5'],
+    tag: 'Lätt framhjulsdriven startbil – 2,0 L femcylindrig, 150 hk, 998 kg',
+    desc: 'Lättast av startbilarna. Svänger villigt och tappar lite fart i kurvorna – men får se sig slagen på långa raksträckor.' },
+  { id: 'passat_rx', name: 'Volkswagen Passat 3.0 V6', nick: 'Passaten', cls: 'kardaani', drv: 'rwd', body: 'wagon', price: 0, starter: 1,
+    Vd: 3.0, cyl: 6, redline: 6800, rc: 10.5, etaPeak: 0.92, peakRpm: 5200, mass: 1481, showMass: 1455, regMass: 1550, wb: 2.70, front: 0.56,
+    final: 3.7, gears: [3.56, 2.05, 1.43, 1.10, 0.89, 0.72], CdA: 0.70, cool: 70, boost: 0,
+    defaultEng: 'vw30_v6', engines: ['vw30_v6'],
+    tag: 'Bakhjulsdriven V6 – 260 hk, 1 455 kg',
+    desc: 'Tung men stark. Drar ifrån på rakorna och kan sladdas runt kurvorna på gasen, men kräver tidig inbromsning.' },
+  { id: 'mondeo_st', name: 'Ford Mondeo ST220', nick: 'ST:n', cls: 'vetari', drv: 'fwd', body: 'hatch', price: 0, starter: 1,
+    Vd: 3.0, cyl: 6, redline: 6800, rc: 10.0, etaPeak: 0.90, peakRpm: 5000, mass: 1426, showMass: 1400, regMass: 1500, wb: 2.75, front: 0.63,
+    final: 4.06, gears: [3.42, 2.14, 1.45, 1.03, 0.81, 0.62], CdA: 0.68, cool: 66, boost: 0,
+    defaultEng: 'g30_v6', engines: ['g30_v6'],
+    tag: 'Framhjulsdriven V6 – 220 hk, 1 400 kg',
+    desc: 'Mittemellan: mycket kraft för en framhjulsdrivare. Stabil och snabb, men understyr om man går in för fort.' },
   // ===================== VETARI – FRAMHJULSDRIVNA BILAR (ETUVETO) =====================
   { id: 'sunny', name: 'Volvo S40 / V40 1.8–2.0', nick: 'S40 Vetari', cls: 'vetari', drv: 'fwd', body: 'sedan', price: 0,
     Vd: 1.8, cyl: 4, redline: 6500, rc: 9.8, etaPeak: 0.87, peakRpm: 4300, mass: 1020, regMass: 1180, wb: 2.55, front: 0.61,
@@ -170,6 +189,17 @@ export const CARS = [
 
 // Dokumenterade motoralternativ och motorbyten (Tekniikanvaihto) i Rokkiralli!
 export const ENGINES = {
+  // Motoralternativ i garaget (passar alla bilar, gratis). hp = effekt med standardtrim; w = motorvikt (kg)
+  g09_3: { id: 'g09_3', gen: 1, name: '0,9 L R3 8V', Vd: 0.9, cyl: 3, valves: 8, hp: 35, w: 75, redline: 6000, rc: 9.5, etaPeak: 0.82, peakRpm: 4200, price: 0, desc: 'Liten trecylindrig. Lätt framvagn men nästan ingen kraft.' },
+  g13_4: { id: 'g13_4', gen: 1, name: '1,3 L R4 8V', Vd: 1.3, cyl: 4, valves: 8, hp: 67, w: 95, redline: 6200, rc: 9.5, etaPeak: 0.84, peakRpm: 4400, price: 0, desc: 'Enkel åttaventilare.' },
+  g16_5: { id: 'g16_5', gen: 1, name: '1,6 L R5 8V', Vd: 1.6, cyl: 5, valves: 8, hp: 97, w: 120, redline: 6300, rc: 9.6, etaPeak: 0.85, peakRpm: 4500, price: 0, desc: 'Liten femcylindrig.' },
+  g20_5: { id: 'g20_5', gen: 1, name: '2,0 L R5 8V', Vd: 2.0, cyl: 5, valves: 8, hp: 150, w: 140, redline: 6500, rc: 9.6, etaPeak: 0.88, peakRpm: 4600, price: 0, desc: 'Mazda 626:ans motor. Jämn och seg.' },
+  g25_5: { id: 'g25_5', gen: 1, name: '2,5 L R5 20V', Vd: 2.5, cyl: 5, valves: 20, hp: 166, w: 160, redline: 6800, rc: 10.0, etaPeak: 0.89, peakRpm: 4800, price: 0, desc: 'Fyrventilig femma med bra mellanregister.' },
+  g30_v6: { id: 'g30_v6', gen: 1, name: '3,0 L V6 24V', Vd: 3.0, cyl: 6, valves: 24, hp: 220, w: 175, redline: 6800, rc: 10.0, etaPeak: 0.90, peakRpm: 5000, price: 0, desc: 'Mondeo ST220:ns V6.' },
+  vw30_v6: { id: 'vw30_v6', gen: 1, name: '3,0 L V6 24V (VW)', Vd: 3.0, cyl: 6, valves: 24, hp: 260, w: 178, redline: 6800, rc: 10.5, etaPeak: 0.92, peakRpm: 5200, price: 0, desc: 'Passatens V6 – 260 hk.' },
+  g35_v6: { id: 'g35_v6', gen: 1, name: '3,5 L V6 24V', Vd: 3.5, cyl: 6, valves: 24, hp: 270, w: 185, redline: 6900, rc: 10.3, etaPeak: 0.91, peakRpm: 5200, price: 0, desc: 'Stor V6 med mycket vridmoment.' },
+  g40_6: { id: 'g40_6', gen: 1, name: '4,0 L R6 24V', Vd: 4.0, cyl: 6, valves: 24, hp: 321, w: 205, redline: 6800, rc: 10.5, etaPeak: 0.92, peakRpm: 5000, price: 0, desc: 'Rak sexa – tung men stark.' },
+  g52_v8: { id: 'g52_v8', gen: 1, name: '5,2 L V8 32V', Vd: 5.2, cyl: 8, valves: 32, hp: 589, w: 230, redline: 8250, rc: 12.0, etaPeak: 0.96, peakRpm: 6500, price: 0, desc: 'Högvarvande V8. Brutal på rakorna, tung i nosen.' },
   // Vetari-motorer
   s40_18: { id: 's40_18', name: 'Volvo 1.8 16V (B4184S)', Vd: 1.8, cyl: 4, redline: 6500, rc: 9.8, etaPeak: 0.87, peakRpm: 4300, price: 0, kg: 0,
     desc: 'Fyrcylindrig 1,8-liters sugmotor i Volvo S40/V40.' },
@@ -240,64 +270,66 @@ export const BUILD = [
 ];
 
 export const UPG = [
+  { id: 'chip', name: 'Chiptrimning', komp: 'fyllnadsgrad', levels: [
+    { name: 'Chiptrim (motorstyrning)', price: 329, fx: { tq: 0.12 }, desc: 'Omprogrammerad motorstyrning: ca +12 % vridmoment och effekt i hela registret.' } ] },
   { id: 'superkit', name: 'Super-luokan utrustning (krävs för Super)', komp: 'kaaret', levels: [
-    { name: 'Super-kaaret, 6-punktsbälte & sidospeglar', price: 240, fx: { superReady: 1, kg: 8, dmg: 0.92 },
+    { name: 'Super-kaaret, 6-punktsbälte & sidospeglar', price: 0, fx: { superReady: 1, kg: 8, dmg: 0.92 },
       desc: 'Uppgraderar buren till Super-luokan kaaret: stolpar fästa på 8 ställen à ≥50 mm (9), takkryss (kattoristikko, 7) och hörntrianglar (11). 6-punktsbälte med grenbälteshål i stolen, sidospeglar på båda sidor, representativ kaross (siisti) och S framför numret.' } ] },
   { id: 'insug', name: 'Insug', komp: 'fyllnadsgrad', levels: [
-    { name: 'Öppet sportfilter', price: 40, fx: { eta: 0.025 }, desc: 'Mindre strypning före spjället. Fyllnadsgraden ηV stiger ett par procent i hela registret. Tillåtet i alla klasser.' },
-    { name: 'Portat insug & större spjällhus', price: 160, fx: { eta: 0.055, peak: 250 }, desc: 'Slipade kanaler och större spjällhus. ηV +5,5 % och toppen flyttas 250 rpm uppåt. Tillåtet i alla klasser (viritysaste vapaa).' } ] },
+    { name: 'Öppet sportfilter', price: 0, fx: { eta: 0.025 }, desc: 'Mindre strypning före spjället. Fyllnadsgraden ηV stiger ett par procent i hela registret. Tillåtet i alla klasser.' },
+    { name: 'Portat insug & större spjällhus', price: 0, fx: { eta: 0.055, peak: 250 }, desc: 'Slipade kanaler och större spjällhus. ηV +5,5 % och toppen flyttas 250 rpm uppåt. Tillåtet i alla klasser (viritysaste vapaa).' } ] },
   { id: 'kam', name: 'Kamaxel', komp: 'fyllnadsgrad', levels: [
-    { name: 'Sportkam', price: 140, fx: { eta: 0.02, peak: 600, red: 400 }, desc: 'Längre öppettider flyttar ηV-toppen +600 rpm och höjer varvgränsen 400 rpm. P = T·ω ökar på höga varv.' },
-    { name: 'Racekam & hårdare ventilfjädrar', price: 380, fx: { eta: 0.04, peak: 1100, red: 800, low: 0.05 }, desc: 'ηV-toppen +1 100 rpm och varvgränsen +800 rpm. Viktigaste effektvägen i Vetari och Kardaani där turbo är förbjudet!' } ] },
+    { name: 'Sportkam', price: 0, fx: { eta: 0.02, peak: 600, red: 400 }, desc: 'Längre öppettider flyttar ηV-toppen +600 rpm och höjer varvgränsen 400 rpm. P = T·ω ökar på höga varv.' },
+    { name: 'Racekam & hårdare ventilfjädrar', price: 0, fx: { eta: 0.04, peak: 1100, red: 800, low: 0.05 }, desc: 'ηV-toppen +1 100 rpm och varvgränsen +800 rpm. Viktigaste effektvägen i Vetari och Kardaani där turbo är förbjudet!' } ] },
   { id: 'avgas', name: 'Avgassystem (max 110 dB @ 4 500 rpm)', komp: 'pumpforlust', levels: [
-    { name: '2,5" rör bakom B-stolpen & fullflödesdämpare', price: 50, fx: { pmep: 0.6, eta: 0.015 },
+    { name: '2,5" rör bakom B-stolpen & fullflödesdämpare', price: 0, fx: { pmep: 0.6, eta: 0.015 },
       desc: 'Enligt reglerna måste avgasröret gå förbi B-stolpen och klara max 110 dB vid 4 500 rpm (mätt 50 cm höjd, 45° vinkel, 50 cm avstånd). Sänker mottrycket pe och PMEP.' },
-    { name: 'Extraktorgrenrör 4-2-1 & dämpare (≤110 dB)', price: 220, fx: { pmep: 0.4, eta: 0.035 },
+    { name: 'Extraktorgrenrör 4-2-1 & dämpare (≤110 dB)', price: 0, fx: { pmep: 0.4, eta: 0.035 },
       desc: 'Avstämda rörlängder hjälper till att tömma cylindern samtidigt som ljudgränsen 110 dB hålls under hela tävlingsdagen.' } ] },
   { id: 'turbo', name: 'Turbo (endast tillåtet i Super Rock!)', komp: 'turbo', onlySuper: true, levels: [
-    { name: 'Skrotturbo 0,4 bar', price: 250, fx: { boost: 0.4, bs: 2800, bf: 4000 }, desc: 'ENDASТ SUPER-LUOKKA (i myyntiluokat är turbo och lustgas förbjudna!). Högre insugstryck pi ger tätare luft och större FUELMEP.' },
-    { name: 'Större turbo 0,8 bar', price: 550, fx: { boost: 0.8, bs: 3200, bf: 4400 }, desc: 'ENDAST SUPER-LUOKKA. Dubbla laddtrycket. Laddluften blir het (T2) – intercooler och fetare blandning behövs för knackmarginalen.' },
-    { name: 'Hybridturbo 1,2 bar', price: 1000, fx: { boost: 1.2, bs: 3600, bf: 5000 }, desc: 'ENDAST SUPER-LUOKKA. Mest effekt, mest värme, mest knackrisk. Lustgas (ilokaasu) är förbjudet även i Super!' } ] },
+    { name: 'Skrotturbo 0,4 bar', price: 0, fx: { boost: 0.4, bs: 2800, bf: 4000 }, desc: 'ENDASТ SUPER-LUOKKA (i myyntiluokat är turbo och lustgas förbjudna!). Högre insugstryck pi ger tätare luft och större FUELMEP.' },
+    { name: 'Större turbo 0,8 bar', price: 0, fx: { boost: 0.8, bs: 3200, bf: 4400 }, desc: 'ENDAST SUPER-LUOKKA. Dubbla laddtrycket. Laddluften blir het (T2) – intercooler och fetare blandning behövs för knackmarginalen.' },
+    { name: 'Hybridturbo 1,2 bar', price: 0, fx: { boost: 1.2, bs: 3600, bf: 5000 }, desc: 'ENDAST SUPER-LUOKKA. Mest effekt, mest värme, mest knackrisk. Lustgas (ilokaasu) är förbjudet även i Super!' } ] },
   { id: 'ic', name: 'Intercooler (Super Rock)', komp: 'turbo', needsTurbo: true, onlySuper: true, levels: [
-    { name: 'Luft-luftkylare', price: 150, fx: { ic: 0.6 }, desc: 'Verkningsgrad ε = 0,6. Kallare laddluft Ti ger högre densitet ρi och bättre knackmarginal.' },
-    { name: 'Stor frontmonterad', price: 380, fx: { ic: 0.82 }, desc: 'ε = 0,82: laddluften kommer nära utetemperatur. Sitter utsatt – skydda fronten.' } ] },
+    { name: 'Luft-luftkylare', price: 0, fx: { ic: 0.6 }, desc: 'Verkningsgrad ε = 0,6. Kallare laddluft Ti ger högre densitet ρi och bättre knackmarginal.' },
+    { name: 'Stor frontmonterad', price: 0, fx: { ic: 0.82 }, desc: 'ε = 0,82: laddluften kommer nära utetemperatur. Sitter utsatt – skydda fronten.' } ] },
   { id: 'styr', name: 'Motorstyrning', komp: 'tandning', levels: [
-    { name: 'Justerbar tändning', price: 90, fx: { ignMax: 10 }, desc: 'Tändläget kan ställas upp till +10° i Trimning (annars +5°).' },
-    { name: 'Programmerbart sprut & knackreglering', price: 300, fx: { ignMax: 10, knockCtl: 1 }, desc: 'Knackgivaren backar tändningen automatiskt så att marginalen hålls ≥ 0. Kostar lite verkningsgrad, sparar kolvar.' } ] },
+    { name: 'Justerbar tändning', price: 0, fx: { ignMax: 10 }, desc: 'Tändläget kan ställas upp till +10° i Trimning (annars +5°).' },
+    { name: 'Programmerbart sprut & knackreglering', price: 0, fx: { ignMax: 10, knockCtl: 1 }, desc: 'Knackgivaren backar tändningen automatiskt så att marginalen hålls ≥ 0. Kostar lite verkningsgrad, sparar kolvar.' } ] },
   { id: 'kyl', name: 'Kylning', komp: 'kylning', levels: [
-    { name: 'Större kylare & tvärgående fäströr (20×50×2 mm)', price: 90, fx: { cool: 16 },
+    { name: 'Större kylare & tvärgående fäströr (20×50×2 mm)', price: 0, fx: { cool: 16 },
       desc: 'Mellan framskärmarnas överkant får man sätta 1 st max 20×50×2 mm rör för kylare och huvlås (får ej stagas bakåt). +16 kW kylkapacitet.' },
-    { name: 'Kylaren flyttad bak + extra fläkt', price: 260, fx: { cool: 24, radSafe: 1 },
+    { name: 'Kylaren flyttad bak + extra fläkt', price: 0, fx: { cool: 24, radSafe: 1 },
       desc: 'Kylaren sitter skyddad bakom kupén. Extra fläkt märks i katsastuskortti (och får då plockas ur vid myyntitilaisuus!). +24 kW och skyddad vid frontsmällar.' } ] },
   { id: 'vaxel', name: 'Växellåda', komp: 'utvaxling', levels: [
-    { name: 'Kort slutväxel', price: 120, fx: { final: 1.12 }, desc: 'Slutväxeln 12 % kortare. Mer drivkraft i varje växel (F = T·i/r), lägre toppfart – rätt val på rokkibanor.' },
-    { name: 'Kort slutväxel & tätstegad låda', price: 320, fx: { final: 1.12, shift: 0.14, eff: 0.02 }, desc: 'Kortare växelväg halverar växlingstiden och drivlinan förlorar mindre.' } ] },
+    { name: 'Kort slutväxel', price: 0, fx: { final: 1.12 }, desc: 'Slutväxeln 12 % kortare. Mer drivkraft i varje växel (F = T·i/r), lägre toppfart – rätt val på rokkibanor.' },
+    { name: 'Kort slutväxel & tätstegad låda', price: 0, fx: { final: 1.12, shift: 0.14, eff: 0.02 }, desc: 'Kortare växelväg halverar växlingstiden och drivlinan förlorar mindre.' } ] },
   { id: 'diff', name: 'Differential (Lukkoperä)', komp: 'drivning', rwdOrSuper: true, levels: [
-    { name: 'Svetsad diff / Lukkoperä', price: 60, fx: { trac: 1 },
+    { name: 'Svetsad diff / Lukkoperä', price: 0, fx: { trac: 1 },
       desc: 'REGEL: Lukkoperä är ENDAST tillåten i bakhjulsdrivna bilar (Kardaani) samt i Super-luokka (där den även är tillåten på framhjulsdrivna bilar). Förbjuden på framhjulsdrivna Vetari-bilar!' } ] },
   { id: 'vikt', name: 'Lättning & Kaross (förardörren får EJ lättas!)', komp: 'kghk', levels: [
-    { name: 'Polykarbonat-/akrylrutor runt om (ej vindruta)', price: 70, fx: { kg: -22 },
+    { name: 'Polykarbonat-/akrylrutor runt om (ej vindruta)', price: 0, fx: { kg: -22 },
       desc: '−22 kg. Förardörrens sidoruta i polykarbonat eller nät + akryl. Vindrutan måste vara kvar och framsidorutor får ej mörktonas!' },
-    { name: 'Lättad passagerardörr, huv & baklucka', price: 200, fx: { kg: -45 },
+    { name: 'Lättad passagerardörr, huv & baklucka', price: 0, fx: { kg: -45 },
       desc: '−45 kg totalt. OBS: Förardörrens bärande struktur får ENLIGT REGEL INTE lättas (har den lättats måste minst 1 mm plåt svetsas dit)!' },
-    { name: 'Farmariauton typistys / lättad bakände', price: 420, fx: { kg: -80, chop: 1 },
+    { name: 'Farmariauton typistys / lättad bakände', price: 0, fx: { kg: -80, chop: 1 },
       desc: '−80 kg totalt. På kombibil får D-stolpen tas bort och bakänden kapas bakom hjulhusen längs sidolinjen om C-stolpen förstärks med hjälpbåge av burrörsmaterial (50 % svetsfog)!' } ] },
   { id: 'dack', name: 'Däck (Renkaat)', komp: 'grepp', levels: [
-    { name: 'Nya gatgodkända däck / Rallydubbdäck (vinter)', price: 60, fx: { mu: 0.06 },
+    { name: 'Nya gatgodkända däck / Rallydubbdäck (vinter)', price: 0, fx: { mu: 0.06 },
       desc: 'Tillåtna i alla klasser. I myyntiluokat är däckskärning förbjuden på sommaren och på vintern krävs rallydubbdäck (ruusu- och sorvinastat förbjudna!).' },
-    { name: 'Grovmönstrade E-märkta gatdäck', price: 190, fx: { mu: 0.12 },
+    { name: 'Grovmönstrade E-märkta gatdäck', price: 0, fx: { mu: 0.12 },
       desc: 'Bästa tillåtna däcken i Vetari, Kardaani, Junior, Lady och Senior (katuliikenteeseen hyväksytyt renkaat). Grepp +12 %. Får tas bort vid försäljning om hela reservhjul sätts dit!' },
-    { name: 'Rallirenkaat & sliksit (endast Super Rock!)', price: 420, fx: { mu: 0.21, rallyTire: 1 }, onlySuper: true,
+    { name: 'Rallirenkaat & sliksit (endast Super Rock!)', price: 0, fx: { mu: 0.21, rallyTire: 1 }, onlySuper: true,
       desc: 'ENDAST SUPER-LUOKKA: Riktiga rallydäck och slicks är tillåtna i Super Rock och Super Senior (däckvärmare förbjudna). Grepp +21 %!' } ] },
   { id: 'fjad', name: 'Chassi & Fjädring (Auton alustaa saa muuttaa)', komp: 'grepp', levels: [
-    { name: 'Höjd & styvare fjädring', price: 110, fx: { susp: 0.5 }, desc: 'Chassit får ändras fritt i alla klasser. Bilen studsar mindre och tappar inte lika mycket grepp.' },
-    { name: 'Rallydämpare & spacere', price: 340, fx: { susp: 1, mu: 0.04 }, desc: 'Däcken hålls i marken över gupp (+4 % grepp). Spacere får plockas bort vid myyntitilaisuus!' } ] },
+    { name: 'Höjd & styvare fjädring', price: 0, fx: { susp: 0.5 }, desc: 'Chassit får ändras fritt i alla klasser. Bilen studsar mindre och tappar inte lika mycket grepp.' },
+    { name: 'Rallydämpare & spacere', price: 0, fx: { susp: 1, mu: 0.04 }, desc: 'Däcken hålls i marken över gupp (+4 % grepp). Spacere får plockas bort vid myyntitilaisuus!' } ] },
   { id: 'broms', name: 'Bromsar', komp: 'grepp', levels: [
-    { name: 'Hårdare belägg & justerbar bromsbalans', price: 80, fx: { brake: 0.12 }, desc: 'Bromskraften +12 % och bromsbalansen kan ställas i Trimning. Fungerande 21W bromsljus bak krävs.' } ] },
+    { name: 'Hårdare belägg & justerbar bromsbalans', price: 0, fx: { brake: 0.12 }, desc: 'Bromskraften +12 % och bromsbalansen kan ställas i Trimning. Fungerande 21W bromsljus bak krävs.' } ] },
   { id: 'skydd', name: 'Pohjapanssari & Keulan vahvistus', komp: 'regler', levels: [
-    { name: 'Pohjapanssari (fäst med ≥2 st M10-bultar)', price: 70, fx: { dmg: 0.72, kg: 10 },
+    { name: 'Pohjapanssari (fäst med ≥2 st M10-bultar)', price: 0, fx: { dmg: 0.72, kg: 10 },
       desc: 'Hasplåt fäst med minst 2 st M10-bultar i fästbalk direkt framför kylaren/motorn. Får ej gå förbi röret mellan rambenen eller bilda stötfångare. Skador −28 %.' },
-    { name: 'Keulan vahvistus innanför rambenen', price: 240, fx: { dmg: 0.45, kg: 24 },
+    { name: 'Keulan vahvistus innanför rambenen', price: 0, fx: { dmg: 0.45, kg: 24 },
       desc: 'Endast innanför rambenens yttermått: 1 st max 60×60×3 mm (eller Ø60 mm) rör + 2 vertikala möbelrör (max 2 mm gods) vid rambenen, klätt med max 1,5 mm plåt/stålnät. Inga balkar utanför rambenen! Skador −55 %.' } ] },
 ];
 
@@ -979,3 +1011,11 @@ export const KOMP = [
     body: ['Högsta kurvfart bestäms av friktionstalet μ och kurvradien R. På grus är μ ≈ 0,78, på asfalt ≈ 1,02 och på is med rallydubb ≈ 0,52.',
       'På banor med blandat underlag (som Tammisaari och Rantasalmi) gäller det att utnyttja det höga greppet på asfalten (kestopäällyste) vid inbromsning och kurvtagning!'] },
 ];
+
+// Däcktyper (gratis att byta). grip = friktionsfaktor, wear = slitagefaktor
+export const TYRES = {
+  std: { id: 'std', name: 'Standarddäck', grip: 0.86, wear: 1.0, desc: 'Billiga standarddäck – lågt grepp.' },
+  westlake: { id: 'westlake', name: 'Westlake', grip: 1.02, wear: 1.1, desc: 'Lite sämre än CrossClimate, men mycket bättre än standarddäcken.' },
+  cc: { id: 'cc', name: 'CrossClimate', grip: 1.10, wear: 0.9, desc: 'Mycket högt grepp på alla underlag.' },
+  ccplus: { id: 'ccplus', name: 'CrossClimate Plus', grip: 1.13, wear: 0.85, desc: 'Ännu lite mer grepp och längre livslängd än CrossClimate.' },
+};

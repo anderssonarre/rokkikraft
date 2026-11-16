@@ -47,8 +47,10 @@ export function makeCar(def, trk, slot, isPlayer, gridRows = 2, totalCars = 6) {
 export function phys(c, dt, trk) {
   const s = c.spec, surf = trk.surfAt ? trk.surfAt(c.i) : trk.surf;
   const L = s.wb, a = L * (1 - s.front), b = L * s.front, m = s.mass, fwd = s.drv === 'fwd';
-  const mu = surf.mu * s.mu * (c.gripF || 1) * (c.onSurf ? 1 : 0.72 + 0.12 * s.susp), crr = c.onSurf ? surf.crr : 0.09 - 0.03 * s.susp;
-  const v = Math.hypot(c.vx, c.vy), delta = c.steer * 0.52 / (1 + v * 0.035);
+  const st = trk.surfTypeAt ? trk.surfTypeAt(c.i) : trk.surface;
+  // lätta bilar har en liten fördel i kurvorna (lastkänslighet), skador försämrar väghållningen
+  const mu = surf.mu * s.mu * (c.gripF || 1) * (c.onSurf ? 1 : 0.72 + 0.12 * s.susp) * (s.surfK ? s.surfK[st] || 1 : 1) * Math.pow(1150 / m, 0.12) * (1 - Math.max(0, (c.dmg || 0) - 30) * 0.0025), crr = c.onSurf ? surf.crr : 0.09 - 0.03 * s.susp;
+  const v = Math.hypot(c.vx, c.vy), delta = c.steer * 0.52 * (s.steerK || 1) * (1 - Math.max(0, (c.dmg || 0) - 50) * 0.002) / (1 + v * 0.035);
   if (c.rev) {
     c.vx += (-4.5 - c.vx) * Math.min(1, 2.2 * dt); c.vy *= 1 - Math.min(1, 8 * dt); c.r = c.vx * Math.tan(delta) / L; c.rpm = s.idle + 1200; c.slip = 0;
   } else {
@@ -64,7 +66,7 @@ export function phys(c, dt, trk) {
     if (c.shiftT > 0) c.shiftT -= dt;
     else if (rpm < s.redline) Fd = c.tq(rpm) * c.thr * c.pow * gr * s.eff / s.rw;
     if (c.thr < 0.05 && c.vx > 1) Fd -= (0.97 + 0.15 * rpm / 1000) * 1e5 * s.Vd * 1e-3 / 12.566 * gr / s.rw;
-    const capF = mu * Fzf, capR = mu * Fzr, capD = (fwd ? capF : capR) * (s.trac ? 1 : 0.86);
+    const capF = mu * Fzf * (s.muF || 1), capR = mu * Fzr * (s.muR || 1), capD = (fwd ? capF : capR) * (s.trac ? 1 : 0.86);
     let slip = 0, latD = 1;
     if (c.aids.tc) { const need = Math.abs(shape(fwd ? af : ar)); const lim = capD * 0.97 * Math.sqrt(Math.max(0.08, 1 - 0.92 * need * need)); if (Fd > lim) Fd = lim; }
     else if (Fd > capD) { slip = Math.min(1.5, Fd / capD - 1); Fd = capD * (0.93 - 0.08 * Math.min(1, slip)); latD = 1 / (1 + 1.6 * slip); }
@@ -713,8 +715,8 @@ export class Race {
         c.brakeTemp += ((60 + c.brk * 260) - c.brakeTemp) * dt * 1.5;
         // Däckslitage: sladd, hjulspinn och låsning sliter mest, asfalt mer än grus, is nästan inget. Slitna däck ger sämre grepp.
         { const st = trk.surfTypeAt ? trk.surfTypeAt(c.i) : trk.surface, k = st === 'asfalt' ? 1.5 : st === 'is' ? 0.25 : 1, sp = Math.min(1, Math.abs(c.vx) / 25), drvF = c.spec.drv === 'fwd';
-          c.tireWearF = Math.min(100, c.tireWearF + k * (0.05 * sp + Math.abs(c.vy) * 0.05 + Math.abs(c.steer) * sp * 0.10 + (drvF ? c.slip * 0.9 : 0) + (c.lock ? 0.7 : 0)) * dt);
-          c.tireWearR = Math.min(100, c.tireWearR + k * (0.04 * sp + Math.abs(c.vy) * 0.07 + (drvF ? 0 : c.slip * 0.9) + (c.hb ? 0.8 : 0)) * dt); }
+          c.tireWearF = Math.min(100, c.tireWearF + k * (c.spec.tyreWear || 1) * (0.05 * sp + Math.abs(c.vy) * 0.05 + Math.abs(c.steer) * sp * 0.10 + (drvF ? c.slip * 0.9 : 0) + (c.lock ? 0.7 : 0)) * dt);
+          c.tireWearR = Math.min(100, c.tireWearR + k * (c.spec.tyreWear || 1) * (0.04 * sp + Math.abs(c.vy) * 0.07 + (drvF ? 0 : c.slip * 0.9) + (c.hb ? 0.8 : 0)) * dt); }
         c.fuelKg = Math.max(1.0, c.fuelKg - 0.008 * c.thr * dt);
       }
     }
@@ -1114,4 +1116,15 @@ export class Race {
     this.drawRadar();
     this.drawGForce();
   }
+}
+
+// Beräknad 0–100 km/h-tid: kör bilens egen fysik rakt fram på torr asfalt med fullgas och automatväxling
+export function accel0100(spec) {
+  const trk = { surf: { mu: 1.0, B: 9, C: 1.35, crr: 0.015 }, surface: 'asfalt' };
+  const tq = torqueTable(spec); let upRpm = spec.redline - 120, bp = 0;
+  for (let r = 2000; r <= spec.redline; r += 250) { const p = tq(r) * r; if (p > bp) { bp = p; upRpm = Math.min(spec.redline - 120, r + 350); } }
+  const c = { spec, tq, upRpm, x: 0, z: 0, h: 0, vx: 0, vy: 0, r: 0, ax: 0, ay: 0, rpm: spec.idle, gear: 1, thr: 1, brk: 0, steer: 0, hb: 0, shiftT: 0, pow: 1, onSurf: true, aids: { abs: 1, tc: 1, auto: 1 }, i: 0 };
+  let t = 0; const dt = 1 / 120;
+  while (c.vx < 100 / 3.6 && t < 60) { phys(c, dt, trk); t += dt; }
+  return t;
 }
