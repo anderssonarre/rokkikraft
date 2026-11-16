@@ -436,7 +436,7 @@ function startRace(o) {
   const numStr = formatCarNum(cs.num, insp.cls);
   U.view = 'race'; document.body.classList.add('racing'); app().innerHTML = '';
   U.race = new Race(app(), {
-    ...o, settings: S.settings,
+    ...o, record: S.records[o.trackId], settings: S.settings,
     player: { name: `${S.name || 'Du'} (#${numStr})`, spec: s, paint: paintOf(cs.paint).rgb, bw: cs.bw || 'wb', aids: { ...S.aids } },
   });
 }
