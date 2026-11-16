@@ -259,3 +259,12 @@ body.racing { overflow: hidden; } body.racing #app { padding: 0; }
 .dot{display:inline-block;width:.8em;height:.8em;border-radius:50%;margin-right:.5em;border:1px solid rgba(255,255,255,.35);vertical-align:-.05em}
 
 .stats.ctl th{text-align:left;font-size:.72rem;color:#9fb0bf;padding:4px 6px}.stats.ctl td{padding:4px 6px}.cap{color:#ffd23f}
+
+/* mästerskap */
+.heats{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:10px;margin:10px 0}
+.heat{background:#10161c;border:1px solid #26313b;border-radius:12px;padding:10px}.heat.mine{border-color:#ffd23f;box-shadow:0 0 0 1px #ffd23f55}.heat.done{opacity:.8}
+.heat .hh{display:flex;justify-content:space-between;font-size:.85rem;margin-bottom:4px}.heat .hh span{color:#8fa1b3}
+.heat ol{margin:0 0 6px 18px;padding:0;font-size:.82rem;line-height:1.45}.heat li.me{color:#ffd23f;font-weight:800}.heat i.flag{color:#ff6a3d;font-style:normal;font-size:.7rem}
+.tblwrap{overflow-x:auto}.res.full{min-width:760px;font-size:.82rem}.res.full td,.res.full th{padding:5px 6px;white-space:nowrap}
+.res td.purple{color:#c084fc;font-weight:800}
+details{margin:6px 0}details summary{cursor:pointer;font-weight:700;padding:4px 0}

@@ -7,6 +7,7 @@ import { Race, fmtTime, accel0100 } from './race.js';
 import { CAM_NAMES, DEFAULT_CAM } from './race.js';
 import { newTask, checkTask } from './dyno.js';
 import { Room, makeCode, cleanCode } from './net.js';
+import { newChamp, simHeat, setResult, advance, roundDone, myHeat, canSkip, skip as chSkip, heatName, whereIs, sortRows, ROUND, FIN, A_TABLE, NORMAL_PRIZE } from './champ.js';
 import { ACTIONS, binds, getPad, padName, isWheel, captureNext } from './input.js';
 
 const app = () => document.getElementById('app');
@@ -28,9 +29,9 @@ const topLevel = () => { let t = 0; CAREER.forEach((l, i) => { if (levelOpen(i))
 // ---------- ram ----------
 export function render() {
   const racing = U.view === 'race'; document.body.classList.toggle('racing', racing); if (racing) return;
-  const V = { menu, karriar, event: eventView, garage, trim, dyno, komp, settings, online, setup }[U.view] || menu;
+  const V = { menu, karriar, event: eventView, garage, trim, dyno, komp, settings, online, setup, result }[U.view] || menu;
   app().innerHTML = `<header class="topbar">${U.view !== 'menu' && U.view !== 'event' ? '<button class="back" data-act="go" data-arg="menu">‹ Meny</button>' : '<span class="brand">ROKKI<b>KRAFT</b></span>'}
-    <span class="top-title">${{ karriar: 'Karriär & Banor', event: 'Tävlingsdag', garage: 'Garage & Besiktning', trim: 'Trimning', dyno: 'Räknebänken', komp: 'Kompendium & Sääntökirja', settings: 'Inställningar', setup: 'Bilinställningar', online: 'Online – rumskod' }[U.view] || ''}</span>
+    <span class="top-title">${{ karriar: 'Karriär & Banor', event: 'Tävlingsdag', garage: 'Garage & Besiktning', trim: 'Trimning', dyno: 'Räknebänken', komp: 'Kompendium & Sääntökirja', settings: 'Inställningar', setup: 'Bilinställningar', result: 'Resultat', online: 'Online – rumskod' }[U.view] || ''}</span>
     <span class="wallet">${S.warnings > 0 ? `<i style="color:#ff6a3d">⚠ ${S.warnings}/3 varningar</i>` : ''}${S.vouchers > 0 ? `<i style="color:#5ce080">🎟 ${S.vouchers} hyvityskuitti</i>` : ''}<b>${eur(S.money)}</b><i>${CAREER[topLevel()].name}</i></span></header>
     <main class="view v-${U.view}">${V()}</main>${U.toast ? `<div class="toast">${U.toast}</div>` : ''}`;
   if (U.toast) { clearTimeout(U.toastT); U.toastT = setTimeout(() => { U.toast = ''; document.querySelector('.toast')?.remove(); }, 2800); }
@@ -108,6 +109,10 @@ function karriar() {
       <div><span>Myyntivelvoite</span><b>${rules.salePrice ? eur(rules.salePrice) : 'Ingen'}</b><small>${rules.saleFrom === 'semi' ? 'Semifinal- & finalbilar' : rules.saleFrom ? `${rules.saleFrom}-final & uppåt` : 'Behålls alltid'}</small></div>
     </div></section>`;
 
+  { const cc = champCfg(), F = (a, v, cur) => `<button class="chip s ${cur === v ? 'on' : ''}" data-act="${a}" data-arg="${v}">${v}</button>`;
+    h += `<section class="panel"><h2>Mästerskapsinställningar</h2><div class="row"><span class="lbl">Förare per start</span>${[4, 5, 6, 7, 8].map(n => F('cc-per', n, cc.perStart)).join('')}</div>
+      <div class="row"><span class="lbl">Alkuerä-heat</span>${[2, 3, 4, 5, 6, 7, 8].map(n => F('cc-heats', n, cc.heats)).join('')}<span class="dim">= ${cc.perStart * cc.heats} startplatser</span></div>
+      <div class="row"><span class="lbl">AI-svårighet ${cc.diff} %</span><input type="range" min="1" max="100" step="1" value="${cc.diff}" data-in="cc-diff"></div></section>`; }
   h += `<section class="panel"><h2>Förarhjälpmedel</h2><div class="aids">
     ${aid('abs', 'ABS', 'Hjulen låser sig inte vid hård broms.', 'Full broms låser hjulen – bilen går rakt fram.')}
     ${aid('tc', 'Antispinn', 'Drivhjulen spinner inte loss.', 'Fullgas ger hjulspinn; bakhjulsdrivare sladdar på gasen.')}
@@ -280,179 +285,132 @@ function evStart(arg) {
   const [li, id] = arg.split(':'), L = CAREER[+li], e = L.events.find(x => x.id === id);
   const insp = currentInsp(), rules = insp.rules;
   if (!insp.ok || S.lippumies > 0) return;
-  // Betala osallistumismaksu eller använd hyvityskuitti
   let usedVoucher = false;
   if (S.vouchers > 0 && rules.fee > 0) { S.vouchers--; usedVoucher = true; }
   else if (S.money >= rules.fee) { S.money -= rules.fee; }
   else return;
   save();
-
-  // Sääntökirja s. 19: "Alkuerien lähtöjärjestys määräytyy kuluvan kauden pistetilanteen mukaan siten, että
-  // pistejohdossa oleva saa viimeisen paikan jne. ... Ensikertalaiset menevät eturiviin ja saavat valita ensimmäisenä paikan."
-  const curPts = levelPts(+li);
-  const startSlot = curPts === 0 ? 0 : Math.min(5, Math.floor(curPts / 15));
-  const laps = Math.max(rules.minLaps, L.id === 'mestari' ? 3 : rules.minLaps);
-
+  const cc = champCfg(), laps = Math.max(rules.minLaps, L.id === 'mestari' ? 3 : rules.minLaps), trk = getTrack(e.track);
+  const diff = Math.max(0.01, Math.min(1, cc.diff / 100 + [-0.08, 0, 0.05, 0.1][+li]));
+  const opps = makeOpps(cc.perStart * cc.heats - 1, +li, diff, insp.cls), O = {};
+  const ents = [{ id: 'me', name: `${S.name || 'Du'}`, me: 1, kgHp: curve(spec()).kgHp, diff: 1 }];
+  opps.forEach((o, i) => { const id = 'ai' + i; O[id] = { ...o, nid: id }; ents.push({ id, name: o.name, diff: o.diff, kgHp: curve(o.spec).kgHp / (o.powScale || 1) }); });
   U.ev = {
-    li: +li, e, L, cls: insp.cls, rules, laps,
-    stage: 'alku', fin: 0, grid: startSlot, hist: [],
-    dmg: 0, radLeak: false, exhaustLoose: false, needKaatoInsp: false,
-    cleanDay: true, protestUsed: false, arvat: 0, saleEligible: false, saleDone: false, saleMsg: '',
-    feePaid: rules.fee, usedVoucher,
-    over: null, last: null, heat: 'ABCDEF'[Math.floor(Math.random() * 6)],
-    note: curPts === 0 ? 'Ensikertalainen (0 p i serien) – du får välja startruta först i främre ledet (ruta 1)!' : `Har ${curPts} p i serien – startar på ruta ${startSlot + 1} enligt omvänd poängordning.`,
+    li: +li, e, L, cls: insp.cls, rules, laps, O, ch: newChamp({ perStart: cc.perStart, heats: cc.heats, laps, joker: rules.joker, trackLen: trk.len }, ents),
+    dmg: 0, radLeak: false, exhaustLoose: false, needKaatoInsp: false, hist: [],
+    cleanDay: true, protestUsed: false, arvat: 0, saleEligible: false, saleDone: false, saleMsg: '', feePaid: rules.fee, usedVoucher, over: null, last: null,
   };
   U.view = 'event';
 }
+function champCfg() { return S.settings.champ = { perStart: 6, heats: 4, diff: 75, ...(S.settings.champ || {}) }; }
 
-function evSkill(ev) {
-  const m = { alku: -0.04, kerailu: -0.07, lastcall: -0.09, semi: 0 };
-  return ev.L.ai + (ev.stage === 'final' ? [0.03, 0.01, -0.01, -0.03, -0.05][ev.fin] : m[ev.stage]);
-}
-
-function evRun() {
-  const ev = U.ev;
-  if (ev.needKaatoInsp || ev.exhaustLoose) return;
+// Kör eller tittar på ett heat i mästerskapet
+function evRun(heatId, watch) {
+  const ev = U.ev, ch = ev.ch, h = ch.heats.find(x => x.id === heatId) || myHeat(ch, 'me'); if (!h || h.res) return;
+  if (!watch && (ev.needKaatoInsp || ev.exhaustLoose)) return;
+  const defs = h.ids.filter(id => id !== 'me' || watch).map(id => id === 'me' ? null : ev.O[id]).filter(Boolean);
+  const title = `${ev.rules.name} – ${heatName(h)}`;
+  const done = res => {
+    const rows = sortRows(res.order.map(o => ({ id: o.isPlayer ? 'me' : o.id, name: o.name, time: o.time, best: o.best, jokerLap: o.jokerLap, flag: o.flag, dist: o.dist })));
+    setResult(ch, h, rows);
+    if (!watch) { evAfter(res, h); for (const x of ch.heats) if (!x.res) setResult(ch, x, simHeat(ch, x)); } // övriga heat kördes samtidigt
+    ev.lastHeat = h; U.view = 'event'; render();
+  };
+  if (watch) { if (!defs.length) return; startRace({ trackId: ev.e.track, laps: ev.laps, opps: defs.slice(1), player: defs[0], spectate: true, grid: 0, gridRows: ev.rules.gridRows, useJoker: ev.rules.joker, sideContact: true, title: '👁 ' + title, mode: 'heat', onDone: done }); return; }
   startRace({
-    trackId: ev.e.track, laps: ev.laps,
-    opps: makeOpps(5, ev.li, evSkill(ev), ev.cls),
-    grid: ev.grid, gridRows: ev.rules.gridRows,
-    useJoker: ev.rules.joker, sideContact: ev.rules.sideContact,
-    title: `${ev.rules.name} – ${stageName(ev)}${ev.stage === 'final' ? '' : ' ' + ev.heat}`,
-    dmg0: ev.dmg, radLeak0: ev.radLeak, wear0: ev.wear, mode: 'heat',
-    onDone: res => { evAfter(res); U.view = 'event'; render(); },
+    trackId: ev.e.track, laps: ev.laps, opps: defs, grid: h.ids.indexOf('me'), gridRows: ev.rules.gridRows, useJoker: ev.rules.joker, sideContact: ev.rules.sideContact,
+    title, dmg0: ev.dmg, radLeak0: ev.radLeak, wear0: ev.wear, mode: 'heat', onDone: done,
   });
 }
 
-function evAfter(res) {
-  const ev = U.ev, pos = res.pos;
+function evAfter(res, h) {
+  const ev = U.ev;
   ev.dmg = res.dmg; ev.wear = res.wear || ev.wear; ev.radLeak = res.radLeak; ev.exhaustLoose = !!res.exhaustLoose; ev.needKaatoInsp = !!res.kaato;
   ev.last = res; ev.protestable = !!res.sanction;
-  ev.hist.push({ stage: stageName(ev), pos, flag: res.flag });
+  ev.hist.push({ stage: heatName(h), pos: res.pos, flag: res.flag });
   if (isFinite(res.bestLap)) record(ev.e.track, res.bestLap);
-
-  // Varningar enligt Sääntökirja s. 13–15
-  if (res.sanction) {
-    ev.cleanDay = false;
-    S.warnings = (S.warnings || 0) + 1;
-    if (S.warnings >= 3) {
-      // 3 varningar = Hylky (diskning ur hela tävlingen, dagens poäng nollas + 1 helgs lippumiespesti!)
-      S.lippumies = 1;
-      S.warnings = 0;
-      ev.over = { final: 'DQ', pos: 6, pts: 0, prize: 0, dq: true };
-      const old = S.career.res[ev.e.id];
-      if (!old) S.career.res[ev.e.id] = { final: 'DQ', pos: 6, pts: 0 };
-      save();
-      return;
-    }
-    save();
-  }
-
-  const trk = getTrack(ev.e.track);
-  const end = (final, p) => {
-    // Om dagen körts helt rent utan varningar nollställs varningslistan ("Sanktiolista nollaantuu, kun ajat puhtaan kilpailun")
-    if (ev.cleanDay && S.warnings > 0) {
-      S.warnings = 0;
-      toast('✓ Ren tävling körd – din varningslista (sanktiolista) är nu nollställd!');
-    }
-    const share = final === 'out' ? PRIZE_SHARE.out : final === 'A' ? PRIZE_SHARE.A[p - 1] : PRIZE_SHARE[final] || 0.1;
-    const pts = calcPoints(ev.cls, trk.winter, final, p);
-    const prize = Math.round(ev.L.prize * share / 5) * 5;
-    // Kolla myyntivelvoite (850 €)
-    const sf = ev.rules.saleFrom;
-    if (sf === 'semi' && (ev.stage === 'semi' || ev.stage === 'final')) ev.saleEligible = true;
-    else if (sf === 'C' && ['A', 'B', 'C'].includes(final)) ev.saleEligible = true;
-    else if (sf === 'B' && ['A', 'B'].includes(final)) ev.saleEligible = true;
-    else if (sf === 'A' && final === 'A') ev.saleEligible = true;
-
-    ev.over = { final, pos: p, pts, prize };
-    S.money += prize;
-    const old = S.career.res[ev.e.id];
-    if (!old || pts > old.pts) S.career.res[ev.e.id] = { final, pos: p, pts };
-    save();
-  };
-
-  if (ev.stage === 'alku') {
-    if (pos <= 2) { ev.stage = 'semi'; ev.grid = pos - 1; ev.note = `${pos}:a i alkuerä – direkt till semifinal!`; }
-    else { ev.stage = 'kerailu'; ev.grid = Math.floor(Math.random() * 6); ev.note = 'Inte bland de två första. Ny chans i keräilyerä.'; }
-  } else if (ev.stage === 'kerailu') {
-    if (pos <= 2) { ev.stage = 'semi'; ev.grid = 3 + pos - 1; ev.note = `${pos}:a i keräilyerä – vidare till semifinal!`; }
-    else { ev.stage = 'lastcall'; ev.grid = Math.floor(Math.random() * 6); ev.note = 'Sista chansen: last call. Bara segraren går vidare.'; }
-  } else if (ev.stage === 'lastcall') {
-    if (pos === 1) { ev.stage = 'semi'; ev.grid = 5; ev.note = 'Seger i last call – du är i semifinal, längst bak.'; }
-    else end('out', pos);
-  } else if (ev.stage === 'semi') {
-    if (ev.rules.saleFrom === 'semi') ev.saleEligible = true;
-    ev.fin = Math.min(4, pos - 1); ev.stage = 'final'; ev.grid = Math.min(2, Math.floor(Math.random() * 3));
-    ev.note = `${pos}:a i semifinalen → ${FINALS[ev.fin]}-finalen.${ev.saleEligible ? ' Obs: Semifinalbilar i ' + ev.rules.name + ' omfattas nu av myyntivelvoite (850 €)!' : ''}`;
-  } else if (ev.stage === 'final') {
-    if (ev.fin === 0) end('A', pos);
-    else if (pos <= 2) {
-      ev.note = `NOUSU! ${pos}:a i ${FINALS[ev.fin]}-finalen – du klättrar till ${FINALS[ev.fin - 1]}-finalen och startar längst bak. Du har 5 minuters mektid (nousuaika) på din depåplats från att du passerat STOP-märket!`;
-      ev.fin--; ev.grid = 4 + pos - 1;
-    } else end(FINALS[ev.fin], pos);
-  }
-  ev.heat = 'ABCDEF'[Math.floor(Math.random() * 6)];
+  if (h.round === 'semi' && ev.rules.saleFrom === 'semi') ev.saleEligible = true;
+  if (res.sanction) { ev.cleanDay = false; S.warnings = (S.warnings || 0) + 1; if (S.warnings >= 3) { S.lippumies = 1; S.warnings = 0; toast('3 varningar → hylkäys + lippumiespesti.'); } save(); }
 }
 
+// Simulera resten av omgången (när man själv inte kör i den) och gå vidare
+function evNext() {
+  const ev = U.ev, ch = ev.ch;
+  for (const x of ch.heats) if (!x.res) setResult(ch, x, simHeat(ch, x));
+  advance(ch); ev.lastHeat = null; ev.last = null;
+  if (ch.done) evEnd();
+}
+
+function evEnd() {
+  const ev = U.ev, ch = ev.ch, me = ch.overall.find(o => o.id === 'me');
+  const fin = ch.history.filter(r => r.round === 'final').find(r => r.heats[0].ids.includes('me'));
+  if (ev.cleanDay && S.warnings > 0) { S.warnings = 0; toast('✓ Ren tävling körd – varningslistan är nollställd!'); }
+  const sf = ev.rules.saleFrom; if (fin && sf && sf !== 'semi' && FIN.indexOf(fin.letter) <= FIN.indexOf(sf)) ev.saleEligible = true;
+  ev.over = { pos: me.pos, prize: me.prize, pts: me.pts, final: fin ? fin.letter : 'out' };
+  S.money += me.prize;
+  const old = S.career.res[ev.e.id]; if (!old || me.pts > old.pts) S.career.res[ev.e.id] = { final: ev.over.final, pos: me.pos, pts: me.pts };
+  save();
+}
+
+// Resultattabell: placering, förare, bästa varv (lila = snabbast), total tid, jokervarv, avstånd och tid till bilen framför, straff, pris, poäng
+function resTable(rows, money) {
+  const best = Math.min(...rows.map(r => r.best ?? Infinity));
+  const sec = v => (v < 0 ? '−' : '+') + fmt(Math.abs(v), 3) + ' s';
+  return `<div class="tblwrap"><table class="res full"><tr><th>#</th><th>Förare</th><th>Bästa varv</th><th>Total tid</th><th>Jokerlap</th><th>Avstånd</th><th>Tidsavstånd</th><th>Straff</th><th>Pris</th><th>Poäng</th></tr>
+    ${rows.map((r, i) => { const prev = rows[i - 1], m = money ? money(r, i) : null;
+      return `<tr class="${r.isPlayer || r.id === 'me' ? 'me' : ''}"><td>${i + 1}</td><td>${esc(r.name)}</td><td class="${r.best != null && r.best === best ? 'purple' : ''}">${r.best != null ? fmtTime(r.best) : '–'}</td><td>${r.time != null ? fmtTime(r.time) : 'DNF'}</td>
+        <td>${r.jokerLap ? 'varv ' + r.jokerLap : '–'}</td><td>${i && r.dist != null ? fmt(r.dist) + ' m' : '–'}</td><td>${i && r.time != null && prev?.time != null ? sec(r.time - prev.time) : '–'}</td>
+        <td class="flag">${r.flag || ''}</td><td>${m && m[0] ? eur(m[0]) : '–'}</td><td>${m && m[1] ? m[1] + ' p' : '–'}</td></tr>`; }).join('')}</table></div>`;
+}
+
+const LADDER = [['alku', 'Alkuerä'], ['kerailu', 'Keräily'], ['lastcall', 'Last Call'], ['semi', 'Semi'], ['F', 'F'], ['E', 'E'], ['D', 'D'], ['C', 'C'], ['B', 'B'], ['A', 'A']];
 function eventView() {
   const ev = U.ev; if (!ev) { U.view = 'karriar'; return karriar(); }
-  const t = TRACKS.find(x => x.id === ev.e.track), cost = Math.ceil(ev.dmg * 1.0 + (ev.radLeak ? 20 : 0) + (ev.exhaustLoose ? 15 : 0));
-  const steps = ['Alkuerä', 'Keräily', 'Last call', 'Semi', 'E', 'D', 'C', 'B', 'A'];
-  const cur = ev.over ? -1 : ev.stage === 'final' ? 8 - ev.fin : { alku: 0, kerailu: 1, lastcall: 2, semi: 3 }[ev.stage];
-  const table = r => `<table class="res"><tr><th></th><th>Förare</th><th>Tid</th><th>Markering / Kod</th></tr>${r.order.map((o, i) => `<tr class="${o.isPlayer ? 'me' : ''}"><td>${i + 1}</td><td>${o.name}</td><td>${o.time ? fmtTime(o.time) : '–'}</td><td class="flag">${o.flag || ''}</td></tr>`).join('')}</table>`;
+  const ch = ev.ch, t = TRACKS.find(x => x.id === ev.e.track), cost = Math.ceil(ev.dmg * 1.0 + (ev.radLeak ? 20 : 0) + (ev.exhaustLoose ? 15 : 0));
+  const curKey = ch.round === 'final' ? ch.letter : ch.round;
+  let h = `<section class="panel evhead"><span class="kick">${t.name.toUpperCase()} · ${SURF[t.surface].name.toUpperCase()} · ${ev.rules.name.toUpperCase()} · ${ch.cfg.perStart} FÖRARE/START · ${ev.laps} VARV${ev.rules.joker ? ' · JOKERLAP' : ''}</span><h1>${ev.e.name}</h1>
+    <div class="ladder">${LADDER.map(([k, n]) => `<span class="${k === curKey ? 'cur' : ''} ${k.length === 1 ? 'fin' : ''}">${n}</span>`).join('<i>›</i>')}</div>
+    <p class="dim">Du: <b>${whereIs(ch, 'me')}</b>. Alkuerä 1–2 → semi, Keräilyerä 1–2 → semi, Last Call vinnaren → semi. Semiplacering ger final (1 = A … 6 = F). Finalerna körs F → A, topp 3 går upp till nästa final. Förare med straff går inte vidare direkt.</p></section>`;
 
-  let h = `<section class="panel evhead"><span class="kick">${t.name.toUpperCase()} · ${SURF[t.surface].name.toUpperCase()} · ${ev.rules.name.toUpperCase()}</span><h1>${ev.e.name}</h1>
-    <div class="ladder">${steps.map((s, i) => `<span class="${i === cur ? 'cur' : ''} ${i > 3 ? 'fin' : ''}">${s}</span>`).join('<i>›</i>')}</div></section>`;
-
-  if (ev.last) {
-    h += `<section class="panel"><h2>STOP-merkki · ${ev.hist[ev.hist.length - 1].stage}: plats ${ev.last.pos}${ev.last.flag ? ` <span class="flag">${ev.last.flag}</span>` : ''}</h2>${table(ev.last)}
-      ${isFinite(ev.last.bestLap) ? `<p class="dim">Ditt bästa varv: ${fmtTime(ev.last.bestLap)}</p>` : ''}
-      ${ev.protestable ? `<div class="warnbox" style="margin-top:8px">Domaren meddelar vid <b>STOP-märket</b> att du fått varning <b>${ev.last.sanction}</b> (du flyttades sist i heatet). Enligt Sääntökirja s. 13 (uppdaterad 21.04.2026) kan du lämna in en skriftlig protest till tävlingsledaren för <b>50 €</b> (och ta med en <i>kuljettajan edustaja</i>). Går protesten igenom återbetalas 50 € och varningen stryks!
-        <div class="row" style="margin-top:8px"><button class="btn small" data-act="ev-protest" ${S.money >= 50 ? '' : 'disabled'}>📝 Lämna in skriftlig protest med edustaja (50 €)</button></div></div>` : ''}</section>`;
+  if (ev.lastHeat && ev.lastHeat.res) {
+    const lh = ev.lastHeat, isA = lh.round === 'final' && lh.letter === 'A';
+    h += `<section class="panel"><h2>Resultat: ${heatName(lh)}</h2>${resTable(lh.res, isA ? (r, i) => A_TABLE[i] : null)}
+      ${ev.protestable ? `<div class="warnbox" style="margin-top:8px">Du fick straff <b>${ev.last.sanction}</b>. Du kan lämna in en skriftlig protest för <b>50 €</b>.<div class="row" style="margin-top:8px"><button class="btn small" data-act="ev-protest" ${S.money >= 50 ? '' : 'disabled'}>📝 Lämna in protest (50 €)</button></div></div>` : ''}</section>`;
   }
 
   if (ev.over) {
     const o = ev.over;
-    h += `<section class="panel final ${o.final === 'A' && o.pos <= 3 ? 'podium' : ''}"><span class="kick">${o.dq ? 'HYLKY – DISKVALIFICERAD (3 VARNINGAR)' : 'DAGEN ÄR SLUT'}</span>
-      <h1>${o.dq ? 'Diskad ur tävlingen (0 poäng) + Lippumiespesti' : o.final === 'out' ? 'Utslagen före semifinalerna' : `${o.final}-finalen, plats ${o.pos}`}</h1>
-      <div class="pills"><div><span>Prispengar</span><b>${eur(o.prize)}</b></div><div><span>Poäng till pörssin (${ev.rules.short})</span><b>${o.pts} p</b></div><div><span>Dina varningar totalt</span><b>${S.warnings} / 3</b></div></div>
+    h += `<section class="panel final ${o.pos <= 3 ? 'podium' : ''}"><span class="kick">MÄSTERSKAPET ÄR SLUT</span><h1>Slutplacering ${o.pos}${o.final !== 'out' ? ` (${o.final}-finalen)` : ' (utslagen i Last Call)'}</h1>
+      <div class="pills"><div><span>Prispengar</span><b>${eur(o.prize)}</b></div><div><span>Mästerskapspoäng</span><b>${o.pts} p</b></div><div><span>Varningar</span><b>${S.warnings} / 3</b></div></div>
+      <h3>Slutresultat (A-finalens pris- och poängtabell)</h3><table class="res"><tr><th>#</th><th>Förare</th><th>Pris</th><th>Poäng</th></tr>${ch.overall.slice(0, 12).map(r => `<tr class="${r.id === 'me' ? 'me' : ''}"><td>${r.pos}</td><td>${esc(r.name)}</td><td>${r.prize ? eur(r.prize) : '–'}</td><td>${r.pts || '–'}</td></tr>`).join('')}</table>
       <p class="dim">${ev.hist.map(x => `${x.stage} ${x.pos}:a${x.flag ? ' (' + x.flag + ')' : ''}`).join(' → ')}</p>`;
-
-    // Autojen myyntitilaisuus (850 €) enligt Sääntökirja s. 16–17!
-    if (ev.saleEligible && !ev.saleDone) {
-      h += `<div class="warnbox" style="margin:12px 0"><h3>🔨 Autojen myyntitilaisuus (850 €)</h3>
-        <p>Eftersom du nådde ${ev.rules.saleFrom === 'semi' ? 'semifinal' : ev.rules.saleFrom + '-final'} i <b>${ev.rules.name}</b> omfattas din bil av <b>myyntivelvoite (850 € kontant)</b>! (Även en diskad bil har kvar sin myyntivelvoite). Du har <b>${ev.arvat} st</b> egna lotter (arpoja). Innan försäljningen får du plocka ur: <i>kuppipenkki, bälten & öglebultar, Nascar-verkko, batteri, spacers samt ratt och däck (om hela standardhjul sätts dit)</i>.</p>
-        <div class="row" style="margin-top:8px">
-          <button class="btn small" data-act="ev-sale-run">🎲 Genomför lottdragningen (myyntitilaisuus)</button>
-        </div></div>`;
-    } else if (ev.saleMsg) {
-      h += `<div class="okbox" style="margin:12px 0">${ev.saleMsg}</div>`;
-    }
-
-    h += `<div class="row"><button class="btn" data-act="ev-close" ${ev.saleEligible && !ev.saleDone ? 'disabled' : ''}>Tillbaka till karriären & hämta katsastuskortti</button></div></section>`;
-  } else {
-    h += `<section class="panel next"><h2>Nästa: ${ev.rules.name} ${stageName(ev).toLowerCase()}</h2>
-      ${ev.note ? `<p>${ev.note}</p>` : ''}
-      ${ev.needKaatoInsp ? `<div class="warnbox">⚠ <b>KAATOKATSASTUS KRÄVS</b>: Bilen rullade (kaato) i förra heatet. Enligt Sääntökirja s. 12 måste bilen genomgå kaatokatsastus innan du får fortsätta tävlingen!
-        <div class="row" style="margin-top:6px"><button class="btn small" data-act="ev-kaato">🔧 Rikta karossen & gör kaatokatsastus (40 €)</button></div></div>` : ''}
-      ${ev.exhaustLoose ? `<div class="warnbox">⚠ <b>110 dB-REGELN</b>: Avgasröret har lossnat! Enligt Sääntökirja s. 4 ("jos autosta irtoaa pakoputki, on se kiinnitettävä ennen seuraavaa erää") måste det fästas före nästa heat.</div>` : ''}
-      <div class="pills">
-        <div><span>Startruta (${ev.rules.gridRows} led)</span><b>Ruta ${ev.grid + 1} av 6</b><small>${ev.rules.gridRows === 1 ? '1 led i bredd' : ev.grid < 3 ? 'Främre ledet' : 'Bakre ledet (7 m bakom)'}</small></div>
-        <div><span>Distans & Lisälenkki</span><b>${ev.laps} varv</b><small>${ev.rules.joker ? 'Lisälenkki ska köras 1 gång' : 'Ingen lisälenkki i klassen'}</small></div>
-        <div class="${ev.dmg > 65 || ev.exhaustLoose ? 'bad' : ''}"><span>Skador & Ljud</span><b>${Math.round(ev.dmg)} %</b><small>${ev.exhaustLoose ? 'Avgasrör löst (>110 dB)!' : ev.radLeak ? 'Kylaren läcker' : '≤110 dB OK'}</small></div>
-        <div class="${ev.wear && (ev.wear[0] + ev.wear[1]) / 2 > 55 ? 'bad' : ''}"><span>Däckslitage</span><b>${Math.round(ev.wear ? ev.wear[0] : 0)} / ${Math.round(ev.wear ? ev.wear[1] : 0)} %</b><small>fram / bak · grepp ${Math.round(100 - (ev.wear ? (ev.wear[0] + ev.wear[1]) * 0.11 : 0))} %</small></div>
-        <div><span>Köpta lotter (Arpa 20 €)</span><b>${ev.arvat} st</b><small>${ev.rules.salePrice ? 'Kan skydda egen bil vid 850 €-lottning' : 'Ingen myyntivelvoite i Super'}</small></div>
-      </div>
-      <div class="row wrap">
-        <button class="btn" data-act="ev-run" ${ev.needKaatoInsp || ev.exhaustLoose ? 'disabled' : ''}>🏁 Kör ut till keräily & start</button>
-        ${cost > 0 ? `<button class="btn ghost" data-act="ev-repair" ${S.money >= cost ? '' : 'disabled'}>🔧 Laga & fäst avgasrör i depån (${eur(cost)})</button>` : ''}
-        ${ev.wear && ev.wear[0] + ev.wear[1] > 10 ? `<button class="btn ghost" data-act="ev-tyres" ${S.money >= 40 ? '' : 'disabled'}>🛞 Byt till fräscha däck (${eur(40)})</button>` : ''}
-        ${ev.rules.salePrice > 0 ? `<button class="btn ghost" data-act="ev-buy-arpa" ${S.money >= 20 ? '' : 'disabled'}>🎟 Köp arpa / lott (20 €)</button>` : ''}
-        <button class="btn ghost danger" data-act="ev-quit">${ev.hist.length === 0 && ev.feePaid > 0 ? 'Bryt före 1:a heatet (få hyvityskuitti!)' : 'Avbryt dagen'}</button>
-      </div></section>`;
+    if (ev.saleEligible && !ev.saleDone) h += `<div class="warnbox" style="margin:12px 0"><h3>🔨 Autojen myyntitilaisuus (850 €)</h3><p>Din bil omfattas av myyntivelvoite. Du har <b>${ev.arvat} st</b> egna lotter.</p><div class="row"><button class="btn small" data-act="ev-sale-run">🎲 Genomför lottdragningen</button><button class="btn small ghost" data-act="ev-buy-arpa" ${S.money >= 20 ? '' : 'disabled'}>🎟 Köp lott (20 €)</button></div></div>`;
+    else if (ev.saleMsg) h += `<div class="okbox" style="margin:12px 0">${ev.saleMsg}</div>`;
+    h += `<div class="row"><button class="btn" data-act="ev-close" ${ev.saleEligible && !ev.saleDone ? 'disabled' : ''}>Tillbaka till karriären</button></div></section>`;
+    return h + historyPanel(ch);
   }
-  return h;
+
+  const mine = myHeat(ch, 'me'), rd = roundDone(ch);
+  const isFinalRound = ch.round === 'final';
+  h += `<section class="panel next"><h2>${isFinalRound ? `${ch.letter}-finalen` : ROUND[ch.round]}${!isFinalRound && ch.heats.length > 1 ? ` – ${ch.heats.length} heat startar samtidigt (separata lopp på samma bana)` : ''}</h2>
+    ${isFinalRound ? `<p class="dim">Finalerna körs i ordning F → A. ${mine ? 'Det är din tur nu.' : 'Du väntar på din final – titta på eller simulera den här först.'}</p>` : ''}
+    ${ev.needKaatoInsp ? `<div class="warnbox">⚠ <b>KAATOKATSASTUS KRÄVS</b> efter rullningen.<div class="row" style="margin-top:6px"><button class="btn small" data-act="ev-kaato">🔧 Kaatokatsastus (40 €)</button></div></div>` : ''}
+    ${ev.exhaustLoose ? `<div class="warnbox">⚠ Avgasröret har lossnat (110 dB-regeln) – laga före nästa heat.</div>` : ''}
+    <div class="heats">${ch.heats.map(x => `<div class="heat ${x.ids.includes('me') ? 'mine' : ''} ${x.res ? 'done' : ''}"><div class="hh"><b>${heatName(x)}</b><span>${x.res ? 'Klart' : x.ids.length + ' förare'}</span></div>
+      <ol>${(x.res || x.ids.map(id => ({ id, name: ch.E[id].name }))).map(r => `<li class="${r.id === 'me' ? 'me' : ''}">${esc(r.name)}${r.flag ? ` <i class="flag">${r.flag}</i>` : ''}</li>`).join('')}</ol>
+      ${x.res ? '' : x.ids.includes('me') ? `<div class="row"><button class="btn small" data-act="ev-run" data-arg="${x.id}" ${ev.needKaatoInsp || ev.exhaustLoose ? 'disabled' : ''}>🏁 Kör ditt heat</button>${canSkip(ch, 'me') ? `<button class="btn small ghost" data-act="ev-skip">KESKÖIDÄ</button>` : ''}</div>` : `<div class="row"><button class="btn small ghost" data-act="ev-watch" data-arg="${x.id}">👁 Titta</button></div>`}</div>`).join('')}</div>
+    ${canSkip(ch, 'me') ? `<p class="dim">KESKÖIDÄ: hoppa över ${ch.round === 'alku' ? 'Alkuerä och gå direkt till Keräilyerä' : 'Keräilyerä och gå direkt till Last Call'}. Last Call, semifinal och finaler kan inte hoppas över.</p>` : ''}
+    <div class="row wrap">${rd ? `<button class="btn" data-act="ev-next">Vidare till nästa omgång →</button>` : !mine ? `<button class="btn" data-act="ev-next">${isFinalRound ? 'Simulera finalen' : 'Simulera omgången'} och gå vidare →</button>` : ''}
+      ${cost > 0 ? `<button class="btn ghost" data-act="ev-repair" ${S.money >= cost ? '' : 'disabled'}>🔧 Laga bilen (${eur(cost)})</button>` : ''}
+      ${ev.wear && ev.wear[0] + ev.wear[1] > 10 ? `<button class="btn ghost" data-act="ev-tyres" ${S.money >= 40 ? '' : 'disabled'}>🛞 Nya däck (${eur(40)})</button>` : ''}
+      ${ev.rules.salePrice > 0 ? `<button class="btn ghost" data-act="ev-buy-arpa" ${S.money >= 20 ? '' : 'disabled'}>🎟 Köp lott (20 €)</button>` : ''}
+      <button class="btn ghost danger" data-act="ev-quit">${ev.hist.length === 0 && ev.feePaid > 0 ? 'Bryt före 1:a heatet (få hyvityskuitti)' : 'Avbryt dagen'}</button></div>
+    <div class="pills"><div class="${ev.dmg > 65 ? 'bad' : ''}"><span>Skador</span><b>${Math.round(ev.dmg)} %</b></div><div><span>Däckslitage</span><b>${Math.round(ev.wear ? ev.wear[0] : 0)} / ${Math.round(ev.wear ? ev.wear[1] : 0)} %</b><small>fram / bak</small></div><div><span>Lotter</span><b>${ev.arvat} st</b></div></div></section>`;
+  return h + historyPanel(ch);
+}
+function historyPanel(ch) {
+  if (!ch.history.length) return '';
+  return `<section class="panel"><h2>Tidigare omgångar</h2>${[...ch.history].reverse().map(r => `<details><summary>${r.round === 'final' ? r.letter + '-final' : ROUND[r.round]} (${r.heats.length} heat)</summary>${r.heats.map(x => `<h3>${heatName(x)}</h3>${resTable(x.res, r.round === 'final' && r.letter === 'A' ? (q, i) => A_TABLE[i] : null)}`).join('')}</details>`).join('')}</section>`;
 }
 
 function stats() { if (!S.stats) S.stats = { sec: 0, races: 0, wins: 0, tracks: {} }; return S.stats; }
@@ -472,9 +430,9 @@ function startRace(o) {
   U.view = 'race'; document.body.classList.add('racing'); app().innerHTML = '';
   const done = o.onDone;
   U.race = new Race(app(), {
-    ...o, onDone: res => { countRace(o.trackId, res); done(res); }, record: S.records[o.trackId], settings: S.settings,
+    ...o, onDone: res => { if (!o.spectate) countRace(o.trackId, res); done(res); }, record: S.records[o.trackId], settings: S.settings,
     onCameraChange: camera => { S.settings.camera = camera; save(); },
-    player: { name: o.net ? `${netName()} #${numStr}` : `${S.name || 'Du'} (#${numStr})`, num: numStr, spec: s, paint: paintOf(cs.paint).rgb, bw: cs.bw || 'wb', aids: { ...S.aids } },
+    player: o.spectate ? o.player : { nid: 'me', name: o.net ? `${netName()} #${numStr}` : `${S.name || 'Du'} (#${numStr})`, num: numStr, spec: s, paint: paintOf(cs.paint).rgb, bw: cs.bw || 'wb', aids: { ...S.aids } },
   });
 }
 
@@ -857,7 +815,11 @@ const ACT = {
     return false;
   },
   'ev-start'(a) { evStart(a); window.scrollTo(0, 0); },
-  'ev-run'() { evRun(); return false; },
+  'cc-per'(a) { champCfg().perStart = +a; save(); }, 'cc-heats'(a) { champCfg().heats = +a; save(); },
+  'ev-run'(a) { evRun(a, false); return false; },
+  'ev-watch'(a) { evRun(a, true); return false; },
+  'ev-skip'() { const ev = U.ev; if (ev && chSkip(ev.ch, 'me')) { toast('KESKÖIDÄ – du hoppar över ' + (ev.ch.round === 'alku' ? 'Alkuerä' : 'Keräilyerä') + '.'); } },
+  'ev-next'() { evNext(); window.scrollTo(0, 0); },
   'ev-tyres'() { const ev = U.ev; if (ev && S.money >= 40) { S.money -= 40; ev.wear = [0, 0]; save(); toast('Fräscha däck monterade.'); } },
   'ev-repair'() {
     const ev = U.ev, cost = Math.ceil(ev.dmg * 1.0 + (ev.radLeak ? 20 : 0) + (ev.exhaustLoose ? 15 : 0));
@@ -978,12 +940,20 @@ const ACT = {
 
 function quickDone(r, time) {
   if (isFinite(r.bestLap)) record(U.quick.track, r.bestLap);
-  U.view = 'karriar';
-  toast(time ? `Bästa varv ${fmtTime(r.bestLap)}` : `Du blev ${r.pos}:a${r.flag ? ' (' + r.flag + ')' : ''} · bästa varv ${fmtTime(r.bestLap)}`);
-  render();
+  const prize = time ? 0 : NORMAL_PRIZE[r.pos - 1] || 0; if (prize && r.finished) S.money += prize; save();
+  U.result = { r, time, prize: r.finished ? prize : 0, title: time ? 'Tidskörning' : 'Träningsheat' }; U.view = 'result'; render();
+}
+function result() {
+  const R = U.result; if (!R) { U.view = 'karriar'; return karriar(); }
+  const r = R.r;
+  return `<section class="panel"><span class="kick">${R.title.toUpperCase()}</span><h1>${R.time ? 'Bästa varv ' + fmtTime(r.bestLap) : `Plats ${r.pos}${r.flag ? ' (' + r.flag + ')' : ''}`}</h1>
+    ${R.time ? '' : `<div class="pills"><div><span>Prispengar</span><b>${eur(R.prize)}</b></div></div>`}
+    ${resTable(r.order, R.time ? null : (o, i) => [o.flag ? 0 : NORMAL_PRIZE[i] || 0, 0])}
+    <div class="row"><button class="btn" data-act="go" data-arg="karriar">Tillbaka</button></div></section>`;
 }
 
 const INP = {
+  'cc-diff'(v) { champCfg().diff = +v; save(); },
   dead(v) { S.settings.binds = S.settings.binds || {}; S.settings.binds.dead = +v; save(); },
   'q-ai'(v) { U.quick.ai = +v; },
   num(v) { activeCar().num = Math.max(1, Math.min(999, Math.round(+v) || 1)); save(); return false; },

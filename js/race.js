@@ -421,6 +421,9 @@ export class Race {
     this.net = cfg.net || null;
     this.cars.forEach((c, sl) => { const d = defs[sl]; c.num = d.num; if (!c.isPlayer && d.diff != null) { c.diff = d.diff; c.pow = d.powScale || 1; } if (d.nid) c.nid = d.nid; if (d.remote) { c.remote = true; c.ai = null; c.snap = null; c.seenT = Date.now(); } });
     if (this.net) this.player.nid = this.net.id;
+    // Åskådarläge: alla bilar körs av AI, kameran följer valfri bil (E/Q eller växelknapparna byter bil)
+    this.spectate = !!cfg.spectate;
+    if (this.spectate) { const p = this.player; p.isPlayer = false; p.ai = { jokerLap: 0, off: 0, stuck: 0, prof: null }; p.diff = cfg.player.diff ?? 0.8; p.pow = cfg.player.powScale || 1; p.aids = { abs: 1, tc: 1, auto: 1 }; for (const c of this.cars) c.auto = true; }
     if (location.search.includes('auto')) { const c = this.player; c.auto = true; c.skill = 0.97; c.ai = { jokerLap: 0, off: 0, stuck: 0, prof: null }; c.aids = { abs: 1, tc: 1, auto: 1 }; }
     this.player.dmg = cfg.dmg0 || 0; this.player.tireWearF = cfg.wear0?.[0] || 0; this.player.tireWearR = cfg.wear0?.[1] || 0; this.player.radLeak = !!cfg.radLeak0;
     const needMirrors = !this.sideContact;
@@ -447,6 +450,7 @@ export class Race {
     this.$('hTouch').style.display = showTouch ? '' : 'none'; if (showTouch) this.$('hKeys').style.display = 'none';
     if (cfg.mode === 'time') { this.$('hLbCard').style.display = 'none'; }
     this.audioInit();
+    if (this.spectate) this.msg('👁 ÅSKÅDARLÄGE – E/Q byter bil, C byter kamera', 4);
     if (this.net) { this.goAt = Infinity; this.net.race = this; this.net.imReady(); this.msg('Väntar på övriga förare…', 60); }
     this.last = performance.now(); this.raf = requestAnimationFrame(t => this.frame(t));
   }
@@ -495,7 +499,7 @@ export class Race {
   }
 
   togglePause() { if (this.done) return; this.paused = !this.paused; this.$('hPauseBox').hidden = !this.paused; this.last = performance.now(); if (this.gain) this.gain.gain.value = 0; }
-  shift(d) { const c = this.player; if (this.state !== 'run' || c.shiftT > 0) return; const g = c.gear + d; if (g >= 1 && g <= c.spec.gears.length) { c.gear = g; c.shiftT = (c.clutch || 0) > 0.5 ? 0.06 : c.spec.shift; } }
+  shift(d) { if (this.spectate) { const i = (this.cars.indexOf(this.player) + d + this.cars.length) % this.cars.length; this.player = this.cars[i]; this.camH = this.player.h; this.msg('👁 ' + this.player.name, 1.4); return; } const c = this.player; if (this.state !== 'run' || c.shiftT > 0) return; const g = c.gear + d; if (g >= 1 && g <= c.spec.gears.length) { c.gear = g; c.shiftT = (c.clutch || 0) > 0.5 ? 0.06 : c.spec.shift; } }
   resize() { if (this.R) this.view.resize(); }
   resetCar(c) { const trk = this.trk, hwi = trk.hwAt ? trk.hwAt(c.i) : trk.hw, [x, z, h] = trk.point(c.i, clamp(c.lat, -hwi + 2, hwi - 2) * 0.3); c.x = x; c.z = z; c.h = h; c.vx = c.vy = c.r = 0; c.rev = false; c.gear = 1; }
   msg(html, dur = 2.4, cls = '') { const e = this.$('hMsg'); e.innerHTML = html; e.className = 'hud-msg show ' + cls; this.msgT = dur; }
@@ -598,10 +602,22 @@ export class Race {
   audioInit() { try { const vol = (this.cfg.settings?.vol ?? 50) / 100; if (!vol) return; const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return;
       const ac = this.ac = new AC(), o1 = ac.createOscillator(), o2 = ac.createOscillator(), lp = ac.createBiquadFilter(), g = ac.createGain();
       o1.type = 'sawtooth'; o2.type = 'square'; lp.type = 'lowpass'; lp.frequency.value = 900; g.gain.value = 0; o1.connect(lp); o2.connect(lp); lp.connect(g); g.connect(ac.destination); o1.start(); o2.start();
-      this.o1 = o1; this.o2 = o2; this.gain = g; this.lp = lp; this.vol = vol; } catch (e) { } }
+      this.o1 = o1; this.o2 = o2; this.gain = g; this.lp = lp; this.vol = vol;
+      // däck- och underlagsljud (brus genom filter) + skrammel från skadad motor
+      const nb = ac.createBuffer(1, ac.sampleRate * 2, ac.sampleRate), nd = nb.getChannelData(0); for (let i = 0; i < nd.length; i++) nd[i] = Math.random() * 2 - 1;
+      const ns = ac.createBufferSource(); ns.buffer = nb; ns.loop = true; const tf = ac.createBiquadFilter(), tg = ac.createGain(); tf.type = 'bandpass'; tf.Q.value = 1.2; tg.gain.value = 0; ns.connect(tf); tf.connect(tg); tg.connect(ac.destination); ns.start();
+      const o3 = ac.createOscillator(), rg = ac.createGain(); o3.type = 'square'; rg.gain.value = 0; o3.connect(rg); rg.connect(lp); o3.start();
+      this.tf = tf; this.tg = tg; this.o3 = o3; this.rg = rg; } catch (e) { } }
   audio() { if (!this.gain) return; const c = this.player, f = c.rpm / 60 * c.spec.cyl / 2, t = this.ac.currentTime;
     this.o1.frequency.setTargetAtTime(f, t, 0.03); this.o2.frequency.setTargetAtTime(f / 2, t, 0.03); this.lp.frequency.setTargetAtTime(500 + c.rpm * 0.25 + c.thr * 900, t, 0.05);
-    this.gain.gain.setTargetAtTime(this.vol * (0.035 + 0.075 * c.thr), t, 0.05); }
+    this.gain.gain.setTargetAtTime(this.vol * (0.035 + 0.075 * c.thr), t, 0.05);
+    if (this.tg) {
+      const st = this.trk.surfTypeAt ? this.trk.surfTypeAt(c.i) : this.trk.surface, v = Math.hypot(c.vx, c.vy), slide = Math.min(1, Math.abs(c.vy) * 0.15 + c.slip * 0.8 + (c.lock ? 0.6 : 0));
+      const roll = Math.min(1, v / 30), asph = st === 'asfalt';
+      this.tf.frequency.setTargetAtTime(asph ? 900 + slide * 1400 : st === 'is' ? 2500 : 260 + v * 8, t, 0.08); this.tf.Q.setTargetAtTime(asph && slide > 0.3 ? 6 : 1.2, t, 0.1);
+      this.tg.gain.setTargetAtTime(this.vol * ((asph ? 0.015 : 0.05) * roll + (asph ? 0.12 : 0.07) * slide * roll) * (c.onSurf ? 1 : 1.6), t, 0.06);
+      const dm = Math.max(0, (c.dmg || 0) - 35) / 65; this.o3.frequency.setTargetAtTime(f * 0.5 + Math.random() * 30, t, 0.02); this.rg.gain.setTargetAtTime(this.vol * 0.05 * dm, t, 0.05);
+    } }
   // Kör kontrollhändelser (tangenter / handkontroll / ratt) en gång per bildruta
   controlEvents() {
     for (const a of this.ctl.poll(this.touch)) {
@@ -648,7 +664,7 @@ export class Race {
         if (p.auto) { p.thr = 0; return; }
         if (!p.jump && Math.hypot(p.x - this.startPos[0], p.z - this.startPos[1]) > 0.35) {
           p.jump = true;
-          this.msg('Vi – VILPPILÄHTÖ!<br><small>Rörde bilen efter STOP-skylten ("löysiä pois") → sist av målgångna!</small>', 3.4, 'warn');
+          this.msg('LI – TJUVSTART!<br><small>Bilen rörde sig före startljuset → straff, placeras efter förare utan straff</small>', 3.4, 'warn');
         }
         phys(p, dt, trk); trackStep(p, trk, 0, this.useJoker); return;
       }
@@ -700,6 +716,8 @@ export class Race {
         if (c.isPlayer && lapNow < this.cfg.laps) this.msg(`Varv ${lapNow}: ${fmtTime(lt)}`, 1.8);
         if (lapNow >= this.cfg.laps && !c.finished) { c.finished = true; c.finishT = this.t; if (c.isPlayer) this.flagDown(); }
       }
+      if (c.jokerDone && c.jokerLap == null) c.jokerLap = Math.floor(Math.max(0, c.prog) / n) + 1;
+      if (lapNow > lapBefore && c.finished) { for (const o of this.cars) if (o !== c) (c.behind = c.behind || {})[this.cars.indexOf(o)] = Math.max(0, (this.cfg.laps * n - o.prog) * trk.ds); }
       if (c.isPlayer && this.useJoker && c.jokerDone && !c.jokerShown) {
         c.jokerShown = true;
         this.msg(c.coneDown ? 'LISÄLENKKI KÖRD (men keila kaatui → Li)' : 'LISÄLENKKI KÖRD ✓', 1.8, c.coneDown ? 'warn' : 'go');
@@ -739,23 +757,12 @@ export class Race {
       const hit = collide(A, B);
       if (rm) [rm.x, rm.z, rm.h, rm.vx, rm.vy, rm.r] = sv; // den andres bil flyttas bara av sin egen dator
       if (hit > 1.2 && (A.isPlayer || B.isPlayer)) {
-        this.damage(hit * hit * 0.09, true);
-        const other = A.isPlayer ? B : A;
+        this.damage(hit * hit * 0.09, true); this.crash(hit);
+      }
+      if (hit > 4.5 && this.state === 'run') { // A6: hård kollision i hög hastighet (liten knuff i låg fart ger inget straff)
         const rammer = collide.front === 'A' ? A : collide.front === 'B' ? B : null;
-        const j = trk.joker;
-        if (this.state === 'flag' && hit > 3.0) {
-          this.giveSanction(p, 'B6', 'Ruutulipun jälkeinen päälleajo', 'Påkörning efter målflagg');
-        } else if (this.useJoker && p.i >= j.i2 - 8 && p.i <= j.i2 + 6 && Math.abs(p.lat - trk.bulge(p.i)) < j.w && hit > 2.6) {
-          this.giveSanction(p, 'A8', 'Lisälenkiltä eteen', 'Lisälenkiltä tulija on väistämisvelvollinen!');
-        } else if (this.t < 4.0 && Math.abs(p.steer) > 0.35 && hit > 2.8) {
-          this.giveSanction(p, 'A7', 'Häiritsevä kaistanvaihto (lähdössä)', 'Störande filbyte före/i starten');
-        } else if (!this.sideContact && collide.type === 'side' && hit > 2.6) {
-          this.giveSanction(p, 'A3', 'Kylkikosketus', 'Sidokontakt är förbjuden i Junior och Super!');
-        } else if (rammer && rammer.isPlayer && Math.abs(other.r) > 1.5 && hit > 3.6) {
-          this.giveSanction(p, 'A1', 'Takakulmatyöntö / pyöräytys', 'Snurrade en medtävlare i bakhörnet');
-        } else if (rammer && rammer.isPlayer && collide.type === 'rear' && hit > 4.2) {
-          this.giveSanction(p, 'A6', 'Töniminen ja/tai peräänajo', 'Hård påkörning bakifrån');
-        }
+        if (rammer && !rammer.remote && Math.hypot(rammer.vx, rammer.vy) > 9) this.giveSanction(rammer, 'A6', 'Kollision i hög hastighet', 'Hård påkörning – straff A6');
+        if (hit > 3) { for (const X of [A, B]) if (!X.isPlayer && !X.remote) X.dmg = Math.min(100, (X.dmg || 0) + hit * hit * 0.09 * X.spec.dmg); }
       }
     }
 
@@ -765,10 +772,24 @@ export class Race {
       setTimeout(() => this.endLocal(), 2200);
     }
     if (this.net) return;
+    if (this.spectate && this.state === 'run' && this.endAt === undefined) {
+      let first = Infinity; for (const c of this.cars) if (c.finished && c.finishT < first) first = c.finishT;
+      if (this.cars.every(c => c.finished || c.retired)) this.endAt = this.t + 2; else if (this.t > first + 60) this.endAt = this.t;
+    }
+    if (this.spectate && this.endAt !== undefined && this.t >= this.endAt) return this.finish();
     if (this.state === 'flag' && this.flagT !== undefined && this.t - this.flagT > 3) this.finish();
     if (this.t > 600) this.finish();
   }
 
+  // Kollisionsljud: kort brusstöt genom ett bandpassfilter, starkare ju hårdare smällen är
+  crash(hit) {
+    this.shake = Math.min(1, (this.shake || 0) + hit * 0.08);
+    const ac = this.ac; if (!ac || !this.vol || (this.lastCrash && ac.currentTime - this.lastCrash < 0.12)) return; this.lastCrash = ac.currentTime;
+    const len = 0.35, buf = ac.createBuffer(1, ac.sampleRate * len, ac.sampleRate), d = buf.getChannelData(0);
+    for (let i = 0; i < d.length; i++) { const t = i / d.length; d[i] = (Math.random() * 2 - 1) * Math.pow(1 - t, 3) * (t < 0.02 ? t / 0.02 : 1); }
+    const src = ac.createBufferSource(), f = ac.createBiquadFilter(), g = ac.createGain(); src.buffer = buf; f.type = 'bandpass'; f.frequency.value = 300 + Math.random() * 500; f.Q.value = 0.8;
+    g.gain.value = Math.min(1, this.vol * (0.25 + hit * 0.09)); src.connect(f); f.connect(g); g.connect(ac.destination); src.start();
+  }
   damage(d, impact, engine) {
     const p = this.player; d *= engine ? 1 : p.spec.dmg; p.dmg = Math.min(100, p.dmg + d);
     if (impact && d > 9 && !p.spec.radSafe && !p.radLeak && p.dmg > 45 && Math.random() < 0.5) {
@@ -784,7 +805,7 @@ export class Race {
     this.state = 'flag'; this.flagT = this.t; const p = this.player;
     const missLi = this.useJoker && (!p.jokerDone || p.coneDown);
     if (missLi) this.msg('RUUTULIPPU – Li!<br><small>Lisälenkki ajamatta / keila kaatunut → sist av målgångna. Stanna vid STOP-merkki!</small>', 3.2, 'warn');
-    else if (p.jump) this.msg('RUUTULIPPU – Vi!<br><small>Vilppilähtö → sist av målgångna. Stanna vid STOP-merkki!</small>', 3.2, 'warn');
+    else if (p.jump) this.msg('RUUTULIPPU – LI!<br><small>Vilppilähtö → sist av målgångna. Stanna vid STOP-merkki!</small>', 3.2, 'warn');
     else this.msg('RUUTULIPPU! 🏁<br><small>Kör lugnt till STOP-merkki (ingen revittely i myyntiluokat!)</small>', 2.8, 'go');
   }
 
@@ -802,8 +823,8 @@ export class Race {
       const hasLi = this.useJoker && (!c.jokerDone || c.coneDown) && !c.retired;
       if (c.kaato) tags.push('KA');
       else if (c.retired) tags.push('K');
-      if (hasLi) tags.push('Li');
-      if (c.jump) tags.push('Vi');
+      if (hasLi) tags.push(c.coneDown && c.jokerDone ? 'KEILA KAATUI' : 'EJ AJA LISÄLENKKI');
+      if (c.jump) tags.push('LI');
       if (c.sanction) tags.push(c.sanction);
       const flag = tags.join(' ');
       let rank = 0;
@@ -844,7 +865,7 @@ export class Race {
       else if (this.t > first + 75 || this.t > 900) this.endAt = this.t;
     }
     if (this.endAt !== undefined && this.t >= this.endAt) {
-      const order = this.order().map(r => ({ id: r.c.nid, name: r.name, flag: r.flag, time: r.c.finished && !r.c.retired ? r.t : null }));
+      const order = this.order().map(r => ({ id: r.c.nid, name: r.name, flag: r.flag, time: r.c.finished && !r.c.retired ? r.t : null, best: isFinite(r.c.bestLap) ? r.c.bestLap : null, jokerLap: r.c.jokerLap ?? null }));
       net.end(order); this.finish(order);
     }
   }
@@ -874,11 +895,13 @@ export class Race {
   finish(netOrder) {
     if (this.done) return; this.done = true; let rows = this.order(); const p = this.player;
     const pRow = rows.find(r => r.isPlayer);
-    if (netOrder && this.net) rows = netOrder.map(o => ({ name: o.name, isPlayer: o.id === this.net.id, flag: o.flag, t: o.time, c: { finished: o.time != null, retired: false } }));
+    if (netOrder && this.net) rows = netOrder.map(o => ({ name: o.name, isPlayer: o.id === this.net.id, flag: o.flag, t: o.time, c: { finished: o.time != null, retired: false, nid: o.id, bestLap: o.best ?? Infinity, jokerLap: o.jokerLap } }));
     const res = {
-      order: rows.map(r => ({ name: r.name, isPlayer: r.isPlayer, flag: r.flag, time: r.c.finished && !r.c.retired ? r.t : null })),
+      order: rows.map((r, i) => { const c = r.c, prev = i > 0 ? rows[i - 1].c : null;
+        const dist = !netOrder && prev && prev.behind && this.cars.indexOf(c) >= 0 ? prev.behind[this.cars.indexOf(c)] : null;
+        return { id: c.nid, name: r.name, isPlayer: r.isPlayer, flag: r.flag, time: c.finished && !c.retired ? r.t : null, best: isFinite(c.bestLap) ? c.bestLap : null, jokerLap: c.jokerLap ?? null, dist: dist ?? null }; }),
       pos: rows.findIndex(r => r.isPlayer) + 1,
-      bestLap: p.bestLap, dmg: p.dmg, flag: pRow.flag, sanction: p.sanction, kaato: p.kaato,
+      bestLap: p.bestLap, dmg: p.dmg, flag: pRow?.flag || "", sanction: p.sanction, kaato: p.kaato,
       exhaustLoose: p.exhaustLoose, finished: p.finished && !p.retired,
       time: p.finished && !p.retired ? p.finishT : null, radLeak: p.radLeak, dur: this.t, wear: [p.tireWearF, p.tireWearR],
     };
@@ -892,10 +915,11 @@ export class Race {
 
   frame(now) {
     if (this.dead) return; this.raf = requestAnimationFrame(t => this.frame(t));
-    let dt = Math.min(0.05, (now - this.last) / 1000); this.last = now;
+    const sp = this.speedUp ??= +(new URLSearchParams(location.search).get('speed') || 1); // testhjälp: ?speed=4 kör simuleringen snabbare
+    let dt = Math.min(0.05, (now - this.last) / 1000) * sp; this.last = now;
     if (this.ctl) this.controlEvents();
     if (this.net) this.netTick();
-    if (!this.paused || this.net) { this.acc += dt; let k = 0; while (this.acc >= DT && k++ < 14) { this.step(DT); this.acc -= DT; if (this.done) return; } if (this.acc > DT * 4) this.acc = 0; this.particlesStep(dt); this.audio(); }
+    if (!this.paused || this.net) { this.acc += dt; let k = 0; while (this.acc >= DT && k++ < 14 * sp) { this.step(DT); this.acc -= DT; if (this.done) return; } if (this.acc > DT * 4) this.acc = 0; this.particlesStep(dt); this.audio(); }
     this.render(dt); this.hud(dt);
   }
 
