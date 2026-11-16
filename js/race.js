@@ -839,11 +839,11 @@ export class Race {
         pMat[1] * lx + pMat[5] * ly + pMat[9] * lz + pMat[13],
         pMat[2] * lx + pMat[6] * ly + pMat[10] * lz + pMat[14],
       ];
-      eye = transformPt(-0.12, 1.07 + vib, -0.32);
+      eye = transformPt(-0.24, 1.04 + vib, -0.26);
       // Titta svängt med styrutslaget in mot kurvans apex
-      at = transformPt(14.0, 0.72 + vib, -0.32 + p.steer * 1.4);
+      at = transformPt(14.0, 0.68 + vib, -0.20 + p.steer * 1.4);
       up = [pMat[4], pMat[5], pMat[6]];
-      fov = 1.08;
+      fov = 1.12;
     } else if (this.cam === 1) {
       // HUVKAMERA (framme på motorhuven)
       const c = Math.cos(p.h), s = Math.sin(p.h);
@@ -895,7 +895,7 @@ export class Race {
       R.clearDepth();
       R.draw(this.cockpit, pMat, p.paint, true);
       // Ratten sitter på [0.16, 0.81, -0.32] i kupén, lutad 0.26 rad uppåt och roterar med styrutslaget p.steer!
-      const wLocal = M4.localRotX(0.16, 0.81, -0.32, 0.26, -p.steer * 1.45);
+      const wLocal = M4.localRotX(0.20, 0.80, -0.26, 0.22, -p.steer * 1.45);
       R.draw(this.steerWheel, M4.mul(pMat, wLocal), p.paint, true);
     }
   }

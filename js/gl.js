@@ -283,44 +283,57 @@ export function carMesh(body, opts = {}) {
   // 2. Underrede / tröskellådor (helmakotelot)
   m.box(0, 0.19, 0, L - 0.12, 0.14, W - 0.08, dark);
 
-  // 3. Skulpterad huvudkaross (nedre och övre midjelinje + sluttande motorhuv)
-  m.box(0, 0.28, 0, L, 0.30, W, P(0.96), 0.04, 0.03, P(1.0), 0.02);
-  // Sluttande motorhuv med luftintag och huvsprintar (sokat)
-  m.box(L * 0.26, 0.56, 0, L * 0.46, 0.22, W - 0.06, P(1.02), 0.12, 0.0, P(1.06), 0.04);
-  m.box(L * 0.28, 0.782, 0, 0.38, 0.025, 0.56, dark); // Luftgaller i huven
-  // Bakparti / bagagelucka
-  m.box(-L * 0.24, 0.56, 0, L * 0.50, 0.24, W - 0.05, P(0.98), 0.0, 0.06, P(1.02), 0.03);
+  // 3. Skulpterad huvudkaross med tumblehome (inåtlutande överdel så karossen inte ser ut som en fyrkantig låda!)
+  m.box(0, 0.24, 0, L, 0.22, W, P(0.90), 0.02, 0.02, P(0.96), 0.0);
+  m.box(0, 0.46, 0, L - 0.04, 0.22, W, P(0.98), 0.08, 0.05, P(1.04), 0.05);
+  // Sluttande motorhuv med kraftfulla skärmlinjer, luftintag och huvsprintar (sokat)
+  m.box(L * 0.27, 0.66, 0, L * 0.44, 0.12, W - 0.12, P(1.04), 0.14, 0.0, P(1.08), 0.05);
+  m.box(L * 0.28, 0.782, 0, 0.38, 0.02, 0.54, dark); // Luftgaller i huven
+  // Bakparti / bagagelucka med infälld skyltbrunn och bakljusramper
+  m.box(-L * 0.25, 0.66, 0, L * 0.48, 0.13, W - 0.10, P(1.0), 0.0, 0.06, P(1.04), 0.04);
+  m.box(-L / 2 + 0.01, 0.48, 0, 0.04, 0.16, 0.56, [0.12, 0.13, 0.15, 1]); // Skyltbrunn bak
+  // Realistiska bakljuskluster (rött bromsljus, orange blinkers, vitt backljus) + svart list mellan dem
+  for (const sgn of [-1, 1]) {
+    const zL = sgn * (W * 0.34);
+    m.box(-L / 2 + 0.005, 0.50, zL, 0.05, 0.15, 0.38, [0.88, 0.08, 0.08, 1]);
+    m.box(-L / 2 + 0.008, 0.58, zL + sgn * 0.06, 0.05, 0.06, 0.22, [0.98, 0.58, 0.05, 1]);
+    m.box(-L / 2 + 0.008, 0.51, zL - sgn * 0.08, 0.05, 0.05, 0.14, [0.92, 0.94, 0.96, 1]);
+  }
 
-  // 4. Breddade skärmkanter (flared wheel arches) runt alla 4 hjul
+  // 4. Runda skulpterade skärmbreddare (3-delade valvbågar över varje hjul istället för klossar!)
   for (const x of [wb / 2, -wb / 2]) {
     for (const sgn of [-1, 1]) {
-      const z = sgn * (W / 2 - 0.01);
-      m.box(x, 0.24, z, 0.78, 0.44, 0.12, P(0.88), 0.12, 0.12, P(0.94));
-      m.box(x, 0.22, z - sgn * 0.06, 0.68, 0.40, 0.16, [0.05, 0.05, 0.06, 1]); // Mörkt hjulhus
+      const z = sgn * (W / 2 - 0.02);
+      m.box(x, 0.22, z - sgn * 0.06, 0.72, 0.42, 0.18, [0.04, 0.04, 0.05, 1]); // Mörkt hjulhus
+      // Övre skärmkant + främre och bakre skärmbåge
+      m.box(x, 0.56, z + sgn * 0.02, 0.52, 0.10, 0.09, P(1.02), 0.06, 0.06);
+      m.tube([x + 0.34, 0.22, z + sgn * 0.02], [x + 0.22, 0.60, z + sgn * 0.02], 0.055, 0.045, P(0.96), 6);
+      m.tube([x - 0.34, 0.22, z + sgn * 0.02], [x - 0.22, 0.60, z + sgn * 0.02], 0.055, 0.045, P(0.96), 6);
     }
   }
 
-  // 5. Kupé / Hytt med lutande A-, B- och C-stolpar
+  // 5. Kupé / Hytt med inåtlutande sidorutor (tumblehome topInZ = 0.13) och kraftiga lackade C-stolpar!
   let cx, cl, inF, inR;
-  if (body === 'hatch') { cl = L * 0.58; cx = -L * 0.5 + cl / 2 + 0.16; inF = 0.58; inR = 0.28; }
-  else if (body === 'sedan') { cl = L * 0.50; cx = -0.18; inF = 0.56; inR = 0.50; }
-  else if (opts.chop) { cl = L * 0.52; cx = -0.14; inF = 0.58; inR = 0.38; }
-  else { cl = L * 0.66; cx = -L * 0.5 + cl / 2 + 0.10; inF = 0.58; inR = 0.14; }
+  if (body === 'hatch') { cl = L * 0.56; cx = -L * 0.5 + cl / 2 + 0.18; inF = 0.56; inR = 0.32; }
+  else if (body === 'sedan') { cl = L * 0.48; cx = -0.16; inF = 0.54; inR = 0.48; }
+  else if (opts.chop) { cl = L * 0.50; cx = -0.14; inF = 0.56; inR = 0.38; }
+  else { cl = L * 0.64; cx = -L * 0.5 + cl / 2 + 0.12; inF = 0.56; inR = 0.18; }
 
-  // Glasparti (med himmelsreflektion a=0.5)
-  m.box(cx, 0.78, 0, cl, 0.50, W - 0.14, glass, inF, inR, P(1.04), 0.08);
+  // Glasparti med äkta tumblehome (smalare upptill vid taket än nere vid midjelinjen!)
+  m.box(cx, 0.76, 0, cl, 0.49, W - 0.14, glass, inF, inR, P(1.04), 0.13);
   // Takplåt med avrundad profil
-  const roofLen = cl - inF - inR + 0.06, roofX = cx + (inR - inF) / 2;
-  m.box(roofX, 1.27, 0, roofLen, 0.045, W - 0.26, P(1.05), 0.03, 0.03, P(1.08), 0.02);
+  const roofLen = cl - inF - inR + 0.08, roofX = cx + (inR - inF) / 2;
+  m.box(roofX, 1.245, 0, roofLen, 0.05, W - 0.38, P(1.06), 0.04, 0.04, P(1.10), 0.03);
 
-  // A-, B- och C-stolpar i karosslack
+  // Bredda lackade C-stolpar, B-stolpar och A-stolpar så bilen ser ut som en riktig rally-/rokkirallibil bakifrån och från sidan!
   const xFrontBot = cx + cl / 2, xFrontTop = roofX + roofLen / 2;
   const xRearBot = cx - cl / 2, xRearTop = roofX - roofLen / 2;
   for (const sgn of [-1, 1]) {
-    const zBot = sgn * (W / 2 - 0.08), zTop = sgn * (W / 2 - 0.15);
-    m.tube([xFrontBot - 0.04, 0.78, zBot], [xFrontTop - 0.02, 1.28, zTop], 0.035, 0.03, P(0.95), 6);
-    m.tube([cx + 0.05, 0.78, zBot], [cx + 0.02, 1.28, zTop], 0.04, 0.035, P(0.92), 6);
-    m.tube([xRearBot + 0.05, 0.78, zBot], [xRearTop + 0.04, 1.28, zTop], 0.055, 0.045, P(0.95), 6);
+    const zBot = sgn * (W / 2 - 0.09), zTop = sgn * (W / 2 - 0.21);
+    m.tube([xFrontBot - 0.03, 0.76, zBot], [xFrontTop - 0.02, 1.26, zTop], 0.04, 0.032, P(0.98), 6);
+    m.tube([cx + 0.05, 0.76, zBot], [cx + 0.02, 1.26, zTop], 0.045, 0.038, [0.10, 0.11, 0.13, 1], 6);
+    // Bred lackad C-stolpe på varje sida av bakrutan
+    m.tube([xRearBot + 0.06, 0.76, zBot - sgn * 0.04], [xRearTop + 0.04, 1.26, zTop - sgn * 0.03], 0.095, 0.075, P(1.0), 6);
   }
 
   // Synlig störtbur (Turvakaaret, gul/stål) inuti kupén + Apukaari på kapad kombi
@@ -471,43 +484,43 @@ export function cockpitMesh() {
   m.tube([0.16, 0.50, -0.01], [0.12, 0.86, -0.01], 0.011, 0.013, [0.85, 0.14, 0.12, 1], 8);
 
   // 4. Störtbur (Turvakaaret: A-stolpar (3), vindrutetvärrör (4), takrör (5, 7), dörrsträvor (6) & Nascar-verkko!)
-  // Vänster & höger A-stolpe i störtburen + röd FIA-vaddering
-  m.tube([0.48, 0.74, -0.70], [0.06, 1.32, -0.62], 0.030, 0.028, cage, 10);
-  m.tube([0.36, 0.90, -0.68], [0.18, 1.15, -0.64], 0.036, 0.036, padRed, 10);
-  m.tube([0.48, 0.74,  0.70], [0.06, 1.32,  0.62], 0.030, 0.028, cage, 10);
-  // Övre tvärrör vid vindrutans överkant (punkt 4 i Kaaret-ritningen, med svag båge som i referensbilden!)
-  m.tube([0.08, 1.31, -0.62], [0.14, 1.28, -0.12], 0.032, 0.030, cage, 10);
-  m.tube([0.14, 1.28, -0.12], [0.14, 1.28,  0.12], 0.030, 0.030, cage, 10);
-  m.tube([0.14, 1.28,  0.12], [0.08, 1.31,  0.62], 0.030, 0.032, cage, 10);
+  // Vänster & höger A-stolpe i störtburen + röd FIA-vaddering (inramar vindrutan exakt som i referensbilden!)
+  m.tube([0.52, 0.72, -0.68], [0.18, 1.24, -0.58], 0.028, 0.026, cage, 10);
+  m.tube([0.40, 0.86, -0.65], [0.24, 1.12, -0.60], 0.034, 0.034, padRed, 10);
+  m.tube([0.52, 0.72,  0.68], [0.18, 1.24,  0.58], 0.028, 0.026, cage, 10);
+  // Övre tvärrör vid vindrutans överkant (punkt 4 i Kaaret-ritningen, med svag båge mitt i synfältets överkant som i referensbilden!)
+  m.tube([0.18, 1.23, -0.58], [0.28, 1.19, -0.18], 0.030, 0.028, cage, 10);
+  m.tube([0.28, 1.19, -0.18], [0.28, 1.19,  0.10], 0.028, 0.028, cage, 10);
+  m.tube([0.28, 1.19,  0.10], [0.18, 1.23,  0.58], 0.028, 0.030, cage, 10);
   // Vit Katsastuskortti-etikett på störtbågen uppe till vänster
-  m.box(0.09, 1.30, -0.36, 0.04, 0.025, 0.12, [0.95, 0.95, 0.92, 1]);
+  m.box(0.22, 1.21, -0.38, 0.03, 0.022, 0.11, [0.95, 0.95, 0.92, 1]);
   // Längsgående takrör (5, 7) och innertak
-  m.tube([0.06, 1.32, -0.62], [-0.55, 1.32, -0.62], 0.026, 0.026, cage, 8);
-  m.tube([0.06, 1.32,  0.62], [-0.55, 1.32,  0.62], 0.026, 0.026, cage, 8);
-  m.tube([0.12, 1.30,  0.0],  [-0.55, 1.30,  0.0],  0.024, 0.024, cage, 8);
-  m.box(-0.22, 1.34, 0, 0.78, 0.03, 1.34, [0.11, 0.13, 0.16, 1]);
-  // Backspegel i mitten av vindrutans överkant
-  m.box(0.18, 1.22, 0.0, 0.04, 0.065, 0.24, dark);
-  m.box(0.16, 1.22, 0.0, 0.01, 0.052, 0.22, mirrorGlass);
+  m.tube([0.18, 1.24, -0.58], [-0.55, 1.26, -0.58], 0.024, 0.024, cage, 8);
+  m.tube([0.18, 1.24,  0.58], [-0.55, 1.26,  0.58], 0.024, 0.024, cage, 8);
+  m.box(-0.18, 1.28, 0, 0.82, 0.03, 1.28, [0.11, 0.13, 0.16, 1]);
+  // Backspegel i vindrutans överkant
+  m.box(0.26, 1.15, 0.02, 0.035, 0.055, 0.22, dark);
+  m.box(0.24, 1.15, 0.02, 0.01, 0.045, 0.20, mirrorGlass);
 
-  // Nascar-verkko i vänster sidoruta (förardörren z = -0.72) + 0,5 mm metalldörrplåt
-  m.box(0.05, 0.55, -0.74, 0.85, 0.36, 0.04, [0.18, 0.20, 0.23, 1]);
-  m.box(0.05, 0.55,  0.74, 0.85, 0.36, 0.04, [0.18, 0.20, 0.23, 1]);
+  // Nascar-verkko i vänster sidoruta (förardörren z = -0.68) + 0,5 mm metalldörrplåt
+  m.box(0.05, 0.55, -0.70, 0.85, 0.36, 0.04, [0.18, 0.20, 0.23, 1]);
+  m.box(0.05, 0.55,  0.70, 0.85, 0.36, 0.04, [0.18, 0.20, 0.23, 1]);
   for (let s = 0; s < 4; s++) {
-    m.box(0.18, 0.84 + s * 0.09, -0.71, 0.52, 0.018, 0.01, [0.12, 0.13, 0.16, 1]);
+    m.box(0.18, 0.82 + s * 0.08, -0.67, 0.52, 0.016, 0.01, [0.12, 0.13, 0.16, 1]);
   }
   for (let v = 0; v < 4; v++) {
-    m.box(-0.02 + v * 0.13, 0.98, -0.71, 0.016, 0.32, 0.01, [0.12, 0.13, 0.16, 1]);
+    m.box(-0.02 + v * 0.13, 0.94, -0.67, 0.014, 0.28, 0.01, [0.12, 0.13, 0.16, 1]);
   }
 
-  // 5. Vänster & höger yttre sidospeglar (inspirerade av referensbildens tydliga sidospeglar i bilens lackfärg!)
+  // 5. Vänster & höger yttre sidospeglar (synliga i framkant av rutan precis som i referensbilden!)
   for (const sgn of [-1, 1]) {
-    const zBase = sgn * 0.72, zOut = sgn * 0.88;
-    m.tube([0.38, 0.80, zBase], [0.34, 0.88, zOut], 0.018, 0.016, dark, 8);
-    m.tube([0.32, 0.77, zBase], [0.34, 0.85, zOut], 0.016, 0.014, dark, 8);
+    const zBase = sgn * 0.64, zOut = sgn * 0.78;
+    const xMir = sgn < 0 ? 0.44 : 0.56;
+    m.tube([xMir + 0.04, 0.78, zBase], [xMir, 0.88, zOut], 0.018, 0.016, P(0.95), 8);
+    m.tube([xMir - 0.02, 0.75, zBase], [xMir, 0.84, zOut], 0.016, 0.014, P(0.95), 8);
     // Spegelhus i bilens lack + spegelglas vänt mot föraren
-    m.box(0.35, 0.84, zOut + sgn * 0.02, 0.10, 0.095, 0.16, P(1.02), 0.02, 0.01, P(1.06), 0.01);
-    m.box(0.30, 0.848, zOut + sgn * 0.02, 0.015, 0.075, 0.135, mirrorGlass);
+    m.box(xMir + 0.01, 0.84, zOut + sgn * 0.02, 0.09, 0.095, 0.16, P(1.02), 0.02, 0.01, P(1.06), 0.01);
+    m.box(xMir - 0.038, 0.848, zOut + sgn * 0.02, 0.012, 0.075, 0.138, mirrorGlass);
   }
 
   return m.data();

@@ -225,7 +225,7 @@ body.racing { overflow: hidden; } body.racing #app { padding: 0; }
 .touch button { width: 70px; height: 70px; border-radius: 22px; border: 2px solid rgba(255,255,255,.35); background: rgba(10,13,12,.5); color: #fff; font: 800 .8rem var(--cond); letter-spacing: .06em; touch-action: none; pointer-events: auto; }
 .touch button.on { background: rgba(255,212,0,.55); border-color: var(--hi); } .t-g { grid-column: 2; grid-row: 1 / span 2; height: 150px !important; border-color: rgba(88,214,141,.8) !important; } .t-b { grid-column: 1; grid-row: 2; border-color: rgba(255,90,79,.8) !important; } .t-s { grid-column: 1; grid-row: 1; font-size: .7rem !important; }
 
-@media (max-width: 860px) {
+@media (max-width: 600px) {
   .view { padding: 12px; gap: 12px; } .panel { padding: 14px; } .hero { grid-template-columns: 1fr; padding: 18px; } .hero-r { display: none; }
   .g-top { grid-template-columns: 1fr; } .ev { grid-template-columns: 1fr auto; } .ev-res { grid-column: 1; grid-row: 2; } .ev .btn, .ev .lock { grid-row: 1 / span 2; grid-column: 2; }
   .mep { grid-template-columns: 1fr; gap: 2px; } .mep b { text-align: left; } .top-title { display: none; } .topbar { justify-content: space-between; }
