@@ -184,10 +184,11 @@ export function aiDrive(c, race, dt) {
     let dp = o.prog - c.prog; dp -= Math.round(dp / n) * n;
     if (dp > 0 && dp < 7) {
       const dl = o.lat - c.lat;
-      if (Math.abs(dl) < 2.4) { target = dl > 0 ? -2.8 : 2.8; if (dp < 3.2 && Math.abs(dl) < 1.7) cap = Math.hypot(o.vx, o.vy) + 0.5; }
+      if (Math.abs(dl) < 2.4) { target = dl > 0 ? -2.8 : 2.8; if (dp < 3.2 && Math.abs(dl) < 1.7) cap = Math.hypot(o.vx, o.vy) + 0.5 + (ai.agg || 0.8) * 1.2; }
     }
   }
   ai.off += (target - ai.off) * Math.min(1, 2.5 * dt);
+  if (ai.noise) { ai.wob += ((Math.random() - 0.5) * 2 * ai.noise - ai.wob * 0.6) * dt * 3; }
   let off = lineAt(la) + ai.off;
   const lims = trk.limits(trk.w(la)); off = clamp(off, lims[0] + 1.6, lims[1] - 1.6);
   const [tx, tz] = trk.point(la, off);
@@ -195,7 +196,7 @@ export function aiDrive(c, race, dt) {
   if (Math.abs(err) > 1.9 && v < 7) ai.back = 1; else if (Math.abs(err) < 0.9) ai.back = 0;
   if (ai.back) { c.rev = true; c.thr = 0; c.brk = 0; c.steer = err > 0 ? -1 : 1; return; }
   c.rev = false;
-  const st = clamp(err * 2.4, -1, 1);
+  const st = clamp(err * 2.4 + (ai.wob || 0), -1, 1);
   c.steer += clamp(st - c.steer, -7 * dt, 7 * dt);
   let vt = ai.prof[trk.w(idx + 2)];
   if (wantJ && idx < j.i2 - 4 && idx > j.i1 - 60) {
@@ -205,7 +206,7 @@ export function aiDrive(c, race, dt) {
   }
   if (wantJ && idx >= j.i1 && idx <= j.i2 && j.uShape) vt = Math.min(vt, ai.vJ * 0.62);
   vt = Math.min(vt, cap);
-  if (v < vt - 0.4) { c.thr = clamp(1 - Math.abs(c.steer) * 0.45, 0.35, 1); c.brk = 0; }
+  if (v < vt - 0.4) { c.thr = clamp(1 - Math.abs(c.steer) * 0.45, 0.35, 1) * (ai.thrMax || 1); c.brk = 0; }
   else if (v > vt + 0.8) { c.thr = 0; c.brk = clamp((v - vt) / 3.5, 0.15, 1); }
   else { c.thr = 0.35; c.brk = 0; }
   if (v < 1.2 && race.t > 2) { ai.stuck += dt; if (ai.stuck > 2.5) { race.resetCar(c); ai.stuck = 0; } } else ai.stuck = 0;
@@ -418,7 +419,7 @@ export class Race {
     this.player = this.cars.find(c => c.isPlayer);
     // Online: bilar som simuleras hos någon annan (remote) får sitt läge via nätet i stället för AI/fysik
     this.net = cfg.net || null;
-    this.cars.forEach((c, sl) => { const d = defs[sl]; c.num = d.num; if (d.nid) c.nid = d.nid; if (d.remote) { c.remote = true; c.ai = null; c.snap = null; c.seenT = Date.now(); } });
+    this.cars.forEach((c, sl) => { const d = defs[sl]; c.num = d.num; if (!c.isPlayer && d.diff != null) { c.diff = d.diff; c.pow = d.powScale || 1; } if (d.nid) c.nid = d.nid; if (d.remote) { c.remote = true; c.ai = null; c.snap = null; c.seenT = Date.now(); } });
     if (this.net) this.player.nid = this.net.id;
     if (location.search.includes('auto')) { const c = this.player; c.auto = true; c.skill = 0.97; c.ai = { jokerLap: 0, off: 0, stuck: 0, prof: null }; c.aids = { abs: 1, tc: 1, auto: 1 }; }
     this.player.dmg = cfg.dmg0 || 0; this.player.tireWearF = cfg.wear0?.[0] || 0; this.player.tireWearR = cfg.wear0?.[1] || 0; this.player.radLeak = !!cfg.radLeak0;
@@ -427,7 +428,9 @@ export class Race {
       if (this.R) c.obj = this.view.addCar(c.spec.body, c.paint, { bars: c.spec.dmg < 1, mirrors: needMirrors, bw: c.bw, num: c.isPlayer ? (cfg.player.num || '') : c.num || 1 + ((c.slot * 37 + 11) % 98) });
       c.y = trk.heightAt(c.x, c.z); c.wspin = 0;
       if (c.ai) {
-        const mu = trk.surf.mu * c.spec.mu, k = c.skill; const top = 50;
+        // svårighet 1–100 %: 1 % kör ca 4–5 km/h-krypfart med vingliga linjer (≈5 min/varv), 100 % pressar däcken till gränsen
+        const d = c.diff, mu = trk.surf.mu * c.spec.mu * Math.min(c.spec.muF || 1, c.spec.muR || 1), k = d != null ? 0.55 + 0.44 * Math.pow(d, 1.2) : c.skill, top = d != null ? 2.2 + 47.8 * Math.pow(d, 1.3) : 50;
+        c.ai.thrMax = d != null ? 0.3 + 0.7 * Math.pow(d, 1.5) : 1; c.ai.noise = d != null ? 0.9 * (1 - d) ** 2 : 0; c.ai.agg = d != null ? d : 0.8; c.ai.wob = 0;
         c.ai.prof = trk.profile(mu * G * 0.90 * k * k, mu * G * 0.70 * k, top); c.ai.vJ = Math.sqrt(mu * G * 0.85 * k * k * 21); c.ai.aB = mu * G * 0.6 * k;
         c.ai.jokerLap = Math.floor(Math.random() * cfg.laps);
       }

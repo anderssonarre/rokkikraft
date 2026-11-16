@@ -15,7 +15,7 @@ const paintOf = id => (PAINTS.find(p => p.id === id) || PAINTS[0]);
 const hex = rgb => '#' + rgb.map(v => Math.round(v * 255).toString(16).padStart(2, '0')).join('');
 const pick = a => a[Math.floor(Math.random() * a.length)];
 const shuffle = a => { a = [...a]; for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
-const U = { view: 'menu', kompOpen: null, quick: { track: 'tammisaari', laps: 3, opp: 5, ai: 85, joker: 1 }, ev: null, task: null, taskDiff: 1, taskMsg: '', preview: null, race: null, toast: '' };
+const U = { view: 'menu', kompOpen: null, quick: { track: 'tammisaari', laps: 3, opp: 5, ai: 75, joker: 1 }, ev: null, task: null, taskDiff: 1, taskMsg: '', preview: null, race: null, toast: '' };
 
 const accC = {}; const acc = sp => { const k = JSON.stringify([sp.id, sp.engId, sp.mass, sp.tqS, sp.muF, sp.rw, sp.gears, sp.final, sp.drv]); return accC[k] ??= accel0100(sp); };
 const spec = (id = S.active) => buildSpec(id, S.cars[id], S.cars[id]?.tune);
@@ -132,7 +132,7 @@ function karriar() {
         <div class="row"><span class="lbl">Varv</span>${[2, 3, 4, 6].map(n => `<button class="chip s ${q.laps === n ? 'on' : ''}" data-act="q-laps" data-arg="${n}">${n}</button>`).join('')}
           <span class="lbl">Motståndare</span>${[3, 5].map(n => `<button class="chip s ${q.opp === n ? 'on' : ''}" data-act="q-opp" data-arg="${n}">${n}</button>`).join('')}
           <span class="lbl">Lisälenkki</span><button class="chip s ${q.joker ? 'on' : ''}" data-act="q-joker">${q.joker ? 'PÅ' : 'AV'}</button></div>
-        <div class="row"><span class="lbl">AI ${q.ai} %</span><input type="range" min="70" max="105" step="5" value="${q.ai}" data-in="q-ai"></div>
+        <div class="row"><span class="lbl">AI-svårighet ${q.ai} %</span><input type="range" min="1" max="100" step="1" value="${q.ai}" data-in="q-ai"></div>
         <div class="row"><button class="btn" data-act="quick-race" ${ok ? '' : 'disabled'}>🏁 Starta träningsheat</button><button class="btn ghost" data-act="quick-time" ${ok ? '' : 'disabled'}>⏱ Tidskörning</button></div>
       </div>
       <div class="g-curve" style="display:flex;flex-direction:column;align-items:center">
@@ -255,20 +255,21 @@ const AI_POOL = {
   ],
 };
 
-function makeOpps(n, li, skill, cls) {
-  const names = shuffle(DRIVERS).slice(0, n), mine = activeCar().paint, full = { strip: 1, cage: 1, seat: 1, net: 1, switch: 1 };
+// AI-förare: slumpade namn och bilar. Bilen byggs med spelarens chassi-/däckinställningar och effekten skalas mot
+// spelarens bil (±8 %) så att motståndet blir rimligt oavsett vilken bil och trim man kör. diff = 0,01–1 (1–100 %).
+const FIRST = ['Pena', 'Jorma', 'Late', 'Tuukka', 'Reiska', 'Vesa', 'Kake', 'Ilpo', 'Seppo', 'Hessu', 'Arska', 'Jere', 'Pate', 'Timppa', 'Masa', 'Olli', 'Rami', 'Sami', 'Veikko', 'Eki', 'Nipa', 'Tane', 'Juha', 'Aki', 'Kimmo', 'Jonne', 'Kalle', 'Mika', 'Sanna', 'Tiina', 'Jenni', 'Heikki', 'Lasse', 'Niko', 'Petteri', 'Raimo', 'Anu', 'Johanna'];
+const LAST = ['Rämäkkö', 'Kaasujalka', 'Sivuluisu', 'Soranen', 'Pultti', 'Vänkäri', 'Kardaani', 'Ilmanotto', 'Sytytys', 'Hiekkala', 'Akseli', 'Jousi', 'Pakosarja', 'Turbonen', 'Öljypohja', 'Rattinen', 'Vaihde', 'Etuveto', 'Takaveto', 'Jäärata', 'Kytkin', 'Mutkanen', 'Ruostela', 'Peltonen', 'Kolari', 'Lokasuoja', 'Nastarengas', 'Tunkki'];
+function aiNames(n) { const set = new Set(), out = shuffle(DRIVERS).slice(0, Math.min(n, 12)); out.forEach(x => set.add(x)); let g = 0; while (out.length < n && g++ < 5000) { const x = pick(FIRST) + ' ' + pick(LAST); if (!set.has(x)) { set.add(x); out.push(x); } } return shuffle(out); }
+function makeOpps(n, li, diff, cls) {
+  const names = aiNames(n), mine = activeCar().paint, full = { strip: 1, cage: 1, seat: 1, net: 1, switch: 1 };
+  const ps = spec(), php = curve(ps).hp, tune = { ...defaultTune(), ...activeCar().tune };
   const poolKey = cls === 'super' || cls === 'supersenior' ? 'super' : cls === 'kardaani' ? 'kardaani' : 'vetari';
-  const isSup = poolKey === 'super';
+  const pool = [...AI_POOL[poolKey][Math.max(0, Math.min(3, li))], 'mazda626', 'passat_rx', 'mondeo_st'];
   return names.map(name => {
-    const cid = pick(AI_POOL[poolKey][li]), cDef = carById(cid);
-    const engList = cDef.engines || [cDef.defaultEng];
-    const eng = li >= 2 && engList.length > 1 ? engList[Math.min(engList.length - 1, li - 1)] : cDef.defaultEng;
-    const upg = isSup ? { ...AI_UPG_SUP[li] } : { ...AI_UPG_STD[li], ...(cDef.drv === 'rwd' && li >= 2 ? { diff: 1 } : {}) };
-    return {
-      name, paint: pick(PAINTS.filter(p => p.id !== mine)).rgb, bw: Math.random() < 0.35 ? 'bw' : 'wb',
-      skill: skill + (Math.random() - 0.5) * 0.05,
-      spec: buildSpec(cid, { build: full, eng, upg }, defaultTune()),
-    };
+    const cid = pick(pool), sp = buildSpec(cid, { build: full, upg: poolKey === 'super' ? { superkit: 1 } : {} }, tune), hp = curve(sp).hp;
+    const d = Math.max(0.01, Math.min(1, diff + (Math.random() - 0.5) * 0.08));
+    return { name, paint: pick(PAINTS.filter(p => p.id !== mine)).rgb, bw: Math.random() < 0.35 ? 'bw' : 'wb', diff: d, skill: 0.6 + 0.4 * d, spec: sp,
+      powScale: Math.max(0.4, Math.min(3, php / hp * (0.92 + Math.random() * 0.16))) };
   });
 }
 
@@ -844,7 +845,7 @@ const ACT = {
   'quick-race'() {
     const q = U.quick, insp = currentInsp(), li = Math.min(3, Math.max(0, Math.round((q.ai - 75) / 10)));
     startRace({
-      trackId: q.track, laps: q.laps, opps: makeOpps(q.opp, li, q.ai / 100 * 0.98, insp.cls),
+      trackId: q.track, laps: q.laps, opps: makeOpps(q.opp, li, q.ai / 100, insp.cls),
       grid: q.opp, gridRows: insp.rules.gridRows, useJoker: !!q.joker, sideContact: insp.rules.sideContact,
       title: `${insp.rules.name} – Träningsheat`, mode: 'heat', onDone: r => quickDone(r),
     });
