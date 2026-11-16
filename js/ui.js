@@ -3,7 +3,7 @@ import { CARS, ENGINES, CLASSES, CLASS_RULES, BUILD, UPG, FUELS, PAINTS, TRACKS,
 import { buildSpec, engineAt, curve, carById, engById, fuelById, defaultTune, fmt, checkInspection, formatCarNum } from './engine.js';
 import { S, save, reset, activeCar } from './state.js';
 import { getTrack } from './track.js';
-import { Race, fmtTime } from './race.js';
+import { Race, fmtTime, CAM_NAMES, DEFAULT_CAM } from './race.js';
 import { newTask, checkTask } from './dyno.js';
 
 const app = () => document.getElementById('app');
@@ -467,6 +467,7 @@ function startRace(o) {
   const done = o.onDone;
   U.race = new Race(app(), {
     ...o, onDone: res => { countRace(o.trackId, res); done(res); }, record: S.records[o.trackId], settings: S.settings,
+    onCameraChange: camera => { S.settings.camera = camera; save(); },
     player: { name: `${S.name || 'Du'} (#${numStr})`, num: numStr, spec: s, paint: paintOf(cs.paint).rgb, bw: cs.bw || 'wb', aids: { ...S.aids } },
   });
 }
@@ -683,6 +684,7 @@ function settings() {
   const st = S.settings;
   return `<section class="panel"><h2>Förare (samma namn hela säsongen enligt Sääntökirja s. 3)</h2><div class="row"><span class="lbl">Ditt förarnamn</span><input class="txt" type="text" maxlength="18" value="${(S.name || '').replace(/"/g, '&quot;')}" data-in="name"></div></section>
   <section class="panel"><h2>Ljud</h2><label class="sl"><span>Motorljud <b>${st.vol} %</b></span><input type="range" min="0" max="100" step="5" value="${st.vol}" data-in="vol"></label></section>
+  <section class="panel"><h2>Kameravy</h2><div class="row">${[DEFAULT_CAM, 0, 1, 2, 3].map(i => `<button class="chip s ${(st.camera ?? DEFAULT_CAM) === i ? 'on' : ''}" data-act="camera" data-arg="${i}">${CAM_NAMES[i]}</button>`).join('')}</div><p class="dim">Förstaperson ger fri sikt från förarens ögonhöjd med stabil horisont. Byt även med C eller kameraknappen under körning. Ditt val sparas.</p></section>
   <section class="panel"><h2>Grafik</h2><div class="row">${[['hog', 'Hög'], ['lag', 'Låg']].map(q => `<button class="chip s ${st.quality === q[0] ? 'on' : ''}" data-act="quality" data-arg="${q[0]}">${q[1]}</button>`).join('')}</div><p class="dim">Låg ger färre träd, inga skuggor och grövre terräng – bra på äldre telefoner.</p></section>
   <section class="panel"><h2>Upplösning</h2><div class="row">${[['auto', 'Auto (skärmens)'], ['1440', '1440p'], ['1080', '1080p'], ['720', '720p'], ['540', '540p']].map(q => `<button class="chip s ${(st.res || 'auto') === q[0] ? 'on' : ''}" data-act="res" data-arg="${q[0]}">${q[1]}</button>`).join('')}</div><p class="dim">Hur många bildrader 3D-vyn renderas med. Lägre ger högre bildfrekvens, högre ger skarpare bild. HUD:en påverkas inte.</p></section>
   <section class="panel"><h2>Pekskärmskontroller</h2><div class="row">${[['auto', 'Auto'], ['on', 'På'], ['off', 'Av']].map(q => `<button class="chip s ${st.touch === q[0] ? 'on' : ''}" data-act="touch" data-arg="${q[0]}">${q[1]}</button>`).join('')}</div></section>
@@ -824,6 +826,7 @@ const ACT = {
     const t = U.task; t.vals = [...document.querySelectorAll('[data-ans]')].map(i => i.value); const r = checkTask(t);
     if (r.all) { const n = S.dyno[U.taskDiff - 1], pay = n < 6 ? t.reward : Math.round(t.reward * 0.25); S.money += pay; S.dyno[U.taskDiff - 1]++; save(); U.taskMsg = `✓ Rätt! +${eur(pay)}`; } else U.taskMsg = 'Inte helt rätt – rätta svaren visas vid fälten. Ta en ny uppgift.';
   },
+  camera(a) { const camera = Number(a); if (Number.isInteger(camera) && CAM_NAMES[camera]) { S.settings.camera = camera; save(); } },
   quality(a) { S.settings.quality = a; save(); }, res(a) { S.settings.res = a; save(); }, touch(a) { S.settings.touch = a; save(); },
   reset() { if (U.confirmReset) { reset(); U.confirmReset = false; toast('Sparningen är återställd.'); U.view = 'menu'; } else { U.confirmReset = true; toast('Tryck en gång till för att radera allt.'); setTimeout(() => U.confirmReset = false, 4000); } },
 };

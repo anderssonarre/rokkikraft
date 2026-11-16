@@ -16,7 +16,7 @@ const fresh = () => ({
     },
   },
   fuels: ['b95'], career: { res: {} }, records: {}, dyno: [0, 0, 0],
-  settings: { vol: 50, quality: 'hog', touch: 'auto' }, aids: { abs: 1, tc: 1, auto: 1 },
+  settings: { camera: 4, vol: 50, quality: 'hog', touch: 'auto' }, aids: { abs: 1, tc: 1, auto: 1 },
 });
 function load() {
   try {

@@ -206,7 +206,8 @@ export function aiDrive(c, race, dt) {
   if (v < 1.2 && race.t > 2) { ai.stuck += dt; if (ai.stuck > 2.5) { race.resetCar(c); ai.stuck = 0; } } else ai.stuck = 0;
 }
 
-const CAM_NAMES = ['IN-CAR KUPÉ', 'HUVKAMERA', 'BAKOM NÄRA', 'BAKOM HÖG'];
+export const CAM_NAMES = ['IN-CAR KUPÉ', 'HUVKAMERA', 'BAKOM NÄRA', 'BAKOM HÖG', 'FÖRSTAPERSON'];
+export const DEFAULT_CAM = 4;
 
 export class Race {
   constructor(host, cfg) {
@@ -252,7 +253,7 @@ export class Race {
           <div class="hud-col-c">
             <div class="hud-lights" id="hLights">${'<i></i>'.repeat(5)}</div>
             <div class="hud-card hud-top-btns">
-              <button class="hud-mini-btn on" id="hCamBtn" title="Byt kamera (C)">🎥 GOPRO IN-CAR [C]</button>
+              <button class="hud-mini-btn on" id="hCamBtn" title="Byt kamera (C)">🎥 FÖRSTAPERSON [C]</button>
               <button class="hud-mini-btn" id="hTeleBtn" title="Visa/dölj telemetri (T)">📊 TELEMETRI [T]</button>
               <button class="hud-mini-btn" id="hPause">☰ PAUS [P]</button>
             </div>
@@ -387,7 +388,7 @@ export class Race {
             </div>
           </div>
 
-          <div class="hud-keys-bar" id="hKeys">W/↑ gas · S/↓ broms/back · A/D styr · Mellanslag handbroms · E/Q växla · C kamera (In-Car / Huv / Bakom) · R återställ · P paus</div>
+          <div class="hud-keys-bar" id="hKeys">W/↑ gas · S/↓ broms/back · A/D styr · Mellanslag handbroms · E/Q växla · C kamera (Förstaperson / Kupé / Huv / Bakom) · R återställ · P paus</div>
         </div>
 
         <div class="touch" id="hTouch"><div class="t-l"><button data-k="left">◀</button><button data-k="right">▶</button></div>
@@ -422,13 +423,14 @@ export class Race {
         c.ai.jokerLap = Math.floor(Math.random() * cfg.laps);
       }
     }
-    // Standardkamera = 0 (IN-CAR KUPÉ med 3D-störtbur, flockad bräda, sidospeglar & roterande mockaratt!)
+    // Fri förstapersonsvy som standard; tidigare kameraval återställs.
     this.t = 0; this.state = 'grid'; this.gridT = 0; this.goAt = 3.6 + Math.random() * 1.2; this.acc = 0;
-    this.cam = 0;
+    this.cam = DEFAULT_CAM;
     this.camH = this.player.h; this.keys = {}; this.touch = {};
     this.startPos = [this.player.x, this.player.z]; this.msgT = 0; this.hudT = 0; this.paused = false; this.done = false;
     this.parts = new Float32Array(260 * 54); this.pl = [];
     this.buildMap(); this.bind(); this.resize();
+    this.setCam(cfg.settings?.camera ?? DEFAULT_CAM, false);
     const touchMode = cfg.settings?.touch || 'auto'; const showTouch = touchMode === 'on' || (touchMode === 'auto' && ('ontouchstart' in window || navigator.maxTouchPoints > 0));
     this.$('hTouch').style.display = showTouch ? '' : 'none'; if (showTouch) this.$('hKeys').style.display = 'none';
     if (cfg.mode === 'time') { this.$('hLbCard').style.display = 'none'; }
@@ -437,11 +439,16 @@ export class Race {
   }
 
   cycleCam() {
-    this.cam = (this.cam + 1) % 4;
+    this.setCam((this.cam + 1) % CAM_NAMES.length);
+  }
+
+  setCam(mode, persist = true) {
+    this.cam = Number.isInteger(mode) && mode >= 0 && mode < CAM_NAMES.length ? mode : DEFAULT_CAM;
     const btn = this.$('hCamBtn');
     if (btn) btn.textContent = `🎥 ${CAM_NAMES[this.cam]} [C]`;
     const wc = this.$('hWheelCluster');
-    if (wc) wc.style.display = this.cam === 1 ? '' : 'none';
+    if (wc) wc.style.display = this.cam === 1 || this.cam === DEFAULT_CAM ? '' : 'none';
+    if (persist) this.cfg.onCameraChange?.(this.cam);
   }
 
   toggleTele() {
@@ -457,7 +464,7 @@ export class Race {
       if (map[e.code]) { this.keys[map[e.code]] = 1; e.preventDefault(); }
       else if (e.code === 'KeyE' || e.code === 'ShiftLeft' || e.code === 'ShiftRight') this.shift(1);
       else if (e.code === 'KeyQ' || e.code === 'ControlLeft') this.shift(-1);
-      else if (e.code === 'KeyC') this.cycleCam();
+      else if (e.code === 'KeyC' && !e.repeat) this.cycleCam();
       else if (e.code === 'KeyT') this.toggleTele();
       else if (e.code === 'KeyR') { if (this.state === 'run') this.resetCar(this.player); }
       else if (e.code === 'KeyP' || e.code === 'Escape') this.togglePause();
@@ -843,7 +850,14 @@ export class Race {
     const pMat = M4.car(p.x, pY, p.z, p.h, pRoll, pPitch + pSl);
 
     let eye, at, up = [0, 1, 0], fov = 1.05;
-    if (this.cam === 0) {
+    if (this.cam === DEFAULT_CAM) {
+      // Förarens ögonhöjd, fri sikt och stabil horisont utan karossvibrationer.
+      // Blicken följer bilens riktning direkt, även vid sladd eller backning.
+      const c = Math.cos(p.h), s = Math.sin(p.h), look = 25;
+      eye = [p.x + c * 0.1 + s * 0.31, pY + 1.35, p.z + s * 0.1 - c * 0.31];
+      at = [eye[0] + c * look, eye[1] + look * (p.slope || 0), eye[2] + s * look];
+      fov = 1.15;
+    } else if (this.cam === 0) {
       // GOPRO ROLL-BAR IN-CAR KUPÉVY (Monterad vid B-stolpen [-0.62, 1.06, 0.02] med vidvinkel precis som i de 4 GoPro-referensbilderna!)
       const vib = Math.sin(this.t * 45) * 0.0018 * (p.rpm / 6000);
       const transformPt = (lx, ly, lz) => [
@@ -872,7 +886,7 @@ export class Race {
       at = [p.x + ch * 6, pY + 0.6, p.z + sh * 6];
     }
 
-    for (const c of this.cars) this.view.poseCar(c.obj, c.x, c.y, c.z, c.h, clamp(-c.vx * c.r * 0.0045, -0.07, 0.07), clamp(c.ax * 0.004, -0.045, 0.045) + Math.atan(c.slope || 0), c.steer, c.wspin, c.brk > 0.1, !(c === p && (this.cam === 0 || this.cam === 1)));
+    for (const c of this.cars) this.view.poseCar(c.obj, c.x, c.y, c.z, c.h, clamp(-c.vx * c.r * 0.0045, -0.07, 0.07), clamp(c.ax * 0.004, -0.045, 0.045) + Math.atan(c.slope || 0), c.steer, c.wspin, c.brk > 0.1, !(c === p && (this.cam === 0 || this.cam === 1 || this.cam === DEFAULT_CAM)));
     let cockpit = null;
     if (this.cam === 0) { const sway = clamp((p.ay || 0) * 0.045 + Math.sin(this.t * 6.0) * 0.03, -0.45, 0.45);
       cockpit = [pMat, M4.mul(pMat, M4.localRotX(0.16, 0.78, -0.31, 0.22, -p.steer * 0.85)), M4.mul(pMat, M4.localRotX(0.30, 1.06, -0.02, 0.0, sway))]; }
