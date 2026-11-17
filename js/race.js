@@ -455,7 +455,7 @@ export class Race {
     this.player.dmg = cfg.dmg0 || 0; this.player.tireWearF = cfg.wear0?.[0] || 0; this.player.tireWearR = cfg.wear0?.[1] || 0; this.player.radLeak = !!cfg.radLeak0;
     const needMirrors = !this.sideContact;
     for (const c of this.cars) {
-      if (this.R) c.obj = this.view.addCar(c.spec.body, c.paint, { bars: c.spec.dmg < 1, mirrors: needMirrors, bw: c.bw, num: c.isPlayer ? (cfg.player.num || '') : c.num || 1 + ((c.slot * 37 + 11) % 98) });
+      if (this.R) c.obj = this.view.addCar(c.spec.body, c.paint, { model: c.spec.id, bars: c.spec.dmg < 1, mirrors: needMirrors, bw: c.bw, num: c.isPlayer ? (cfg.player.num || '') : c.num || 1 + ((c.slot * 37 + 11) % 98) });
       c.y = trk.heightAt(c.x, c.z); c.wspin = 0;
       if (c.ai) {
         // svårighet 1–100 %: 1 % kör ca 4–5 km/h-krypfart med vingliga linjer (≈5 min/varv), 100 % pressar däcken till gränsen

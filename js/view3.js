@@ -6,6 +6,34 @@ import { hash, mulberry } from './gl.js';
 const T = () => window.THREE;
 const SPONSORS = ['HITSIPILLI RACING', 'TEAM SORAKUOPPA', 'NAVETTA MOTORSPORT', 'PÄRINÄPOJAT', 'KURARALLI', 'RAUTAKANKI RT', 'LÖYSÄ PULTTI', 'SAUNAN TAKA RACING', 'ROKKIKRAFT'];
 
+// Modellstil per bil: proportioner och typiska drag (utan emblem). nose: box = upprätt, wedge = sluttande kil, shark = framåtlutad nos
+const STYLE = {
+  mazda626: { L: 4.52, H: 1.40, nose: 'wedge', lights: 'rect', grille: 'slot', tails: 'wide', tailT: 'notch', deck: 0.62 },
+  passat_rx: { L: 4.67, H: 1.46, nose: 'wedge', lights: 'slim', grille: 'slat', tails: 'wide', tailT: 'wagon', rails: 1, round: 0.3 },
+  passat_vetari: { L: 4.67, H: 1.44, nose: 'wedge', lights: 'slim', grille: 'slat', tails: 'wide', tailT: 'notch', deck: 0.75, round: 0.3 },
+  passat_kardaani: { L: 4.67, H: 1.44, nose: 'wedge', lights: 'slim', grille: 'slat', tails: 'wide', tailT: 'notch', deck: 0.75, round: 0.3 },
+  mondeo_st: { L: 4.73, H: 1.42, nose: 'wedge', lights: 'slim', grille: 'trapezoid', tails: 'tall', tailT: 'hatch', round: 0.3 },
+  mondeo: { L: 4.73, H: 1.42, nose: 'wedge', lights: 'slim', grille: 'slat', tails: 'wide', tailT: 'notch', deck: 0.78, round: 0.3 },
+  mazda3: { L: 4.42, H: 1.46, nose: 'wedge', lights: 'slim', grille: 'trapezoid', tails: 'round', tailT: 'hatch', round: 0.32 },
+  kadett: { L: 4.25, H: 1.43, nose: 'wedge', lights: 'rect', grille: 'slot', tails: 'tall', tailT: 'hatch', round: 0.26 },
+  sunny: { L: 4.48, H: 1.42, nose: 'wedge', lights: 'rect', grille: 'volvo', tails: 'wide', tailT: 'notch', deck: 0.7 },
+  civic: { L: 4.71, H: 1.45, nose: 'box', lights: 'rect', grille: 'volvo', tails: 'vertical', tailT: 'wagon', rails: 1, round: 0.12 },
+  v940: { L: 4.79, H: 1.44, nose: 'box', lights: 'squareWide', grille: 'volvo', tails: 'vertical', tailT: 'wagon', rails: 1, round: 0.08, bigBumper: 1 },
+  volvo_v8_super: { L: 4.79, H: 1.42, nose: 'box', lights: 'squareWide', grille: 'volvo', tails: 'tall', tailT: 'notch', deck: 0.95, round: 0.08, bigBumper: 1 },
+  bmw325: { L: 4.43, H: 1.39, nose: 'shark', lights: 'twinRound', grille: 'kidney', tails: 'wide', tailT: 'notch', deck: 0.8, kink: 1, round: 0.24 },
+  v343: { L: 4.2, H: 1.38, nose: 'box', W: 1.6, lights: 'round', grille: 'bars', tails: 'wide', tailT: 'notch', deck: 0.78, round: 0.14 },
+  ascona_super: { L: 4.32, H: 1.38, nose: 'box', W: 1.62, lights: 'rect', grille: 'bars', tails: 'wide', tailT: 'notch', deck: 0.8, round: 0.14 },
+  sierra: { L: 4.43, H: 1.40, nose: 'wedge', lights: 'rect', grille: 'blackbar', tails: 'wide', tailT: 'notch', deck: 0.7, round: 0.32 },
+  sierra_super: { L: 4.46, H: 1.38, nose: 'wedge', lights: 'rect', grille: 'blackbar', tails: 'wide', tailT: 'hatch', wing: 1, round: 0.32 },
+  saab9000: { L: 3.98, H: 1.38, nose: 'box', W: 1.57, lights: 'round', grille: 'bars', tails: 'wide', tailT: 'notch', deck: 0.72, round: 0.14 },
+  starlet_super: { L: 3.7, H: 1.38, nose: 'box', W: 1.54, lights: 'rect', grille: 'bars', tails: 'tall', tailT: 'hatch', round: 0.14 },
+};
+function carStyle(model, body) {
+  const b = STYLE[model] || { L: body === 'wagon' ? 4.5 : body === 'sedan' ? 4.3 : 3.95, H: 1.39, nose: 'wedge', lights: 'rect', grille: 'slot', tails: 'wide', tailT: body === 'wagon' ? 'wagon' : body === 'sedan' ? 'notch' : 'hatch', deck: 0.75 };
+  const st = { W: 1.68, round: 0.22, deck: 0.75, belt: 0.92, ...b };
+  st.hood = st.nose === 'box' ? 1.2 : st.nose === 'shark' ? 1.3 : 1.25; st.rake = st.nose === 'box' ? 0.48 : st.nose === 'shark' ? 0.62 : 0.72;
+  return st;
+}
 // Rundade hörn på en polygonprofil (mjukare karossformer)
 function roundShape(pts, r) { const THREE = T(), s = new THREE.Shape(), n = pts.length;
   const at = (a, b, d) => { const dx = b[0] - a[0], dy = b[1] - a[1], L = Math.hypot(dx, dy) || 1, k = Math.min(d, L / 2.2) / L; return [a[0] + dx * k, a[1] + dy * k]; };
@@ -165,23 +193,62 @@ export class View3 {
     for (let k = 0; k < 16; k++) { const a = rnd() * 6.28, r = 700 + rnd() * 1400, grp = new THREE.Group(); for (let q = 0; q < 5; q++) { const s = new THREE.Mesh(g, m); s.position.set((rnd() - 0.5) * 130, (rnd() - 0.5) * 14, (rnd() - 0.5) * 60); s.scale.set(50 + rnd() * 55, 14 + rnd() * 12, 34 + rnd() * 34); grp.add(s); } grp.position.set(Math.cos(a) * r, 330 + rnd() * 260, Math.sin(a) * r); this.scene.add(grp); } }
 
   // ---------- bilar ----------
-  addCar(body, paint, opt = {}) { const THREE = T(), G = new THREE.Group(), L = body === 'wagon' ? 4.5 : body === 'sedan' ? 4.3 : 3.95, W = 1.64, h = L / 2;
+  addCar(body, paint, opt = {}) { const THREE = T(), G = new THREE.Group(), st = carStyle(opt.model, body), L = st.L, W = st.W, h = L / 2;
     const col = new THREE.Color(paint[0], paint[1], paint[2]);
-    const pm = new THREE.MeshStandardMaterial({ color: col, metalness: 0.35, roughness: 0.42 }), dark = new THREE.MeshStandardMaterial({ color: 0x141416, roughness: 0.85 }), glass = new THREE.MeshStandardMaterial({ color: 0x1a2530, roughness: 0.08, metalness: 0.85, side: THREE.DoubleSide }), steel = new THREE.MeshStandardMaterial({ color: 0x9aa0a6, metalness: 0.8, roughness: 0.35 });
-    const ext = (pts, width, mat, bevel = 0.11) => { const s = roundShape(pts, 0.22); const g = new THREE.ExtrudeGeometry(s, { depth: width - bevel * 2, bevelEnabled: true, bevelThickness: bevel, bevelSize: bevel, bevelSegments: 5, curveSegments: 8 }); g.translate(0, 0, -(width - bevel * 2) / 2); const m = new THREE.Mesh(g, mat); m.castShadow = true; G.add(m); return m; };
-    // underkaross med sluttande front och hjulhus
-    ext([[-h + 0.06, 0.34], [-h, 0.62], [-h + 0.05, 0.86], [-h + 0.4, 0.93], [h - 1.25, 0.94], [h - 0.45, 0.86], [h - 0.05, 0.74], [h, 0.52], [h - 0.06, 0.34]], W, pm);
-    // växthus
-    const aB = h - 1.22, aT = h - 1.86, rT = body === 'sedan' ? -h + 1.3 : body === 'wagon' ? -h + 0.3 : -h + 0.78, rB = body === 'sedan' ? -h + 0.86 : body === 'wagon' ? -h + 0.1 : -h + 0.2, top = 1.39;
-    ext([[rB, 0.9], [rT, top], [aT, top + 0.01], [aB, 0.9]], W - 0.2, pm, 0.09);
-    // rutor: sidorna som mörka skivor, vind- och bakruta som lutande plan
+    const pm = new THREE.MeshStandardMaterial({ color: col, metalness: 0.35, roughness: 0.42 }), dark = new THREE.MeshStandardMaterial({ color: 0x141416, roughness: 0.85 }), glass = new THREE.MeshStandardMaterial({ color: 0x1a2530, roughness: 0.08, metalness: 0.85, side: THREE.DoubleSide }), steel = new THREE.MeshStandardMaterial({ color: 0x9aa0a8, metalness: 0.8, roughness: 0.3 });
+    const lamp = new THREE.MeshStandardMaterial({ color: 0xf2f0e4, emissive: 0x3a3628, roughness: 0.2, metalness: 0.3 }), amber = new THREE.MeshStandardMaterial({ color: 0xe8901c, emissive: 0x3a2008, roughness: 0.3 });
+    const tail = new THREE.MeshBasicMaterial({ color: 0x8a0f0a }); G.userData.brake = tail;
+    const ext = (pts, width, mat, bevel = 0.11) => { const s = roundShape(pts, st.round); const g = new THREE.ExtrudeGeometry(s, { depth: width - bevel * 2, bevelEnabled: true, bevelThickness: bevel, bevelSize: bevel, bevelSegments: 5, curveSegments: 8 }); g.translate(0, 0, -width / 2 + bevel); const m = new THREE.Mesh(g, mat); m.castShadow = true; G.add(m); return m; };
+    const box = (x, y, z, sx, sy, sz, m, ry = 0) => { const b = new THREE.Mesh(new THREE.BoxGeometry(sx, sy, sz), m); b.position.set(x, y, z); b.rotation.y = ry; G.add(b); return b; };
+    const disc = (x, y, z, r, m) => { const c = new THREE.Mesh(new THREE.CylinderGeometry(r, r, 0.04, 18), m); c.rotation.z = Math.PI / 2; c.position.set(x, y, z); G.add(c); return c; };
+    // ---- kaross: framparti efter modellens stil (rak "låda" eller sluttande kil), bakparti efter karosstyp
+    const nb = st.nose === 'box', fx = h, belt = st.belt;
+    const front = nb ? [[fx - 0.02, 0.36], [fx + 0.02, 0.62], [fx, belt - 0.06], [fx - 0.12, belt]]
+      : st.nose === 'shark' ? [[fx - 0.04, 0.36], [fx + 0.02, 0.5], [fx + 0.03, 0.66], [fx - 0.22, belt - 0.03], [fx - 0.7, belt]]
+      : [[fx - 0.04, 0.34], [fx + 0.01, 0.52], [fx - 0.12, 0.70], [fx - 0.75, belt - 0.03], [fx - 1.15, belt]];
+    const rear = st.tailT === 'notch' ? [[-h + 0.35, belt + 0.03], [-h + 0.02, belt], [-h, 0.62], [-h + 0.04, 0.36]] : [[-h + 0.1, belt + 0.02], [-h, belt - 0.05], [-h - 0.01, 0.62], [-h + 0.04, 0.36]];
+    ext([[-h + 0.06, 0.32], ...rear.slice().reverse(), ...front.slice().reverse(), [h - 0.06, 0.32]], W, pm);
+    // växthus: vindrutans lutning och taklinje efter stil
+    const top = st.H, aB = h - st.hood, aT = aB - st.rake;
+    const rT = st.tailT === 'notch' ? -h + st.deck + 0.42 : st.tailT === 'hatch' ? -h + 0.45 : -h + 0.12, rB = st.tailT === 'notch' ? -h + st.deck : st.tailT === 'hatch' ? -h + 0.12 : -h + 0.04;
+    ext([[rB, belt - 0.02], [rT, top], [aT, top + 0.01], [aB, belt - 0.02]], W - 0.2, pm, 0.09);
     const win = (pts, z) => { const s = new THREE.Shape(); pts.forEach((p, i) => i ? s.lineTo(p[0], p[1]) : s.moveTo(p[0], p[1])); const m = new THREE.Mesh(new THREE.ShapeGeometry(s), glass); m.position.z = z; G.add(m); };
-    const bx = (aT + rT) / 2 - 0.05, zs = (W - 0.2) / 2 + 0.006;
-    for (const z of [zs, -zs]) { win([[aB - 0.16, 0.96], [aT + 0.02, top - 0.07], [bx + 0.06, top - 0.07], [bx + 0.06, 0.96]], z); win([[bx - 0.06, 0.96], [bx - 0.06, top - 0.07], [rT + 0.12, top - 0.07], [rB + 0.2, 0.96]], z); }
+    const bx = (aT + rT) / 2 - 0.05 + (st.tailT === 'wagon' ? -0.25 : 0), zs = (W - 0.2) / 2 + 0.006, wb0 = belt + 0.03, wt = top - 0.07;
+    for (const z of [zs, -zs]) { win([[aB - 0.16, wb0], [aT + 0.02, wt], [bx + 0.06, wt], [bx + 0.06, wb0]], z);
+      const kink = st.kink ? [[rT + 0.2, wt], [rT + 0.32, wt - 0.08], [rB + 0.36, wb0]] : [[rT + 0.12, wt], [rB + 0.2, wb0]];
+      win([[bx - 0.06, wb0], [bx - 0.06, wt], ...kink], z);
+      if (st.tailT === 'wagon') win([[rT + 0.08, wt], [rT - 0.02, wb0 + 0.02], [rT + 0.2, wb0]], z); }
     const slant = (x0, y0, x1, y1, wd) => { const len = Math.hypot(x1 - x0, y1 - y0); let nx = (y1 - y0) / len, ny = -(x1 - x0) / len; if (ny < 0) { nx = -nx; ny = -ny; }
       const ax = x0 + (x1 - x0) * 0.1 + nx * 0.1, ay = y0 + (y1 - y0) * 0.1 + ny * 0.1, bx2 = x0 + (x1 - x0) * 0.93 + nx * 0.1, by = y0 + (y1 - y0) * 0.93 + ny * 0.1, g = new THREE.BufferGeometry();
       g.setAttribute('position', new THREE.BufferAttribute(new Float32Array([ax, ay, -wd / 2, ax, ay, wd / 2, bx2, by, wd / 2, bx2, by, -wd / 2]), 3)); g.setIndex([0, 1, 2, 0, 2, 3]); g.computeVertexNormals(); G.add(new THREE.Mesh(g, glass)); };
-    slant(aB, 0.9, aT, top, W - 0.42); slant(rB, 0.9, rT, top, W - 0.42);
+    slant(aB, belt - 0.02, aT, top, W - 0.42); slant(rB, belt - 0.02, rT, top, W - 0.42);
+    // ---- front: strålkastare och grill efter märkesstil (inga emblem)
+    const BV = 0.11, ly = nb ? belt - 0.2 : st.nose === 'shark' ? 0.6 : 0.6, lx = (nb ? fx + 0.025 : st.nose === 'shark' ? fx + 0.035 : fx - 0.005) + BV, lz = W / 2 - 0.3;
+    for (const sd of [1, -1]) {
+      if (st.lights === 'twinRound') { disc(lx, ly, sd * (lz + 0.04), 0.085, lamp); disc(lx - 0.01, ly, sd * (lz - 0.17), 0.075, lamp); box(lx - 0.01, ly, sd * (lz - 0.06), 0.02, 0.2, 0.5, dark); }
+      else if (st.lights === 'round') { box(lx - 0.005, ly, sd * lz, 0.02, 0.22, 0.24, dark); disc(lx, ly, sd * lz, 0.09, lamp); }
+      else if (st.lights === 'squareWide') { box(lx, ly, sd * (lz - 0.02), 0.03, 0.17, 0.42, lamp); box(lx, ly, sd * (lz + 0.24), 0.03, 0.17, 0.09, amber); }
+      else if (st.lights === 'slim') { box(lx - 0.03, ly + 0.05, sd * (lz - 0.02), 0.06, 0.1, 0.4, lamp, sd * 0.15); }
+      else { box(lx, ly, sd * lz, 0.03, 0.14, 0.34, lamp); box(lx - 0.01, ly - 0.12, sd * (lz + 0.1), 0.02, 0.05, 0.16, amber); }
+    }
+    const gy = ly - (st.grille === 'kidney' ? 0.0 : 0.0);
+    if (st.grille === 'kidney') { for (const sd of [1, -1]) { const k = box(lx + 0.005, gy, sd * 0.085, 0.03, 0.17, 0.12, dark); const fr = box(lx + 0.0, gy, sd * 0.085, 0.025, 0.2, 0.15, steel); fr.scale.set(1, 1, 1); } }
+    else if (st.grille === 'volvo') { box(lx + 0.005, gy, 0, 0.03, 0.2, 0.62, steel); for (let i = -2; i <= 2; i++) box(lx + 0.015, gy + i * 0.035, 0, 0.02, 0.012, 0.56, dark); }
+    else if (st.grille === 'trapezoid') { box(lx - 0.02, 0.48, 0, 0.04, 0.16, 0.7, dark); box(lx - 0.01, 0.48, 0, 0.03, 0.18, 0.74, steel).scale.set(1, 1, 1); }
+    else if (st.grille === 'blackbar') { box(lx + 0.0, ly, 0, 0.03, 0.12, W - 0.7, dark); }
+    else if (st.grille === 'bars') { box(lx + 0.005, gy, 0, 0.03, 0.16, 0.66, dark); for (let i = -1; i <= 1; i++) box(lx + 0.015, gy + i * 0.05, 0, 0.02, 0.018, 0.64, steel); }
+    else if (st.grille === 'slat') { box(lx, gy - 0.02, 0, 0.03, 0.12, 0.7, dark); box(lx + 0.01, gy - 0.02, 0, 0.02, 0.025, 0.72, steel); }
+    else box(lx, gy - 0.04, 0, 0.03, 0.07, 0.6, dark);
+    // ---- bak: baklyktor (lyser vid inbromsning)
+    const tx = -h - 0.012 - BV, ty = st.tailT === 'notch' ? belt - 0.1 : 0.72;
+    for (const sd of [1, -1]) {
+      if (st.tails === 'vertical') { box(tx + 0.02, 0.95, sd * (W / 2 - 0.12), 0.05, 0.62, 0.14, tail); }
+      else if (st.tails === 'round') { disc(tx, ty, sd * (W / 2 - 0.25), 0.07, tail); disc(tx, ty, sd * (W / 2 - 0.45), 0.07, tail); }
+      else box(tx, ty, sd * (W / 2 - 0.3), 0.03, st.tails === 'tall' ? 0.2 : 0.13, 0.42, tail);
+    }
+    if (st.wing) { box(-h + 0.35, top - 0.12, 0, 0.32, 0.03, W - 0.2, pm); for (const sd of [1, -1]) box(-h + 0.38, top - 0.22, sd * (W / 2 - 0.2), 0.12, 0.2, 0.04, pm); box(-h + 0.22, belt + 0.12, 0, 0.26, 0.025, W - 0.25, pm); }
+    if (st.rails) for (const sd of [1, -1]) box((aT + rT) / 2 - 0.1, top + 0.05, sd * (W / 2 - 0.28), Math.abs(aT - rT) * 0.8, 0.035, 0.035, dark);
+    G.userData.style = st;
     // tävlingsnummer på bakre sidorutan
     if (opt.num) { const bw = opt.bw === 'bw', tex = canvasTex(128, 64, (g) => { g.fillStyle = bw ? '#111' : '#f6f4ec'; g.fillRect(0, 0, 128, 64); g.fillStyle = bw ? '#f6f4ec' : '#111'; g.font = '900 50px Impact, "Arial Narrow", Arial'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(String(opt.num), 64, 34, 118); });
       for (const z of [zs + 0.004, -zs - 0.004]) { const m = new THREE.Mesh(new THREE.PlaneGeometry(0.62, 0.3), new THREE.MeshBasicMaterial({ map: tex })); m.position.set((bx + rT) / 2 - 0.02, 1.14, z); if (z < 0) m.rotation.y = Math.PI; G.add(m); } }
@@ -191,10 +258,8 @@ export class View3 {
     for (const x of [wb / 2, -wb / 2]) for (const z of [W / 2 - 0.1, -W / 2 + 0.1]) { const piv = new THREE.Group(); piv.position.set(x, 0.31, z); const wh = new THREE.Group(); const t = new THREE.Mesh(new THREE.CylinderGeometry(0.31, 0.31, 0.21, 18), dark); t.rotation.x = Math.PI / 2; t.castShadow = true; wh.add(t);
       const rim = new THREE.Mesh(new THREE.CylinderGeometry(0.19, 0.19, 0.22, 10), steel); rim.rotation.x = Math.PI / 2; wh.add(rim); for (let s = 0; s < 4; s++) { const sp = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.34, 0.225), dark); sp.rotation.z = s * Math.PI / 4; wh.add(sp); }
       piv.add(wh); G.add(piv); wheels.push({ piv, wh, front: x > 0 }); const arch = new THREE.Mesh(new THREE.CircleGeometry(0.39, 16, 0, Math.PI), dark); arch.position.set(x, 0.33, z > 0 ? W / 2 + 0.004 : -W / 2 - 0.004); if (z < 0) arch.rotation.y = Math.PI; G.add(arch); }
-    const bm = opt.bars ? steel : dark; for (const [x, s] of [[h + 0.02, 1], [-h - 0.02, -1]]) { const b = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, W - 0.16, 14), bm); b.rotation.x = Math.PI / 2; b.scale.set(0.85, 1, 1); b.position.set(x, 0.42, 0); G.add(b);
+    const bm = opt.bars ? steel : dark; for (const [x, s] of [[h + 0.02, 1], [-h - 0.02, -1]]) { const br = st.bigBumper ? 0.13 : 0.1; const b = new THREE.Mesh(new THREE.CylinderGeometry(br, br, W - 0.16, 14), st.bigBumper && !opt.bars ? dark : bm); b.rotation.x = Math.PI / 2; b.scale.set(0.85, 1, 1); b.position.set(x + Math.sign(x) * (st.bigBumper ? 0.06 : 0), 0.42, 0); G.add(b);
       for (const z of [(W - 0.16) / 2, -(W - 0.16) / 2]) { const e = new THREE.Mesh(new THREE.SphereGeometry(0.1, 12, 8), bm); e.scale.set(0.85, 1, 1); e.position.set(x, 0.42, z); G.add(e); } }
-    const bl = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.09, 0.5), new THREE.MeshBasicMaterial({ color: 0x8a0f0a })); bl.position.set(rT - 0.02 > -h ? -h - 0.005 : -h, 0.8, 0); G.add(bl); G.userData.brake = bl.material;
-    for (const z of [0.5, -0.5]) { const hl = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.13, 0.34), dark); hl.position.set(h - 0.02, 0.66, z); G.add(hl); }
     if (opt.mirrors) for (const z of [W / 2 + 0.08, -W / 2 - 0.08]) { const m = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.1, 0.16), dark); m.position.set(aB - 0.1, 0.99, z); G.add(m); }
     this.scene.add(G); this.cars.push(G); return G; }
   // Synliga skador: bucklar in lackerade delar (deterministiskt per bil) och gör lacken mattare/repig
@@ -239,6 +304,15 @@ export class View3 {
     tube([-0.6, 0.745, -0.655], [0.52, 0.745, -0.655], 0.024, trim);                        // dörrlist under sidorutan
     tube([-0.56, 0.36, -0.60], [0.46, 0.66, -0.60], 0.027, cage); tube([-0.56, 0.64, -0.60], [0.46, 0.38, -0.60], 0.027, cage); // oviputket (X)
     tube([0.46, 0.34, -0.60], [0.44, 0.74, -0.60], 0.028, cage); tube([0.44, 0.72, -0.60], [0.16, 1.22, -0.54], 0.027, cage); // vänster A-stolpe i buren
+    // heltäckande golv, tröskel/sidobalkar, torpedvägg och bakre skott – så att man inte ser marken genom bilen
+    const sheet = new THREE.MeshLambertMaterial({ color: 0x3a3d42 }), sheetD = new THREE.MeshLambertMaterial({ color: 0x2a2c30 });
+    const slab = (x, y, z, sx, sy, sz, m) => { const b = new THREE.Mesh(new THREE.BoxGeometry(sx, sy, sz), m); b.position.set(x, y, z); body.add(b); };
+    slab(-0.35, 0.255, 0, 2.3, 0.03, 1.42, sheet);                    // golvplåt
+    for (const sd of [1, -1]) slab(-0.35, 0.33, sd * 0.69, 2.3, 0.14, 0.08, sheetD); // trösklar
+    slab(0.66, 0.45, 0, 0.03, 0.42, 1.42, sheetD);                     // torpedvägg bakom pedalerna
+    slab(0.56, 0.29, 0, 0.22, 0.05, 1.3, sheet);                       // fotplåt
+    slab(-1.4, 0.62, 0, 0.03, 0.75, 1.42, sheetD);                     // bakre skott (rensad baksätesplats)
+    for (let i = -3; i <= 3; i++) slab(-0.35, 0.272, i * 0.18, 2.2, 0.008, 0.02, sheetD); // präglade förstyvningsräfflor
     // Nascar-nät i förarens sidoruta
     const net = new THREE.Mesh(new THREE.PlaneGeometry(0.88, 0.4), netMat()); net.position.set(-0.1, 0.96, -0.63); body.add(net);
     // föraren: rundad bål, axlar och överarmar i overall (handskar och underarmar sitter på ratten)
