@@ -962,10 +962,10 @@ export class Race {
     if (this.dead) return; this.raf = requestAnimationFrame(t => this.frame(t));
     const sp = this.speedUp ??= +(new URLSearchParams(location.search).get('speed') || 1); // testhjälp: ?speed=4 kör simuleringen snabbare
     const realDt = Math.min(0.5, Math.max(0, (now - this.last) / 1000));
-    let dt = Math.min(0.1, realDt) * sp; // spelet håller verklig tid ner till 10 bilder/s this.last = now;
+    let dt = Math.min(0.05, realDt) * sp; this.last = now;
     if (this.ctl) this.controlEvents();
     if (this.net) this.netTick();
-    if (!this.paused || this.net) { this.steerRamp(realDt); this.acc += dt; let k = 0; while (this.acc >= DT && k++ < 26 * sp) { this.step(DT); this.acc -= DT; if (this.done) return; } if (this.acc > DT * 4) this.acc = 0; this.particlesStep(dt); this.audio(); }
+    if (!this.paused || this.net) { this.steerRamp(realDt); this.acc += dt; let k = 0; while (this.acc >= DT && k++ < 14 * sp) { this.step(DT); this.acc -= DT; if (this.done) return; } if (this.acc > DT * 4) this.acc = 0; this.particlesStep(dt); this.audio(); }
     this.render(dt); this.hud(dt);
   }
 
