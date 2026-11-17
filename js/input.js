@@ -57,7 +57,7 @@ export class Controls {
     const p = a => val(gp, m[a], inv[a], dz);
     const st = this.state;
     st.gas = Math.max(k('gas'), p('gas')); st.brk = Math.max(k('brk'), p('brk')); st.clutch = Math.max(k('clutch'), p('clutch')); st.hb = Math.max(k('hb'), p('hb')) > 0.5 ? 1 : 0;
-    const ps = p('right') - p('left'); st.analog = Math.abs(ps) > 0.02; st.wheel = wh && st.analog; st.steer = st.analog ? ps : k('right') - k('left');
+    const ps = p('right') - p('left'); const ks = k('right') - k('left'); st.analog = !ks && Math.abs(ps) > 0.02; st.wheel = wh && st.analog; st.steer = st.analog ? ps : ks; // tangenterna går alltid före (en ansluten ratt/spak som glider får inte ta över)
     st.analogPedals = !!gp && (p('gas') > 0 || p('brk') > 0);
     // knappar → händelser vid nedtryckning
     if (gp) for (const a of ['up', 'down', 'cam', 'reset', 'pause', 'tele']) { const on = p(a) > 0.5; if (on && !this.prev[a]) this.events.push(a); this.prev[a] = on; }
