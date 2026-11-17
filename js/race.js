@@ -965,7 +965,8 @@ export class Race {
     let dt = Math.min(0.05, realDt) * sp; this.last = now;
     if (this.ctl) this.controlEvents();
     if (this.net) this.netTick();
-    if (!this.paused || this.net) { this.steerRamp(realDt); this.acc += dt; let k = 0; while (this.acc >= DT && k++ < 14 * sp) { this.step(DT); this.acc -= DT; if (this.done) return; } if (this.acc > DT * 4) this.acc = 0; this.particlesStep(dt); this.audio(); }
+    { const tn = performance.now(), sdt = this.steerT ? Math.min(0.5, (tn - this.steerT) / 1000) : 0; this.steerT = tn; if (!this.paused || this.net) this.steerRamp(sdt); } // ratten följer riktiga klockan
+    if (!this.paused || this.net) { this.acc += dt; let k = 0; while (this.acc >= DT && k++ < 14 * sp) { this.step(DT); this.acc -= DT; if (this.done) return; } if (this.acc > DT * 4) this.acc = 0; this.particlesStep(dt); this.audio(); }
     this.render(dt); this.hud(dt);
   }
 
