@@ -660,7 +660,10 @@ export class Race {
   input(dt) { const c = this.player, I = this.ctl.state;
     const gas = I.gas, brk = I.brk, st = I.steer;
     c.thr += clamp(gas - c.thr, -8 * dt, (I.analogPedals ? 12 : 5) * dt); c.brk += clamp(brk - c.brk, -10 * dt, (I.analogPedals ? 14 : 6) * dt); c.hb = I.hb; c.clutch = I.clutch;
-    const rate = I.analog ? 9 : st === 0 ? 5.5 : (Math.sign(st) !== Math.sign(c.steer) && c.steer !== 0 ? 7 : 3.2);
+    // Rattens vridhastighet: med tangentbord och handkontroll tar det 1 s från mitten till fullt utslag
+    // (fullt vänster → fullt höger = 2 s), även tillbaka mot mitten. En riktig ratt följs direkt (1:1) – där är det
+    // förarens händer som bestämmer hur snabbt ratten vrids.
+    const rate = I.wheel ? 30 : 1.0;
     c.steer += clamp(st - c.steer, -rate * dt, rate * dt);
     if (brk && !gas && c.vx < 0.4 && this.state === 'run') c.rev = true; else if (gas || !brk) c.rev = false; }
 
