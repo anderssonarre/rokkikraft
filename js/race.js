@@ -1036,10 +1036,10 @@ export class Race {
     for (const c of this.cars) this.view.poseCar(c.obj, c.x, c.y, c.z, c.h, clamp(-c.vx * c.r * 0.0045, -0.07, 0.07) + (c.tRoll || 0), clamp(c.ax * 0.004, -0.045, 0.045) + (c.tPitch ?? Math.atan(c.slope || 0)), c.steer, c.wspin, c.brk > 0.1, !(c === p && (this.cam === 0 || this.cam === 1 || this.cam === DEFAULT_CAM)));
     let cockpit = null;
     if (this.cam === 0) { const sway = clamp((p.ay || 0) * 0.045 + Math.sin(this.t * 6.0) * 0.03, -0.45, 0.45);
-      cockpit = [pMat, M4.mul(pMat, M4.localRotX(0.16, 0.78, -0.31, 0.22, -p.steer * 0.85)), M4.mul(pMat, M4.localRotX(0.30, 1.06, -0.02, 0.0, sway)), null]; }
+      cockpit = [pMat, M4.mul(pMat, M4.localRotX(0.16, 0.78, -0.31, 0.22, p.steer * 0.85)), M4.mul(pMat, M4.localRotX(0.30, 1.06, -0.02, 0.0, sway)), null]; }
     if (this.cam === DEFAULT_CAM) {
       const m = M4.car(p.x, pY, p.z, p.h, 0, pSl);
-      cockpit = [null, M4.mul(m, M4.localRotX(0.16, 0.78, -0.31, 0.22, -p.steer * 0.85)), null, m];
+      cockpit = [null, M4.mul(m, M4.localRotX(0.16, 0.78, -0.31, 0.22, p.steer * 0.85)), null, m];
     }
     this.view.frame({ eye, at, up, fov, focus: [p.x, pY, p.z], particles: this.pl, dust: this.trk.surf.dust, cockpit });
   }
