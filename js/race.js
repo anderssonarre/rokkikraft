@@ -991,13 +991,13 @@ export class Race {
       // Fjädring: nickning av längsacceleration (gas = fronten upp, broms = fronten ner) – starkare bil ger större acceleration och mer nickning.
       // Krängning av sidoacceleration utåt i kurvan (mjukare fjädring = mer krängning). Dämpad med fjäder-dämparsvar.
       const s = c.spec, soft = s.roll || 1, ay = c.vx * c.r, k = Math.min(1, 7 * dt);
-      const tgtP = clamp(c.ax * 0.0075 * soft, -0.075, 0.075), tgtR = clamp(-ay * 0.0105 * soft, -0.1, 0.1);
+      const tgtP = clamp(c.ax * 0.0075 * soft, -0.075, 0.075), tgtR = clamp(-ay * 0.0035 * soft, -0.035, 0.035);
       c.bPitch = (c.bPitch || 0) + (tgtP - (c.bPitch || 0)) * k; c.bRoll = (c.bRoll || 0) + (tgtR - (c.bRoll || 0)) * k;
       // Vibrationer: växer med farten och beror på underlaget (grus mest, asfalt minst) + motorvibration vid höga varv
       const v = Math.hypot(c.vx, c.vy), st = T.surfTypeAt ? T.surfTypeAt(c.i) : T.surface, rough = (st === 'grus' ? 1 : st === 'is' ? 0.55 : 0.3) * (c.onSurf ? 1 : 2.2) * (1.6 - (s.setup?.damper || 5) * 0.09);
       c.odo = (c.odo || 0) + v * dt; const a = Math.pow(Math.min(1, v / 33), 1.6) * rough, o = c.odo, sd = c.slot * 1.7;
-      const nz = Math.sin(o * 2.9 + sd) * 0.5 + Math.sin(o * 7.3 + sd * 2) * 0.3 + Math.sin(o * 13.1 + sd * 3) * 0.2, er = Math.sin(this.t * (c.rpm / 60) * 6.283) * Math.max(0, c.rpm - 4500) / 30000;
-      c.bY = a * nz * 0.022 + er * 0.004; c.vR = a * Math.sin(o * 5.3 + sd * 1.3) * 0.006; c.vP = a * Math.sin(o * 4.1 + sd * 0.7) * 0.005;
+      const nz = Math.sin(o * 1.9 + sd) * 0.7 + Math.sin(o * 4.3 + sd * 2) * 0.3, er = Math.sin(this.t * (c.rpm / 60) * 6.283) * Math.max(0, c.rpm - 4500) / 30000;
+      c.bY = a * nz * 0.005 + er * 0.0008; c.vR = a * Math.sin(o * 5.3 + sd * 1.3) * 0.0012; c.vP = a * Math.sin(o * 4.1 + sd * 0.7) * 0.001;
     }
     const pY = p.y, pSl = Math.atan(p.slope || 0);
     // kupén och förarkameran följer karossen (markens lutning + krängning, nickning och vibration)
@@ -1009,7 +1009,7 @@ export class Race {
       // Samma stabila bilram för kamera och kupé: ingen extra skakning/krängning.
       // Huvudet följer marken men bara delvis karossen (kroppen/nacken tar upp rörelsen), så man SER hur huven och
       // instrumentbrädan reser sig vid gas, dyker vid broms och kränger i kurvor. I kurvor kastas huvudet åt sidan, utåt.
-      const ayL = p.vx * p.r, hs = clamp(-ayL * 0.014, -0.13, 0.13), hf = clamp(-p.ax * 0.006, -0.05, 0.05);
+      const ayL = p.vx * p.r, hs = clamp(-ayL * 0.004, -0.035, 0.035), hf = clamp(-p.ax * 0.006, -0.05, 0.05);
       const m = M4.car(p.x, pY + (p.bY || 0) * 0.5, p.z, p.h, (p.tRoll || 0) - (p.bRoll || 0) * 0.25 - hs * 0.35, (p.tPitch || 0) + (p.bPitch || 0) * 0.2);
       const point = (x, y, z) => [m[0]*x + m[4]*y + m[8]*z + m[12], m[1]*x + m[5]*y + m[9]*z + m[13], m[2]*x + m[6]*y + m[10]*z + m[14]];
       eye = point(-0.30 + hf, 1.08, -0.31 + hs);
