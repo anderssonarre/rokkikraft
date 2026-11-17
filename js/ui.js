@@ -8,6 +8,7 @@ import { CAM_NAMES, DEFAULT_CAM } from './race.js';
 import { newTask, checkTask } from './dyno.js';
 import { Room, Board, makeCode, cleanCode } from './net.js';
 import { newChamp, simHeat, setResult, advance, roundDone, myHeat, canSkip, skip as chSkip, heatName, whereIs, sortRows, ROUND, FIN, A_TABLE, NORMAL_PRIZE } from './champ.js';
+import { Showroom } from './view3.js';
 import { ACTIONS, binds, getPad, padName, isWheel, captureNext } from './input.js';
 
 const app = () => document.getElementById('app');
@@ -45,7 +46,11 @@ const WEATHER = [['sol', '☀️ Sol'], ['mulet', '☁️ Mulet'], ['regn', '�
 function after() {
   const cv = document.getElementById('curve'); if (cv) drawCurve(cv);
   const tm = document.getElementById('trkPreview'); if (tm) drawTrackPreview(tm, tm.dataset.trk);
+  const sr = document.getElementById('showroom');
+  if (sr) { try { SR ??= new Showroom(); if (SR.ok) { const cs = activeCar(), sp = currentInsp().spec;
+    SR.setCar({ model: S.active, body: sp.body, paint: paintOf(cs.paint).rgb, num: formatCarNum(cs.num, currentInsp().cls), bw: cs.bw || 'wb', bars: sp.dmg < 1, mirrors: currentInsp().cls === 'super' }); SR.mount(sr); } else sr.parentElement.style.display = 'none'; } catch (e) { sr.parentElement.style.display = 'none'; } }
 }
+let SR = null;
 
 // ---------- meny ----------
 function menu() {
@@ -639,7 +644,8 @@ function garage() {
     const s2 = buildSpec(S.active, c2, cs.tune);
     pv = { s: s2, k: curve(s2), u: UPG.find(u => u.id === uid), lvl };
   }
-  let h = `<section class="panel g-top"><div class="g-info"><span class="kick">${insp.rules.name.toUpperCase()} · #${numStr} · KATSASTUSKORTTI #${cs.katsastusNo || 104}</span><h1>${car.name}</h1>
+  let h = `<section class="panel showroom"><div id="showroom"></div><div class="sr-label"><b>${car.name}</b><span>#${numStr} · ${insp.rules.name}</span></div></section>
+  <section class="panel g-top"><div class="g-info"><span class="kick">${insp.rules.name.toUpperCase()} · #${numStr} · KATSASTUSKORTTI #${cs.katsastusNo || 104}</span><h1>${car.name}</h1>
       <p class="dim">${car.tag}. ${ok ? '<b class="okb">✓ KATSASTETTU & GODKÄND FÖR ' + insp.rules.short.toUpperCase() + '</b>' : '<b class="nob">✗ EJ GODKÄND I BESIKTNINGEN</b>'}</p>
       ${!ok ? `<div class="warnbox" style="margin:8px 0">${insp.issues.map(x => `• ${x}`).join('<br>')}</div>` : ''}
       ${pv ? `<div class="pvbox">Förhandsvisar <b>${pv.u.levels[pv.lvl - 1].name}</b> <button class="btn small ghost" data-act="pv-off">Stäng</button></div>` : ''}

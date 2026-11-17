@@ -268,3 +268,9 @@ body.racing { overflow: hidden; } body.racing #app { padding: 0; }
 .tblwrap{overflow-x:auto}.res.full{min-width:760px;font-size:.82rem}.res.full td,.res.full th{padding:5px 6px;white-space:nowrap}
 .res td.purple{color:#c084fc;font-weight:800}
 details{margin:6px 0}details summary{cursor:pointer;font-weight:700;padding:4px 0}
+
+/* garage-showroom */
+.panel.showroom{position:relative;padding:0;overflow:hidden;background:radial-gradient(ellipse at 50% 70%,#16303f 0%,#0b0f14 70%);min-height:260px}
+#showroom{width:100%;height:clamp(240px,38vw,420px)}#showroom canvas{width:100%;height:100%;display:block}
+.sr-label{position:absolute;left:18px;bottom:14px;display:flex;flex-direction:column;gap:2px;text-shadow:0 2px 8px #000}
+.sr-label b{font-size:1.25rem;letter-spacing:.02em}.sr-label span{color:#8fd8ff;font-size:.85rem}

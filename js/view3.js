@@ -353,3 +353,52 @@ export class View3 {
   }
   dispose() { try { this.r.dispose(); this.scene.traverse(o => { if (o.geometry) o.geometry.dispose(); }); } catch (e) { } }
 }
+
+// ---------- Garage-showroom: vald bil roterar på en lysande plattform ----------
+export class Showroom {
+  constructor() {
+    const THREE = T(); this.ok = !!THREE; if (!this.ok) return;
+    const cv = this.canvas = document.createElement('canvas'); cv.className = 'showroom-cv';
+    try { this.r = new THREE.WebGLRenderer({ canvas: cv, antialias: true, alpha: true }); } catch (e) { this.ok = false; return; }
+    this.r.setPixelRatio(Math.min(2, window.devicePixelRatio || 1)); this.r.shadowMap.enabled = true; this.r.shadowMap.type = THREE.PCFSoftShadowMap;
+    const S = this.scene = new THREE.Scene(); S.fog = new THREE.Fog(0x0b0f14, 9, 22);
+    this.cam = new THREE.PerspectiveCamera(32, 2, 0.1, 60);
+    S.add(new THREE.HemisphereLight(0xcfe3ff, 0x1a1410, 0.55));
+    const key = new THREE.SpotLight(0xffffff, 1.15, 30, 0.6, 0.45); key.position.set(4, 7, 4); key.castShadow = true; key.shadow.mapSize.set(1024, 1024); S.add(key);
+    const rim = new THREE.DirectionalLight(0x6fc8ff, 0.55); rim.position.set(-5, 3, -4); S.add(rim);
+    const warm = new THREE.PointLight(0xffb060, 0.5, 12); warm.position.set(-3, 1.5, 3); S.add(warm);
+    // plattform: mörk skiva, lysande kantring och mjukt sken på golvet
+    const plat = new THREE.Mesh(new THREE.CylinderGeometry(3.1, 3.25, 0.18, 64), new THREE.MeshStandardMaterial({ color: 0x4a5663, metalness: 0.45, roughness: 0.4 }));
+    plat.position.y = -0.09; plat.receiveShadow = true; S.add(plat);
+    const ringMat = new THREE.MeshBasicMaterial({ color: 0x44d4ff }); this.ringMat = ringMat;
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(3.12, 0.045, 12, 96), ringMat); ring.rotation.x = Math.PI / 2; ring.position.y = 0.0; S.add(ring);
+    const ring2 = new THREE.Mesh(new THREE.TorusGeometry(2.55, 0.018, 8, 96), ringMat); ring2.rotation.x = Math.PI / 2; ring2.position.y = 0.005; S.add(ring2);
+    const glowTex = canvasTex(256, 256, (g, w, h) => { const gr = g.createRadialGradient(w / 2, h / 2, w * 0.28, w / 2, h / 2, w / 2); gr.addColorStop(0, 'rgba(68,212,255,0)'); gr.addColorStop(0.55, 'rgba(68,212,255,0.55)'); gr.addColorStop(1, 'rgba(68,212,255,0)'); g.fillStyle = gr; g.fillRect(0, 0, w, h); });
+    const glow = new THREE.Mesh(new THREE.PlaneGeometry(9.5, 9.5), new THREE.MeshBasicMaterial({ map: glowTex, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending })); glow.rotation.x = -Math.PI / 2; glow.position.y = -0.17; S.add(glow);
+    const floor = new THREE.Mesh(new THREE.CircleGeometry(30, 48), new THREE.MeshStandardMaterial({ color: 0x0d1116, roughness: 0.9 })); floor.rotation.x = -Math.PI / 2; floor.position.y = -0.18; S.add(floor);
+    this.turn = new THREE.Group(); S.add(this.turn); this.key = '';
+    // kontaktskugga under bilen så att den står på plattformen
+    const shTex = canvasTex(128, 128, (g, w, h) => { const gr = g.createRadialGradient(w / 2, h / 2, 4, w / 2, h / 2, w / 2); gr.addColorStop(0, 'rgba(0,0,0,0.85)'); gr.addColorStop(0.6, 'rgba(0,0,0,0.45)'); gr.addColorStop(1, 'rgba(0,0,0,0)'); g.fillStyle = gr; g.fillRect(0, 0, w, h); });
+    this.shadow = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ map: shTex, transparent: true, depthWrite: false })); this.shadow.rotation.x = -Math.PI / 2; this.shadow.position.y = 0.004; this.turn.add(this.shadow);
+    this.loop = this.loop.bind(this);
+  }
+  setCar(o) {
+    if (!this.ok) return; const k = JSON.stringify(o); if (k === this.key) return; this.key = k;
+    if (this.car) { this.turn.remove(this.car); this.car.traverse(m => { if (m.geometry) m.geometry.dispose(); }); }
+    const holder = { scene: { add() { } }, cars: [] };
+    const G = View3.prototype.addCar.call(holder, o.body, o.paint, { model: o.model, num: o.num, bw: o.bw, bars: o.bars, mirrors: o.mirrors });
+    G.traverse(m => { if (m.isMesh) m.castShadow = true; });
+    for (const w of G.userData.wheels) w.wh.rotation.z = 0;
+    this.car = G; this.turn.add(G); const st = G.userData.style || { L: 4.3, W: 1.68 }; this.shadow.scale.set(st.L * 1.25, st.W * 1.5, 1);
+  }
+  mount(el) { if (!this.ok || !el) return; el.appendChild(this.canvas); this.host = el; if (!this.running) { this.running = true; this.t0 = performance.now(); requestAnimationFrame(this.loop); } }
+  loop(now) {
+    if (!this.canvas.isConnected) { this.running = false; return; }
+    const w = this.canvas.clientWidth, h = this.canvas.clientHeight;
+    if (w && h && (w !== this.w || h !== this.h)) { this.w = w; this.h = h; this.r.setSize(w, h, false); this.cam.aspect = w / h; this.cam.updateProjectionMatrix(); }
+    const t = (now - this.t0) / 1000; this.turn.rotation.y = t * 0.45;
+    const d = this.cam.aspect < 1.2 ? 9.5 : 7.6; this.cam.position.set(Math.cos(0.5) * d, 1.85, Math.sin(0.5) * d); this.cam.lookAt(0, 0.6, 0);
+    this.ringMat.color.setHSL(0.54, 0.9, 0.55 + 0.08 * Math.sin(t * 2.2));
+    this.r.render(this.scene, this.cam); requestAnimationFrame(this.loop);
+  }
+}
