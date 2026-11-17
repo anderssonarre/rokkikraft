@@ -661,14 +661,20 @@ export class Race {
     }
   }
   input(dt) { const c = this.player, I = this.ctl.state;
-    const gas = I.gas, brk = I.brk, st = I.steer;
+    const gas = I.gas, brk = I.brk;
     c.thr += clamp(gas - c.thr, -8 * dt, (I.analogPedals ? 12 : 5) * dt); c.brk += clamp(brk - c.brk, -10 * dt, (I.analogPedals ? 14 : 6) * dt); c.hb = I.hb; c.clutch = I.clutch;
     // Rattens vridhastighet: med tangentbord och handkontroll tar det 1 s från mitten till fullt utslag
     // (fullt vänster → fullt höger = 2 s), även tillbaka mot mitten. En riktig ratt följs direkt (1:1) – där är det
     // förarens händer som bestämmer hur snabbt ratten vrids.
-    const rate = I.wheel ? 30 : 1.0;
-    c.steer += clamp(st - c.steer, -rate * dt, rate * dt);
+    // (själva vridningen sker i steerRamp() med verklig tid, så den blir exakt även om datorn laggar)
     if (brk && !gas && c.vx < 0.4 && this.state === 'run') c.rev = true; else if (gas || !brk) c.rev = false; }
+
+  // Rattvridning mätt i verkliga sekunder (inte spelets tid): 1 s mitten → fullt utslag, 2 s fullt vänster → fullt höger,
+  // lika snabbt tillbaka mot mitten. Riktig ratt följs 1:1.
+  steerRamp(realDt) { const c = this.player, I = this.ctl && this.ctl.state; if (!c || !I || c.auto) return;
+    if (!(this.state === 'grid' || (this.state === 'run' && !c.finished && !c.retired))) return;
+    if (I.wheel) { c.steer = clamp(I.steer, -1, 1); return; }
+    c.steer += clamp(clamp(I.steer, -1, 1) - c.steer, -realDt, realDt); }
 
   giveSanction(c, code, title, desc) {
     if (this.t - (c.lastWarn || -9) < 3.0) return;
@@ -955,10 +961,11 @@ export class Race {
   frame(now) {
     if (this.dead) return; this.raf = requestAnimationFrame(t => this.frame(t));
     const sp = this.speedUp ??= +(new URLSearchParams(location.search).get('speed') || 1); // testhjälp: ?speed=4 kör simuleringen snabbare
-    let dt = Math.min(0.05, (now - this.last) / 1000) * sp; this.last = now;
+    const realDt = Math.min(0.5, Math.max(0, (now - this.last) / 1000));
+    let dt = Math.min(0.05, realDt) * sp; this.last = now;
     if (this.ctl) this.controlEvents();
     if (this.net) this.netTick();
-    if (!this.paused || this.net) { this.acc += dt; let k = 0; while (this.acc >= DT && k++ < 14 * sp) { this.step(DT); this.acc -= DT; if (this.done) return; } if (this.acc > DT * 4) this.acc = 0; this.particlesStep(dt); this.audio(); }
+    if (!this.paused || this.net) { this.steerRamp(realDt); this.acc += dt; let k = 0; while (this.acc >= DT && k++ < 14 * sp) { this.step(DT); this.acc -= DT; if (this.done) return; } if (this.acc > DT * 4) this.acc = 0; this.particlesStep(dt); this.audio(); }
     this.render(dt); this.hud(dt);
   }
 
