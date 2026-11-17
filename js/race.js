@@ -51,7 +51,7 @@ export function phys(c, dt, trk) {
   const st = trk.surfTypeAt ? trk.surfTypeAt(c.i) : trk.surface;
   // lätta bilar har en liten fördel i kurvorna (lastkänslighet), skador försämrar väghållningen
   const mu = surf.mu * s.mu * (c.gripF || 1) * (c.onSurf ? 1 : 0.72 + 0.12 * s.susp) * (s.surfK ? s.surfK[st] || 1 : 1) * Math.pow(1150 / m, 0.12) * (1 - Math.max(0, (c.dmg || 0) - 30) * 0.0025), crr = c.onSurf ? surf.crr : 0.09 - 0.03 * s.susp;
-  const v = Math.hypot(c.vx, c.vy), delta = c.steer * 0.52 * (s.steerK || 1) * (1 - Math.max(0, (c.dmg || 0) - 50) * 0.002) / (1 + v * 0.035);
+  const v = Math.hypot(c.vx, c.vy), delta = (c.steer + (c.tsq || 0)) * 0.52 * (s.steerK || 1) * (1 - Math.max(0, (c.dmg || 0) - 50) * 0.002) / (1 + v * 0.035);
   if (c.rev) {
     c.vx += (-4.5 - c.vx) * Math.min(1, 2.2 * dt); c.vy *= 1 - Math.min(1, 8 * dt); c.r = c.vx * Math.tan(delta) / L; c.rpm = s.idle + 1200; c.slip = 0;
   } else {
@@ -96,11 +96,16 @@ export function phys(c, dt, trk) {
     // aktiv mittdiff: mer kraft till axeln som har greppmarginal kvar
     if (awd) { const sF = capF * (1 - 0.9 * Math.abs(shape(af))) + 1, sR = capR * (1 - 0.9 * Math.abs(shape(ar))) + 1, kF = Fd < 0 ? 0.7 : Math.min(0.75, 0.45 * 2 * sF / (sF + sR)); dF = Fd * kF; dR = Fd * (1 - kF); const rMax = capR * 0.8; if (Math.abs(dR) > rMax) { dF += dR - Math.sign(dR) * rMax; dR = Math.sign(dR) * rMax; } if (Math.abs(dF) > capF) { dR += dF - Math.sign(dF) * capF; dF = Math.sign(dF) * capF; } }
     const Fxf = dF - sg * Fbf, Fxr = dR - sg * Fbr;
-    const latF = (al, cap, Fx, sc) => -cap * Math.sqrt(Math.max(0.12, 1 - (Fx / cap) ** 2)) * sc * shape(al);
+    const latF = (al, cap, Fx, sc, kB = 1) => -cap * Math.sqrt(Math.max(0.12, 1 - (Fx / cap) ** 2)) * sc * Math.sin(surf.C * Math.atan(surf.B * kB * al));
+    // Framhjulsdrift: odrivna bakhjul med toe-in och styv bakaxel bygger sidokraft snabbt och greppar mer -> bilen understyr
+    // och "plogar" när man överdriver, bakvagnen följer med. Bakhjulsdrift: bakaxeln är mjukare och släpper lättare.
+    const rearB = fwd ? 1.3 : awd ? 1.15 : 1, rearG = fwd ? 1.1 : awd ? 1.08 : 1.05, frontG = fwd ? 0.97 : 1;
     // Svetsad diff på drivaxeln: gas eller motorbroms mitt i kurvan gör att båda hjulen tappar sidogrepp samtidigt
     let wl = 1; if (welded && !awd && Math.abs(c.vx) > 4) { const u = Math.abs(fwd ? Fxf : Fxr) / Math.max(1, fwd ? capF : capR); wl = 1 / (1 + 2.0 * u * u * (0.25 + latUse)); }
-    const Fyf = latF(af, capF, Fxf, (fwd || awd ? latD : 1) * (fwd ? wl : 1) * (lockF ? 0.3 : 1));
-    const Fyr = latF(ar, capR, Fxr, (fwd ? 1 : latD * wl) * (lockR ? 0.35 : 1) * 1.05);
+    // momentstyrning: en stark framhjulsdriven bil drar lite åt ena hållet vid fullt gaspådrag
+    c.tsq = fwd && Fxf > 0 ? Math.max(0, Fxf / capF - 0.55) * 0.12 * ((c.slot || 0) % 2 ? 1 : -1) : 0;
+    const Fyf = latF(af, capF, Fxf, (fwd || awd ? latD : 1) * (fwd ? wl : 1) * (lockF ? 0.3 : 1) * frontG);
+    const Fyr = latF(ar, capR, Fxr, (fwd ? 1 : latD * wl) * (lockR ? 0.35 : 1) * rearG, rearB);
     const drag = 0.6 * s.CdA * c.vx * Math.abs(c.vx) + (Math.abs(c.vx) > 0.2 ? crr * m * G * sg : 0);
     const cd = Math.cos(delta), sd = Math.sin(delta);
     const axn = (Fxf * cd - Fyf * sd + Fxr - drag) / m, ayn = (Fyf * cd + Fxf * sd + Fyr) / m;
