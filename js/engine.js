@@ -49,6 +49,7 @@ export function buildSpec(carId, cs, tune) {
     if (fx.superReady) s.superReady = 1;
     if (fx.awd) s.drv = 'awd';
     if (fx.halfGear) s.halfGear = 1;
+    if (fx.fourlink) s.fourlink = 1;
     if (fx.rallyTire) s.rallyTire = 1;
     if (fx.chop) s.chop = 1;
     if (fx.tq) s.tqUp += fx.tq;

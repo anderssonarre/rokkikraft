@@ -310,6 +310,9 @@ export const UPG = [
   { id: 'awd', name: 'Fyrhjulsdrift (endast Super)', komp: 'drivning', onlySuper: true, levels: [
     { name: 'Fyrhjulsdrift med mittdiff (40/60)', price: 4500, fx: { awd: 1, kg: 75, eff: -0.03 },
       desc: 'Kraften går till alla fyra hjulen, så nästan hela bilens vikt kan användas för att dra. Med mycket effekt är det skillnaden mellan hjulspinn och att flyga ut ur kurvorna. +75 kg, lite större förluster i drivlinan. Bara i Super.' } ] },
+  { id: 'fourlink', name: '4-link bakaxel', komp: 'drivning', needsDriven: 'rear', levels: [
+    { name: '4-link bakaxelupphängning', price: 650, fx: { fourlink: 1, kg: 6 },
+      desc: 'Fyra länkarmar (två nedre, två övre) med panhardstag håller den stela bakaxeln exakt på plats i stället för bladfjädrar/originalstag. Axeln vrider sig inte vid gaspådrag (ingen "axle hop"), anti-squat trycker ner bakhjulen och bakaxeln styr inte själv i gupp: bättre dragkraft ut ur kurvorna, stabilare bakvagn och mer grepp mot marken. Bara för bakhjuls- och fyrhjulsdrivna bilar.' } ] },
   { id: 'diff', name: 'Differential (Lukkoperä)', komp: 'drivning', rwdOrSuper: true, levels: [
     { name: 'Svetsad diff / Lukkoperä', price: 50, fx: { trac: 1 },
       desc: 'REGEL: Lukkoperä är ENDAST tillåten i bakhjulsdrivna bilar (Kardaani) samt i Super-luokka (där den även är tillåten på framhjulsdrivna bilar). Förbjuden på framhjulsdrivna Vetari-bilar!' } ] },

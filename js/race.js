@@ -75,7 +75,8 @@ export function phys(c, dt, trk) {
     // Svetsad diff (lukkoperä): båda hjulen drar alltid fullt, men axeln vill gå rakt och släpper plötsligt.
     const welded = !!s.trac, latUse = Math.min(1, Math.abs(c.vx * c.r) / (muE * G + 0.1));
     // Fyrhjulsdrift: båda axlarnas grepp kan användas för drivning (mittdiff fördelar ~40/60 och flyttar över kraft till axeln som greppar)
-    const capD = awd ? (capF + capR) * (welded ? 1 : 1 - 0.2 * latUse) : (fwd ? capF : capR) * (welded ? 1 : 1 - 0.4 * latUse);
+    const fl = s.fourlink && !fwd ? 1 : 0; // 4-link: axeln hålls på plats -> bakhjulen trycks ner och tappar inte kontakt vid gaspådrag
+    const capD = (awd ? (capF + capR) * (welded ? 1 : 1 - 0.2 * latUse) : (fwd ? capF : capR) * (welded ? 1 : 1 - 0.4 * latUse)) * (1 + 0.08 * fl);
     let slip = 0, latD = 1;
     // antispinn: lämnar sidogrepp kvar på bakaxeln så bilen inte blir instabil på raksträckor
     if (c.aids.tc) { const nf = Math.abs(shape(af)), nr = Math.abs(shape(ar)), need = Math.abs(shape(fwd ? af : ar)), lim = awd ? 0.95 * capF * Math.sqrt(Math.max(0.08, 1 - 0.92 * nf * nf)) + 0.86 * capR * Math.sqrt(Math.max(0.05, 1 - 0.95 * nr * nr)) : capD * (fwd ? 0.97 : 0.94) * Math.sqrt(Math.max(0.08, 1 - 0.92 * need * need)); if (Fd > lim) Fd = lim; }
@@ -99,9 +100,9 @@ export function phys(c, dt, trk) {
     const latF = (al, cap, Fx, sc, kB = 1) => -cap * Math.sqrt(Math.max(0.12, 1 - (Fx / cap) ** 2)) * sc * Math.sin(surf.C * Math.atan(surf.B * kB * al));
     // Framhjulsdrift: odrivna bakhjul med toe-in och styv bakaxel bygger sidokraft snabbt och greppar mer -> bilen understyr
     // och "plogar" när man överdriver, bakvagnen följer med. Bakhjulsdrift: bakaxeln är mjukare och släpper lättare.
-    const rearB = fwd ? 1.3 : awd ? 1.15 : 1, rearG = fwd ? 1.1 : awd ? 1.08 : 1.05, frontG = fwd ? 0.97 : 1;
+    const rearB = (fwd ? 1.3 : awd ? 1.15 : 1) * (s.fourlink && !fwd ? 1.12 : 1), rearG = (fwd ? 1.1 : awd ? 1.08 : 1.05) * (s.fourlink && !fwd ? 1.05 : 1), frontG = fwd ? 0.97 : 1;
     // Svetsad diff på drivaxeln: gas eller motorbroms mitt i kurvan gör att båda hjulen tappar sidogrepp samtidigt
-    let wl = 1; if (welded && !awd && Math.abs(c.vx) > 4) { const u = Math.abs(fwd ? Fxf : Fxr) / Math.max(1, fwd ? capF : capR); wl = 1 / (1 + 2.0 * u * u * (0.25 + latUse)); }
+    let wl = 1; if (welded && !awd && Math.abs(c.vx) > 4) { const u = Math.abs(fwd ? Fxf : Fxr) / Math.max(1, fwd ? capF : capR); wl = 1 / (1 + (s.fourlink ? 1.8 : 2.0) * u * u * (0.25 + latUse)); }
     // momentstyrning: en stark framhjulsdriven bil drar lite åt ena hållet vid fullt gaspådrag
     c.tsq = fwd && Fxf > 0 ? Math.max(0, Fxf / capF - 0.55) * 0.12 * ((c.slot || 0) % 2 ? 1 : -1) : 0;
     const Fyf = latF(af, capF, Fxf, (fwd || awd ? latD : 1) * (fwd ? wl : 1) * (lockF ? 0.3 : 1) * frontG);

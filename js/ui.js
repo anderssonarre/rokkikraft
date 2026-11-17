@@ -714,8 +714,9 @@ function garage() {
       const n = i + 1, own = lvl >= n, next = lvl === i, needTurbo = u.needsTurbo && !hasTurbo;
       const blockedByCls = (u.onlySuper || L.onlySuper) && !isSuperCls && !s.superReady;
       const blockedFwdDiff = u.rwdOrSuper && s.drv === 'fwd' && !isSuperCls && !s.superReady;
+      const blockedFwd = u.needsDriven === 'rear' && s.drv === 'fwd';
       return `<div class="card ${own ? 'own' : ''} ${lvl === n ? 'sel' : ''}"><div class="c-top"><span>NIVÅ ${n}</span><b>${own ? 'MONTERAD' : eur(L.price)}</b></div><strong>${L.name}</strong><p>${L.desc}</p>
-        <div class="row">${own ? `<button class="btn small ghost" data-act="unmount" data-arg="${u.id}">Plocka av</button>` : needTurbo ? '<span class="lock">KRÄVER TURBO</span>' : blockedByCls ? '<span class="lock">KRÄVER SUPER-UTRUSTNING / SUPER ROCK</span>' : blockedFwdDiff ? '<span class="lock">ENDAST TAKAVETO ELLER SUPER ROCK</span>' : next ? `<button class="btn small" data-act="buy" data-arg="${u.id}" ${S.money >= L.price ? '' : 'disabled'}>Köp (${eur(L.price)})</button>` : `<span class="lock">KRÄVER NIVÅ ${i}</span>`}
+        <div class="row">${own ? `<button class="btn small ghost" data-act="unmount" data-arg="${u.id}">Plocka av</button>` : needTurbo ? '<span class="lock">KRÄVER TURBO</span>' : blockedFwd ? '<span class="lock">BARA BAKHJULS-/FYRHJULSDRIFT</span>' : blockedByCls ? '<span class="lock">KRÄVER SUPER-UTRUSTNING / SUPER ROCK</span>' : blockedFwdDiff ? '<span class="lock">ENDAST TAKAVETO ELLER SUPER ROCK</span>' : next ? `<button class="btn small" data-act="buy" data-arg="${u.id}" ${S.money >= L.price ? '' : 'disabled'}>Köp (${eur(L.price)})</button>` : `<span class="lock">KRÄVER NIVÅ ${i}</span>`}
         ${own ? '' : `<button class="btn small ghost" data-act="pv" data-arg="${u.id}:${n}">Förhandsvisa</button>`}<button class="btn small ghost" data-act="komp-open" data-arg="${u.komp}">Regel & teori</button></div></div>`;
     }).join('')}</div></section>`;
   }
@@ -1046,6 +1047,7 @@ const ACT = {
   'num-bw'(a) { activeCar().bw = a; save(); },
   buy(a) {
     const u = UPG.find(x => x.id === a), cs = activeCar(), lvl = cs.upg[a] || 0, L = u.levels[lvl];
+    if (u.needsDriven === 'rear' && spec().drv === 'fwd') { toast('4-link passar bara bakhjuls- eller fyrhjulsdrivna bilar.'); return; }
     if (L && S.money >= L.price) { S.money -= L.price; cs.upg[a] = lvl + 1; U.preview = null; save(); toast(`${L.name} monterad.`); }
   },
   unmount(a) {
