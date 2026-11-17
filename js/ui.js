@@ -9,6 +9,7 @@ import { newTask, checkTask } from './dyno.js';
 import { Room, Board, makeCode, cleanCode } from './net.js';
 import { newChamp, simHeat, setResult, advance, roundDone, myHeat, canSkip, skip as chSkip, heatName, whereIs, sortRows, ROUND, FIN, A_TABLE, NORMAL_PRIZE } from './champ.js';
 import { Showroom } from './view3.js';
+import { MUSIC } from './music.js';
 import { ACTIONS, binds, getPad, padName, isWheel, captureNext } from './input.js';
 
 const app = () => document.getElementById('app');
@@ -32,7 +33,8 @@ const topLevel = () => { let t = 0; CAREER.forEach((l, i) => { if (levelOpen(i))
 
 // ---------- ram ----------
 export function render() {
-  const racing = U.view === 'race'; document.body.classList.toggle('racing', racing); if (racing) return;
+  const racing = U.view === 'race'; document.body.classList.toggle('racing', racing);
+  if (racing) { MUSIC.stop(); return; } MUSIC.vol = (S.settings.music ?? 40) / 100; MUSIC.play(); // bakgrundsmusik i menyerna
   const V = { menu, karriar, play: karriar, event: eventView, garage, trim, dyno, komp, settings, online, setup, result, name: nameView, top: topView }[U.view] || menu;
   app().innerHTML = `<header class="topbar">${U.view !== 'menu' && U.view !== 'event' ? '<button class="back" data-act="go" data-arg="menu">‹ Meny</button>' : '<span class="brand">ROKKI<b>KRAFT</b></span>'}
     <span class="top-title">${{ karriar: 'Karriär & Banor', event: 'Tävlingsdag', garage: 'Garage & Besiktning', trim: 'Trimning', dyno: 'Räknebänken', komp: 'Kompendium & Sääntökirja', settings: 'Inställningar', setup: 'Bilinställningar', result: 'Resultat', play: 'Spela', name: 'Byt namn', top: 'Global topplista', karriar: 'Karriär', online: 'Online – rumskod' }[U.view] || ''}</span>
@@ -445,7 +447,7 @@ function record(track, lap) { if (!S.records[track] || lap < S.records[track]) {
 function startRace(o) {
   const cs = activeCar(), insp = currentInsp(), s = insp.spec;
   const numStr = formatCarNum(cs.num, insp.cls);
-  U.view = 'race'; document.body.classList.add('racing'); app().innerHTML = '';
+  U.view = 'race'; document.body.classList.add('racing'); app().innerHTML = ''; MUSIC.stop();
   const done = o.onDone;
   U.race = new Race(app(), {
     ...o, onDone: res => { if (!o.spectate) countRace(o.trackId, res); done(res); }, record: S.records[o.trackId], settings: S.settings,
@@ -863,7 +865,7 @@ function komp() {
 function settings() {
   const st = S.settings;
   return `<section class="panel"><h2>Förare (samma namn hela säsongen enligt Sääntökirja s. 3)</h2><div class="row"><span class="lbl">Ditt förarnamn</span><input class="txt" type="text" maxlength="18" value="${(S.name || '').replace(/"/g, '&quot;')}" data-in="name"></div></section>
-  <section class="panel"><h2>Ljud</h2><label class="sl"><span>Motorljud <b>${st.vol} %</b></span><input type="range" min="0" max="100" step="5" value="${st.vol}" data-in="vol"></label></section>
+  <section class="panel"><h2>Ljud</h2><label class="sl"><span>Motorljud <b>${st.vol} %</b></span><input type="range" min="0" max="100" step="5" value="${st.vol}" data-in="vol"></label><label class="sl"><span>Musik i menyerna <b>${st.music ?? 40} %</b></span><input type="range" min="0" max="100" step="5" value="${st.music ?? 40}" data-in="music"></label></section>
   <section class="panel"><h2>Kameravy</h2><div class="row">${[DEFAULT_CAM, 0, 1, 2, 3].map(i => `<button class="chip s ${(st.camera ?? DEFAULT_CAM) === i ? 'on' : ''}" data-act="camera" data-arg="${i}">${CAM_NAMES[i]}</button>`).join('')}</div><p class="dim">Förstaperson placerar dig bakom ratten inne i bilen. Instrumentbräda, ratt och störtbur syns medan du ser banan genom vindrutan. Byt även med C eller kameraknappen under körning. Ditt val sparas.</p></section>
   <section class="panel"><h2>Grafik</h2><div class="row">${[['hog', 'Hög'], ['lag', 'Låg']].map(q => `<button class="chip s ${st.quality === q[0] ? 'on' : ''}" data-act="quality" data-arg="${q[0]}">${q[1]}</button>`).join('')}</div><p class="dim">Låg ger färre träd, inga skuggor och grövre terräng – bra på äldre telefoner.</p></section>
   <section class="panel"><h2>Upplösning</h2><div class="row">${[['auto', 'Auto (skärmens)'], ['1440', '1440p'], ['1080', '1080p'], ['720', '720p'], ['540', '540p']].map(q => `<button class="chip s ${(st.res || 'auto') === q[0] ? 'on' : ''}" data-act="res" data-arg="${q[0]}">${q[1]}</button>`).join('')}</div><p class="dim">Hur många bildrader 3D-vyn renderas med. Lägre ger högre bildfrekvens, högre ger skarpare bild. HUD:en påverkas inte.</p></section>
@@ -1092,6 +1094,7 @@ const INP = {
   name(v) { S.name = v.trim() || 'Du'; save(); return false; },
   lambda(v) { activeCar().tune.lambda = +v; save(); }, ign(v) { activeCar().tune.ign = +v; save(); }, finalScale(v) { activeCar().tune.finalScale = +v; save(); }, bias(v) { activeCar().tune.bias = +v; save(); },
   vol(v) { S.settings.vol = +v; save(); },
+  music(v) { S.settings.music = +v; save(); MUSIC.setVol(+v / 100); },
 };
 
 export function initUI() {
