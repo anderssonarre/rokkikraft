@@ -825,7 +825,7 @@ export const TRACKS = [
 
 export const SURF = {
   grus: { name: 'Grus (sora)', mu: 1.0, B: 10, C: 1.2, crr: 0.028, col: [0.55, 0.45, 0.33], dust: [0.72, 0.62, 0.48] },
-  asfalt: { name: 'Asfalt (kestopäällyste)', mu: 1.15, B: 14, C: 1.35, crr: 0.015, col: [0.24, 0.25, 0.27], dust: [0.6, 0.6, 0.6] },
+  asfalt: { name: 'Asfalt (kestopäällyste)', mu: 1.02, B: 14, C: 1.35, crr: 0.015, col: [0.24, 0.25, 0.27], dust: [0.6, 0.6, 0.6] },
   is: { name: 'Is (piikkipyörät)', mu: 0.52, B: 9, C: 1.25, crr: 0.02, col: [0.72, 0.82, 0.90], dust: [0.95, 0.97, 1.0] },
 };
 

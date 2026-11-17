@@ -76,8 +76,8 @@ export function phys(c, dt, trk) {
     const welded = !!s.trac, latUse = Math.min(1, Math.abs(c.vx * c.r) / (muE * G + 0.1));
     // Fyrhjulsdrift: båda axlarnas grepp kan användas för drivning (mittdiff fördelar ~40/60 och flyttar över kraft till axeln som greppar)
     const fl = s.fourlink && !fwd ? 1 : 0; // 4-link: axeln hålls på plats -> bakhjulen trycks ner och tappar inte kontakt vid gaspådrag
-    // Däck greppar mer i längsled än i sidled (friktionsellips, ca +18 %): mer dragkraft och kortare inbromsning
-    const LX = 1.18;
+    // Mer dragkraft från drivhjulen (+18 %) så att effekten syns – styrning och sidogrepp är oförändrade
+    const LX = 1 + 0.18 * (1 - latUse); // bara rakt fram – i kurvor är allt som förut
     const capD = LX * (awd ? (capF + capR) * (welded ? 1 : 1 - 0.2 * latUse) : (fwd ? capF : capR) * (welded ? 1 : 1 - 0.4 * latUse)) * (1 + 0.08 * fl);
     let slip = 0, latD = 1;
     // antispinn: lämnar sidogrepp kvar på bakaxeln så bilen inte blir instabil på raksträckor
@@ -88,18 +88,18 @@ export function phys(c, dt, trk) {
     c.slip = slip;
     let Fbf = 0, Fbr = 0, lockF = false, lockR = false; const sg = c.vx >= 0 ? 1 : -1;
     if (c.brk > 0) { const Fb = c.brk * 1.12 * m * G * s.brake; Fbf = Fb * s.bias; Fbr = Fb * (1 - s.bias);
-      if (Fbf > (capF * LX)) { if (c.aids.abs) Fbf = (capF * LX) * 0.96; else { lockF = true; Fbf = (capF * LX) * 0.82; } }
-      const prop = (capR * LX) * (fwd ? 0.55 : 0.85); // lastkännande bromskraftsfördelare: framhjulsdrivna bilar är extra bakbromsade-snåla → drar rakt
+      if (Fbf > capF) { if (c.aids.abs) Fbf = capF * 0.96; else { lockF = true; Fbf = capF * 0.82; } }
+      const prop = capR * (fwd ? 0.55 : 0.85); // lastkännande bromskraftsfördelare: framhjulsdrivna bilar är extra bakbromsade-snåla → drar rakt
       if (Fbr > prop && !c.aids.abs) Fbr = prop;
-      const ebd = (capR * LX) * (fwd ? 0.45 : 0.6); if (c.aids.abs && Fbr > ebd) Fbr = ebd; // ABS/EBD håller bakhjulen under låsgränsen så bilen är styrbar
-      if (Fbr > (capR * LX)) { if (c.aids.abs) Fbr = (capR * LX) * 0.8; else { lockR = true; Fbr = (capR * LX) * 0.82; } } }
+      const ebd = capR * (fwd ? 0.45 : 0.6); if (c.aids.abs && Fbr > ebd) Fbr = ebd; // ABS/EBD håller bakhjulen under låsgränsen så bilen är styrbar
+      if (Fbr > capR) { if (c.aids.abs) Fbr = capR * 0.8; else { lockR = true; Fbr = capR * 0.82; } } }
     if (c.hb) { lockR = true; Fbr = capR * 0.85; }
     c.lock = lockF || lockR;
     let dF = fwd ? Fd : 0, dR = fwd ? 0 : Fd;
     // aktiv mittdiff: mer kraft till axeln som har greppmarginal kvar
     if (awd) { const sF = capF * (1 - 0.9 * Math.abs(shape(af))) + 1, sR = capR * (1 - 0.9 * Math.abs(shape(ar))) + 1, kF = Fd < 0 ? 0.7 : Math.min(0.75, 0.45 * 2 * sF / (sF + sR)); dF = Fd * kF; dR = Fd * (1 - kF); const rMax = capR * 0.8; if (Math.abs(dR) > rMax) { dF += dR - Math.sign(dR) * rMax; dR = Math.sign(dR) * rMax; } if (Math.abs(dF) > capF) { dR += dF - Math.sign(dF) * capF; dF = Math.sign(dF) * capF; } }
     const Fxf = dF - sg * Fbf, Fxr = dR - sg * Fbr;
-    const latF = (al, cap, Fx, sc, kB = 1) => -cap * Math.sqrt(Math.max(0.12, 1 - (Fx / (cap * LX)) ** 2)) * sc * Math.sin(surf.C * Math.atan(surf.B * kB * al));
+    const latF = (al, cap, Fx, sc, kB = 1) => -cap * Math.sqrt(Math.max(0.12, 1 - (Fx / cap) ** 2)) * sc * Math.sin(surf.C * Math.atan(surf.B * kB * al));
     // Framhjulsdrift: odrivna bakhjul med toe-in och styv bakaxel bygger sidokraft snabbt och greppar mer -> bilen understyr
     // och "plogar" när man överdriver, bakvagnen följer med. Bakhjulsdrift: bakaxeln är mjukare och släpper lättare.
     const rearB = (fwd ? 1.3 : awd ? 1.15 : 1) * (s.fourlink && !fwd ? 1.12 : 1), rearG = (fwd ? 1.1 : awd ? 1.08 : 1.05) * (s.fourlink && !fwd ? 1.05 : 1), frontG = fwd ? 0.97 : 1;
@@ -1056,8 +1056,6 @@ export class Race {
       at = [p.x + ch * 6, pY + 0.6, p.z + sh * 6];
     }
 
-    // fartkänsla: bildvinkeln vidgas med farten (upp till +14 % vid ca 160 km/h) och lite till vid hård acceleration
-    { const sp = Math.hypot(p.vx, p.vy); this.fovK = (this.fovK || 0) + ((Math.min(1, sp / 45) * 0.14 + clamp(p.ax, 0, 8) * 0.006) - (this.fovK || 0)) * Math.min(1, 3 * dt); fov *= 1 + this.fovK; }
     for (const c of this.cars) if (c.obj && (c.dmg || 0) > 4) this.view.damageCar(c.obj, c.dmg);
     for (const c of this.cars) this.view.poseCar(c.obj, c.x, c.y, c.z, c.h, c.tRoll || 0, c.tPitch || 0, c.steer, c.wspin, c.brk > 0.1, !(c === p && (this.cam === 0 || this.cam === 1 || this.cam === DEFAULT_CAM)), (c.bRoll || 0) + (c.vR || 0), (c.bPitch || 0) + (c.vP || 0), c.bY || 0);
     let cockpit = null;
