@@ -697,53 +697,51 @@ export class Race {
     c.steer += clamp(clamp(I.steer, -1, 1) - c.steer, -rate * realDt, rate * realDt); }
 
   // ── GUL FLAGG ──────────────────────────────────────────────────────────────────────────────────────────────
-  // När en bil spinner (glider tvärs/baklänges, står vänd mot fel håll eller står still på banan) visar lippupisteen
-  // FÖRE bilen gul flagg. Mellan den posten och den spinnade bilen gäller: sänk till högst 45 km/h inom 5 s och ingen
-  // omkörning. Bryter man mot det blir det B1 (saktar inte in), B3 (omkörning) eller B4 (kontakt) – varning, och två
-  // varningar i heatet ger svart flagg.
+  // När en bil står helt stilla på banan (efter ett spinn / en krock) blir det gul flagg. Den gäller bara de sista
+  // 30 m bakom den stillastående bilen – inte något framför den. Inom zonen ska man sänka farten med minst 20 km/h
+  // (jämfört med farten man kom in i zonen med) inom 5 s, och man får inte köra om. Bryter man mot det blir det B1
+  // (saktar inte in), B3 (omkörning) eller B4 (kontakt) – varning, och två varningar i heatet ger svart flagg.
   yellowPosts() { if (this._yp) return this._yp; const trk = this.trk, n = trk.n;
     const list = trk.posts && trk.posts.length ? trk.posts.map((pt, q) => ({ q, name: pt.n, i: trk.locateFull(pt.x, pt.z).i }))
       : [...Array(7)].map((_, q) => ({ q, name: String(q + 1), i: trk.w(Math.round((q + 0.5) * n / 7)) }));
     return (this._yp = list); }
   yellowStep(dt) { const trk = this.trk, n = trk.n, j = trk.joker, posts = this.yellowPosts(), run = this.state === 'run' && this.t > 2;
-    const inJ = c => this.useJoker && c.i >= j.i1 && c.i <= j.i2 && Math.abs((c.lat || 0) - trk.bulge(c.i)) < j.w / 2 + 1.5;
-    // 1) vilka bilar har spunnit just nu
+    const ZL = Math.max(1, Math.round(30 / trk.ds)); // 30 m bakom bilen
     const spun = [];
     for (const c of this.cars) {
       if (!run || c.finished || c.retired) { c.spun = false; c.stillT = 0; continue; }
-      const v = Math.hypot(c.vx, c.vy), beta = Math.abs(Math.atan2(c.vy, c.vx));
-      const rel = Math.abs(wrapA(c.h - Math.atan2(trk.TZ[trk.w(c.i)], trk.TX[trk.w(c.i)])));
-      c.stillT = v < 1 ? (c.stillT || 0) + dt : 0;
-      const bad = (v > 4 && beta > 1.3) || (!inJ(c) && c.prog > 0 && rel > 2.0) || c.stillT > 2;
-      if (bad) { c.spun = true; c.okT = 0; } else if (c.spun) { c.okT = v > 6 ? (c.okT || 0) + dt : 0; if (c.okT > 1.2) c.spun = false; }
-      if (c.spun) { // zonen börjar vid posten före bilen (minst 25 m bakom den)
-        const si = trk.w(c.i); let best = null, bd = 1e9, any = null, ad = 1e9;
-        for (const pt of posts) { const d = (si - pt.i + n) % n; if (d < ad) { ad = d; any = pt; } if (d * trk.ds >= 25 && d < bd) { bd = d; best = pt; } }
-        if (!best) { best = any; bd = ad; }
-        spun.push({ c, si, post: best, len: bd });
+      const v = Math.hypot(c.vx, c.vy);
+      c.stillT = v < 0.5 ? (c.stillT || 0) + dt : 0; // helt stilla (under ~2 km/h)
+      if (c.stillT > 1.0) { c.spun = true; c.okT = 0; } else if (c.spun) { c.okT = v > 3 ? (c.okT || 0) + dt : 0; if (c.okT > 1.0) c.spun = false; }
+      if (c.spun) { // flaggan viftas på posten närmast före bilen, men zonen är bara 30 m bakom bilen
+        const si = trk.w(c.i); let post = posts[0], ad = 1e9;
+        for (const pt of posts) { const d = (si - pt.i + n) % n; if (d < ad) { ad = d; post = pt; } }
+        spun.push({ c, si, post, len: ZL });
       } }
     this.yZones = spun;
     const zoneOf = c => { let z = null, zd = 1e9; for (const Z of spun) { if (Z.c === c) continue; const b = (Z.si - trk.w(c.i) + n) % n; if (b > 0 && b <= Z.len && b < zd) { zd = b; z = Z; } } return z; };
-    // 2) AI-bilarna: max 45 km/h i zonen och ingen omkörning
-    for (const c of this.cars) { if (c.isPlayer || c.remote) continue; const Z = c.spun ? null : zoneOf(c); if (!Z) { c.yCap = null; continue; }
-      let cap = 12.2; for (const o of this.cars) { if (o === c || o.spun || o.retired) continue; const ahead = o.prog - c.prog; if (ahead > 0 && ahead * trk.ds < 16) cap = Math.min(cap, Math.max(1.5, Math.hypot(o.vx, o.vy) - 0.3)); }
+    // 2) AI-bilarna: minst 20 km/h långsammare i zonen och ingen omkörning
+    for (const c of this.cars) { if (c.isPlayer || c.remote) continue; const Z = c.spun ? null : zoneOf(c); if (!Z) { c.yCap = null; c.yz = null; continue; }
+      if (c.yz !== Z.c) { c.yz = Z.c; c.yV0 = Math.hypot(c.vx, c.vy); }
+      let cap = Math.max(2.5, c.yV0 - 22 / 3.6); for (const o of this.cars) { if (o === c || o.spun || o.retired) continue; const ahead = o.prog - c.prog; if (ahead > 0 && ahead * trk.ds < 16) cap = Math.min(cap, Math.max(1.5, Math.hypot(o.vx, o.vy) - 0.3)); }
       c.yCap = cap; }
     // 3) spelaren
     const p = this.player; if (!p || p.remote || p.spun) { if (p) p.yz = null; return; }
     const Z = zoneOf(p);
     if (!Z) { p.yz = null; return; }
-    if (p.yz !== Z.c) { p.yz = Z.c; p.yT0 = this.t; p.yB1 = false; p.yAhead = new Set(this.cars.filter(o => o !== p && o !== Z.c && !o.spun && !o.retired && o.prog > p.prog && zoneOf(o) === Z)); }
+    if (p.yz !== Z.c) { p.yz = Z.c; p.yT0 = this.t; p.yB1 = false; p.yV0 = Math.hypot(p.vx, p.vy) * 3.6; p.yAhead = new Set(this.cars.filter(o => o !== p && o !== Z.c && !o.spun && !o.retired && o.prog > p.prog && zoneOf(o) === Z)); }
     const kmh = Math.hypot(p.vx, p.vy) * 3.6;
-    if (this.t - p.yT0 > 5 && kmh > 47 && !p.yB1) { p.yB1 = true; this.giveSanction(p, 'B1', 'Saktar inte in vid gul flagg', 'Hiljentämättä keltaisella lipulla – max 45 km/h inom 5 s efter posten'); }
+    const toCar = ((Z.si - trk.w(p.i) + n) % n) * trk.ds; // m kvar till den stillastående bilen
+    if ((this.t - p.yT0 > 5 || toCar < 10) && kmh > p.yV0 - 18 && !p.yB1) { p.yB1 = true; this.giveSanction(p, 'B1', 'Saktar inte in vid gul flagg', 'Hiljentämättä keltaisella lipulla – sänk farten med minst 20 km/h innan du når bilen'); }
     for (const o of p.yAhead) { if (o.spun || o.retired) { p.yAhead.delete(o); continue; }
       if (p.prog > o.prog + 0.5) { p.yAhead.delete(o); this.giveSanction(p, 'B3', 'Omkörning under gul flagg', `Ohitus keltaisella lipulla – du körde om ${o.name}`); } } }
   yellowHud() { const el = this.$('hYellow'); if (!el) return; const p = this.player, trk = this.trk, n = trk.n, Zs = this.yZones || [];
     if (this.view && this.view.setYellow) this.view.setYellow(new Set(Zs.map(Z => Z.post.q)), this.t);
     let html = '';
-    if (p && p.yz) { const Z = Zs.find(z => z.c === p.yz), left = Math.max(0, 5 - (this.t - p.yT0)), kmh = Math.hypot(p.vx, p.vy) * 3.6, over = kmh > 47;
-      html = `🟨 GUL FLAGG – post ${Z ? Z.post.name : ''} · ${Z ? Z.c.name : ''} har spunnit<br><small>${left > 0 ? `Sänk till 45 km/h: <b>${left.toFixed(1).replace('.', ',')} s</b>` : over ? '<b style="color:#b91c1c">FÖR FORT! max 45 km/h</b>' : 'Max 45 km/h ✓'} · ingen omkörning · ${Math.round(kmh)} km/h</small>`;
-    } else if (p && !p.spun) { // varna när man närmar sig en post med gul flagg
-      for (const Z of Zs) { if (Z.c === p) continue; const d = (Z.post.i - trk.w(p.i) + n) % n; if (d * trk.ds < 70) { html = `🟨 GUL FLAGG vid post ${Z.post.name}<br><small>Sänk till 45 km/h efter posten – ingen omkörning</small>`; break; } } }
+    if (p && p.yz) { const Z = Zs.find(z => z.c === p.yz), toCar = Z ? ((Z.si - trk.w(p.i) + n) % n) * trk.ds : 0, left = (this.t - p.yT0 > 5 || toCar < 10) ? 0 : 1, kmh = Math.hypot(p.vx, p.vy) * 3.6, tgt = Math.max(0, p.yV0 - 20), over = kmh > tgt + 2;
+      html = `🟨 GUL FLAGG – ${Z ? Z.c.name : ''} står stilla framför<br><small>${left > 0 ? `Sänk till ${Math.round(tgt)} km/h (−20) · <b>${Math.round(toCar)} m</b> kvar` : over ? `<b style="color:#b91c1c">FÖR FORT! max ${Math.round(tgt)} km/h</b>` : `Under ${Math.round(tgt)} km/h ✓`} · ingen omkörning · ${Math.round(kmh)} km/h</small>`;
+    } else if (p && !p.spun) { // förvarning när man närmar sig zonen
+      for (const Z of Zs) { if (Z.c === p) continue; const d = (Z.si - trk.w(p.i) + n) % n; if (d > 0 && d * trk.ds < 30 + 60) { html = `🟨 GUL FLAGG – bil står stilla ${Math.round(d * trk.ds)} m framför<br><small>Sänk farten med 20 km/h de sista 30 m – ingen omkörning</small>`; break; } } }
     el.hidden = !html; if (html && el.innerHTML !== html) el.innerHTML = html; }
 
   giveSanction(c, code, title, desc) {
