@@ -56,6 +56,20 @@ function noiseTex(seed, lo, hi, streak) { return canvasTex(256, 256, (g, w, h) =
   g.filter = 'blur(0.6px)'; g.drawImage(g.canvas, 0, 0); }, true); }
 const bannerTex = (txt, bg, fg) => canvasTex(512, 96, (g, w, h) => { g.fillStyle = bg; g.fillRect(0, 0, w, h); g.fillStyle = fg; g.font = '900 54px "Arial Narrow", Impact, Arial, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(txt, w / 2, h / 2 + 3, w - 30); });
 
+// Delade detaljmaterial för bilarna (skapas en gång)
+let _det = null;
+function detMats() { const THREE = T(); if (_det) return _det;
+  const tread = canvasTex(64, 16, (g, w, h) => { g.fillStyle = '#151517'; g.fillRect(0, 0, w, h); g.fillStyle = '#2c2c30'; for (let x = 0; x < w; x += 8) { g.fillRect(x, 0, 4, h * 0.45); g.fillRect(x + 4, h * 0.55, 4, h * 0.45); } });
+  tread.wrapS = THREE.RepeatWrapping; tread.repeat.set(4, 1);
+  const plate = canvasTex(256, 56, (g, w, h) => { g.fillStyle = '#f4f4f0'; g.fillRect(0, 0, w, h); g.fillStyle = '#1d3f9a'; g.fillRect(0, 0, 30, h); g.fillStyle = '#ffd400'; g.font = '700 12px Arial'; g.textAlign = 'center'; g.fillText('FIN', 15, h - 8);
+    g.strokeStyle = '#111'; g.lineWidth = 3; g.strokeRect(1.5, 1.5, w - 3, h - 3); g.fillStyle = '#111'; g.font = '900 40px "Arial Narrow", Arial'; g.fillText('RKK-' + (100 + Math.floor(Math.random() * 899)), 143, 43, 210); });
+  const sun = canvasTex(512, 64, (g, w, h) => { g.fillStyle = '#0e1a3a'; g.fillRect(0, 0, w, h); g.fillStyle = '#fff'; g.font = '900 40px "Arial Narrow", Impact, Arial'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('ROKKIKRAFT', w / 2, h / 2 + 2); });
+  const door = SPONSORS.map(t => canvasTex(256, 48, (g, w, h) => { g.fillStyle = 'rgba(255,255,255,0.92)'; g.fillRect(0, 0, w, h); g.fillStyle = '#111'; g.font = '900 30px "Arial Narrow", Impact, Arial'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(t, w / 2, h / 2 + 2, w - 12); }));
+  _det = { tread: new THREE.MeshStandardMaterial({ map: tread, roughness: 0.95 }), side: new THREE.MeshStandardMaterial({ color: 0x1c1c1f, roughness: 0.8 }),
+    plate: new THREE.MeshBasicMaterial({ map: plate }), sun: new THREE.MeshBasicMaterial({ map: sun, side: THREE.DoubleSide }), door: door.map(t => new THREE.MeshBasicMaterial({ map: t, transparent: true })),
+    seam: new THREE.MeshBasicMaterial({ color: 0x0b0b0c }), red: new THREE.MeshLambertMaterial({ color: 0xd0201a }), flap: new THREE.MeshLambertMaterial({ color: 0x101012 }) };
+  return _det; }
+
 export class View3 {
   constructor(canvas, trk, opt = {}) {
     const THREE = T(); this.ok = !!THREE; if (!THREE) return;
@@ -86,7 +100,7 @@ export class View3 {
     }
     const sc = sun.shadow.camera; sc.left = -75; sc.right = 75; sc.top = 75; sc.bottom = -75; sc.near = 1; sc.far = 420; sun.shadow.mapSize.set(2048, 2048); sun.shadow.bias = -0.0006; sun.shadow.normalBias = 0.04;
     S.add(sun); S.add(sun.target);
-    this.buildTerrain(); this.buildTrack(); this.buildForest(); this.buildProps(); this.buildClouds();
+    this.buildTerrain(); this.buildTrack(); this.buildForest(); this.buildProps(); this.buildDetails(); this.buildClouds();
     // damm
     const pg = this.pGeo = new THREE.BufferGeometry(), N = 260; pg.setAttribute('position', new THREE.BufferAttribute(new Float32Array(N * 3), 3)); pg.setAttribute('col', new THREE.BufferAttribute(new Float32Array(N * 4), 4)); pg.setAttribute('sz', new THREE.BufferAttribute(new Float32Array(N), 1));
     const pm = new THREE.ShaderMaterial({ transparent: true, depthWrite: false, uniforms: { sc: { value: 600 } },
@@ -189,6 +203,49 @@ export class View3 {
     // STOP-skylt efter mål
     { const p = edge((trk.finishIdx || 0) + 70, 1, 1.2); box(p[0], p[1], p[2], 0.08, 2.1, 0.08, lam(0x555555)); const s = new THREE.Mesh(new THREE.CircleGeometry(0.5, 8), new THREE.MeshBasicMaterial({ map: canvasTex(128, 128, (g) => { g.fillStyle = '#c8201a'; g.fillRect(0, 0, 128, 128); g.fillStyle = '#fff'; g.font = '900 44px Arial'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('STOP', 64, 66); }), side: THREE.DoubleSide })); s.position.set(p[0], p[1] + 2.3, p[2]); s.rotation.y = p[3] + Math.PI / 2; S.add(s); }
   }
+  // Fler detaljer längs banan: kantstolpar, stenar, buskar/tuvor, publik bakom avspärrningsband, funktionärer, strålkastarmaster, parkerade bilar
+  buildDetails() { const THREE = T(), trk = this.trk, S = this.scene, n = trk.n, w = this.winter, q = this.q, rnd = mulberry(hash(trk.id + 'details')), o = {}, d = new THREE.Object3D(), col = new THREE.Color();
+    const at = (i, sd, extra) => { i = trk.w(i); const l = trk.limits(i), lat = (sd > 0 ? l[1] : l[0]) + sd * extra, x = trk.X[i] + trk.NX[i] * lat, z = trk.Z[i] + trk.NZ[i] * lat; trk.heightAt(x, z, o); return [x, o.h, z, -Math.atan2(trk.TZ[i], trk.TX[i]), o.d]; };
+    const inst = (geo, mat, list, shadow = false) => { if (!list.length) return; const m = new THREE.InstancedMesh(geo, mat, list.length);
+      list.forEach((e, k) => { d.position.set(e.x, e.y, e.z); d.rotation.set(e.rx || 0, e.ry || 0, 0); d.scale.set(e.sx ?? e.s ?? 1, e.sy ?? e.s ?? 1, e.s ?? 1); d.updateMatrix(); m.setMatrixAt(k, d.matrix); if (e.c !== undefined) m.setColorAt(k, col.set(e.c)); });
+      m.castShadow = shadow; m.receiveShadow = true; S.add(m); return m; };
+    const V = trk.verge;
+    // kantstolpar (vita med svart band och reflex) längs båda sidorna
+    { const posts = [], bands = []; for (let i = 0; i < n; i += 10) { if (trk.bulge(i)) continue; for (const sd of [1, -1]) { const p = at(i, sd, V - 0.2); if (p[4] < 0) continue; posts.push({ x: p[0], y: p[1], z: p[2], ry: p[3] }); bands.push({ x: p[0], y: p[1] + 0.72, z: p[2], ry: p[3] }); } }
+      inst(new THREE.BoxGeometry(0.1, 0.9, 0.1).translate(0, 0.45, 0), new THREE.MeshLambertMaterial({ color: 0xf2f2ee }), posts); inst(new THREE.BoxGeometry(0.11, 0.12, 0.11), new THREE.MeshLambertMaterial({ color: 0x111111, emissive: 0x220000 }), bands); }
+    // stenar och tuvor/buskar på och bakom vallarna
+    { const rocks = [], tufts = []; for (let k = 0; k < (q ? 520 : 240); k++) { const i = Math.floor(rnd() * n), sd = rnd() < 0.5 ? 1 : -1, p = at(i, sd, V + 0.5 + rnd() * 14); if (p[4] < V - 0.5) continue;
+        if (k % 3 === 0) rocks.push({ x: p[0], y: p[1] - 0.05, z: p[2], ry: rnd() * 6, rx: rnd(), s: 0.25 + rnd() * 0.5, sy: 0.18 + rnd() * 0.3, c: w ? 0x9aa0a8 : [0x7d7a72, 0x8e8a80, 0x6a675f][k % 3 ? 1 : 0] });
+        else tufts.push({ x: p[0], y: p[1] - 0.05, z: p[2], ry: rnd() * 6, s: 0.4 + rnd() * 0.7, sy: 0.3 + rnd() * 0.6, c: w ? 0xe8edf2 : [0x4f6b2a, 0x5d7a30, 0x6f7f3a, 0x3f5a24][k % 4] }); }
+      inst(new THREE.DodecahedronGeometry(1, 0), new THREE.MeshLambertMaterial({ color: 0xffffff, flatShading: true }), rocks, true);
+      inst(new THREE.ConeGeometry(0.7, 1, 6).translate(0, 0.5, 0), new THREE.MeshLambertMaterial({ color: 0xffffff, flatShading: true }), tufts); }
+    // publikplatser i ytterkurvorna: avspärrningsband på stolpar + åskådare
+    { const spots = []; for (let i = 0; i < n; i += 6) { const k = trk.K[i]; if (Math.abs(k) < 0.02 || trk.bulge(i)) continue; if (spots.length && i - spots[spots.length - 1][0] < 60) continue; spots.push([i, k > 0 ? -1 : 1]); }
+      const posts = [], tape = [], bodies = [], heads = [], shirts = [0xd92b20, 0x1f5fb8, 0xf4f1e8, 0xffd400, 0x1e8a4a, 0x222222, 0xff7a1a, 0x6a3d9a, 0x8a8f96];
+      for (const [i0, sd] of spots.slice(0, q ? 8 : 4)) { let prev = null;
+        for (let i = i0 - 14; i <= i0 + 14; i += 2) { const p = at(i, sd, V + 5.2); if (p[4] < V + 2) { prev = null; continue; } posts.push({ x: p[0], y: p[1], z: p[2] });
+          if (prev) { const dx = p[0] - prev[0], dz = p[2] - prev[2], dy = p[1] - prev[1], L = Math.hypot(dx, dz); tape.push({ x: (p[0] + prev[0]) / 2, y: (p[1] + prev[1]) / 2 + 0.95, z: (p[2] + prev[2]) / 2, ry: -Math.atan2(dz, dx), s: L, sy: 1, rx: 0, c: (i / 2) % 2 ? 0xe01e1e : 0xf4f4f4 }); }
+          prev = p;
+          for (let r = 0; r < (q ? 3 : 2); r++) { if (rnd() < 0.3) continue; const pp = at(i + rnd() * 2, sd, V + 6.2 + r * 0.9 + rnd() * 0.4); if (pp[4] < V + 3) continue; const hgt = 0.9 + rnd() * 0.25;
+            bodies.push({ x: pp[0], y: pp[1], z: pp[2], ry: rnd() * 6, s: 1, sy: hgt, c: shirts[Math.floor(rnd() * shirts.length)] }); heads.push({ x: pp[0], y: pp[1] + hgt * 1.55 + 0.13, z: pp[2], s: 1, c: [0xf0c8a0, 0xe0b088, 0xc89070, 0x8a5a3c][Math.floor(rnd() * 4)] }); } } }
+      inst(new THREE.CylinderGeometry(0.035, 0.035, 1.1, 5).translate(0, 0.55, 0), new THREE.MeshLambertMaterial({ color: 0xe8e8e8 }), posts);
+      const tg = new THREE.BoxGeometry(1, 0.07, 0.01); inst(tg, new THREE.MeshBasicMaterial({ color: 0xffffff }), tape.map(t => ({ ...t, s: 1, sx: t.s, sy: 1 })));
+      inst(new THREE.CylinderGeometry(0.17, 0.2, 1.55, 7).translate(0, 0.78, 0), new THREE.MeshLambertMaterial({ color: 0xffffff }), bodies, true);
+      inst(new THREE.SphereGeometry(0.13, 8, 6), new THREE.MeshLambertMaterial({ color: 0xffffff }), heads); }
+    // funktionärer i orange västar vid flaggposterna
+    { const list = [], hd = []; for (const pst of trk.posts && trk.posts.length ? trk.posts : []) { trk.heightAt(pst.x - 1.2, pst.z, o); if (o.d < 1.5) continue; list.push({ x: pst.x - 1.2, y: o.h, z: pst.z, sy: 1.05, s: 1, c: 0xff6a12 }); hd.push({ x: pst.x - 1.2, y: o.h + 1.75, z: pst.z, s: 1, c: 0xf0c8a0 }); }
+      inst(new THREE.CylinderGeometry(0.18, 0.2, 1.55, 7).translate(0, 0.78, 0), new THREE.MeshLambertMaterial({ color: 0xffffff }), list, true); inst(new THREE.SphereGeometry(0.13, 8, 6), new THREE.MeshLambertMaterial({ color: 0xffffff }), hd); }
+    // strålkastarmaster vid start/mål
+    { const i0 = trk.finishIdx || 0, pole = new THREE.MeshLambertMaterial({ color: 0x7c8288 }), lampM = new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0x8a8a70 });
+      for (const [di, sd] of [[-30, 1], [25, -1], [80, 1]]) { const p = at(i0 + di, sd, V + 7); if (p[4] < V + 3) continue; const m = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.2, 14, 8), pole); m.position.set(p[0], p[1] + 7, p[2]); m.castShadow = true; S.add(m);
+        const hb = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.8, 2.2), lampM); hb.position.set(p[0], p[1] + 14, p[2]); hb.rotation.y = p[3] + Math.PI / 2; S.add(hb); } }
+    // parkerade publikbilar på en åker bakom depån
+    { const i0 = trk.finishIdx || 0, sd = trk.outSign || 1, cars = [], roofs = [], pc = [0xb0b4b8, 0x23272c, 0x8b1a14, 0x1d3f7a, 0xe6e6e2, 0x3c5a2e, 0x6e6252];
+      for (let k = 0; k < (q ? 36 : 16); k++) { const p = at(i0 - 30 + (k % 12) * 5, sd, V + 30 + Math.floor(k / 12) * 6 + rnd()); if (p[4] < V + 22) continue; const c = pc[Math.floor(rnd() * pc.length)];
+        cars.push({ x: p[0], y: p[1] + 0.3, z: p[2], ry: p[3] + Math.PI / 2, s: 1, c }); roofs.push({ x: p[0], y: p[1] + 0.95, z: p[2], ry: p[3] + Math.PI / 2, s: 1, c }); }
+      inst(new THREE.BoxGeometry(1.75, 0.65, 4.3).translate(0, 0.33, 0), new THREE.MeshLambertMaterial({ color: 0xffffff }), cars, true);
+      inst(new THREE.BoxGeometry(1.5, 0.5, 2.2).translate(0, 0.25, -0.2), new THREE.MeshLambertMaterial({ color: 0xffffff }), roofs); }
+  }
   buildClouds() { const THREE = T(), rnd = mulberry(77), m = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.86, fog: false }), g = new THREE.SphereGeometry(1, 10, 8);
     for (let k = 0; k < 16; k++) { const a = rnd() * 6.28, r = 700 + rnd() * 1400, grp = new THREE.Group(); for (let q = 0; q < 5; q++) { const s = new THREE.Mesh(g, m); s.position.set((rnd() - 0.5) * 130, (rnd() - 0.5) * 14, (rnd() - 0.5) * 60); s.scale.set(50 + rnd() * 55, 14 + rnd() * 12, 34 + rnd() * 34); grp.add(s); } grp.position.set(Math.cos(a) * r, 330 + rnd() * 260, Math.sin(a) * r); this.scene.add(grp); } }
 
@@ -260,12 +317,35 @@ export class View3 {
     { const net = new THREE.Mesh(new THREE.PlaneGeometry(0.66, 0.36), netMat()); net.position.set((aB - 0.16 + bx + 0.06) / 2 - 0.02, 1.13, -zs - 0.012); net.rotation.y = Math.PI; G.add(net); }
     // hjul, hjulhus, stötfångare, bromsljus
     const wb = L * 0.6, wheels = []; G.userData.wheels = wheels;
-    for (const x of [wb / 2, -wb / 2]) for (const z of [W / 2 - 0.1, -W / 2 + 0.1]) { const piv = new THREE.Group(); piv.position.set(x, 0.31, z); const wh = new THREE.Group(); const t = new THREE.Mesh(new THREE.CylinderGeometry(0.31, 0.31, 0.21, 18), dark); t.rotation.x = Math.PI / 2; t.castShadow = true; wh.add(t);
+    for (const x of [wb / 2, -wb / 2]) for (const z of [W / 2 - 0.1, -W / 2 + 0.1]) { const piv = new THREE.Group(); piv.position.set(x, 0.31, z); const wh = new THREE.Group(); const t = new THREE.Mesh(new THREE.CylinderGeometry(0.31, 0.31, 0.21, 24), [detMats().tread, detMats().side, detMats().side]); t.rotation.x = Math.PI / 2; t.castShadow = true; wh.add(t);
       const rim = new THREE.Mesh(new THREE.CylinderGeometry(0.19, 0.19, 0.22, 10), steel); rim.rotation.x = Math.PI / 2; wh.add(rim); for (let s = 0; s < (st.alloy ? 5 : 4); s++) { const sp = new THREE.Mesh(new THREE.BoxGeometry(st.alloy ? 0.045 : 0.06, 0.34, 0.225), st.alloy ? steel : dark); sp.rotation.z = s * Math.PI / (st.alloy ? 5 : 4); wh.add(sp); }
       piv.add(wh); G.add(piv); wheels.push({ piv, wh, front: x > 0 }); const arch = new THREE.Mesh(new THREE.CircleGeometry(0.39, 16, 0, Math.PI), dark); arch.position.set(x, 0.33, z > 0 ? W / 2 + 0.004 : -W / 2 - 0.004); if (z < 0) arch.rotation.y = Math.PI; G.add(arch); }
     const bm = opt.bars ? steel : dark; for (const [x, s] of [[h + 0.02, 1], [-h - 0.02, -1]]) { const br = st.bigBumper ? 0.13 : 0.1; const b = new THREE.Mesh(new THREE.CylinderGeometry(br, br, W - 0.16, 14), st.bigBumper && !opt.bars ? dark : bm); b.rotation.x = Math.PI / 2; b.scale.set(0.85, 1, 1); b.position.set(x + Math.sign(x) * (st.bigBumper ? 0.06 : 0), 0.42, 0); G.add(b);
       for (const z of [(W - 0.16) / 2, -(W - 0.16) / 2]) { const e = new THREE.Mesh(new THREE.SphereGeometry(0.1, 12, 8), bm); e.scale.set(0.85, 1, 1); e.position.set(x, 0.42, z); G.add(e); } }
     if (opt.mirrors) for (const z of [W / 2 + 0.08, -W / 2 - 0.08]) { const m = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.1, 0.16), dark); m.position.set(aB - 0.1, 0.99, z); G.add(m); }
+    // ---- detaljer: dörrfogar, handtag, backspeglar, registerskyltar, solskydd, torkare, stänkskydd, bogserkrokar, avgasrör, takventil, dekaler
+    { const D = detMats(), zS = W / 2 + 0.004, doors4 = !st.coupe && body !== 'coupe', aPil = aB - 0.08, dEnd = doors4 ? -wb / 2 + 0.42 : bx - 0.02;
+      const seam = (x, y0, y1, z) => box(x, (y0 + y1) / 2, z, 0.012, y1 - y0, 0.006, D.seam);
+      for (const sd of [1, -1]) { const z = sd * zS;
+        seam(aPil, 0.4, belt - 0.02, z); seam(bx - 0.02, 0.36, belt - 0.02, z); if (doors4) seam(dEnd, 0.42, belt - 0.02, z);
+        box((aPil + dEnd) / 2, 0.37, z, aPil - dEnd, 0.008, 0.006, D.seam);
+        box(bx + 0.12, belt - 0.1, z + sd * 0.01, 0.13, 0.028, 0.02, steel); if (doors4) box(dEnd + 0.18, belt - 0.1, z + sd * 0.01, 0.13, 0.028, 0.02, steel);
+        const dec = new THREE.Mesh(new THREE.PlaneGeometry(0.78, 0.15), D.door[(opt.num ? +opt.num || 0 : 3) % D.door.length]); dec.position.set((aPil + bx) / 2, 0.62, z + sd * 0.002); if (sd < 0) dec.rotation.y = Math.PI; G.add(dec);
+        if (!opt.mirrors) { const m = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.09, 0.15), dark); m.position.set(aB - 0.12, belt + 0.07, sd * (W / 2 + 0.07)); G.add(m); }
+        // stänkskydd bakom bakhjulen
+        box(-wb / 2 - 0.4, 0.2, sd * (W / 2 - 0.13), 0.012, 0.26, 0.24, D.flap); }
+      // registerskyltar fram och bak
+      for (const [x, ry] of [[h + 0.125, Math.PI / 2], [-h - 0.125, -Math.PI / 2]]) { const pl = new THREE.Mesh(new THREE.PlaneGeometry(0.52, 0.115), D.plate); pl.position.set(x, 0.43, 0); pl.rotation.y = ry; G.add(pl); }
+      // bogserkrokar (röda band) och avgasrör
+      box(h + 0.13, 0.27, 0.36, 0.04, 0.05, 0.06, D.red); box(-h - 0.13, 0.27, -0.36, 0.04, 0.05, 0.06, D.red);
+      { const ex = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 0.3, 10), steel); ex.rotation.z = Math.PI / 2; ex.position.set(-h - 0.02, 0.24, W / 2 - 0.38); G.add(ex); }
+      // solskyddsremsa överst på vindrutan + torkare
+      { const x0 = aB, y0 = belt - 0.02, x1 = aT, y1 = top, len = Math.hypot(x1 - x0, y1 - y0); let nx = (y1 - y0) / len, ny = -(x1 - x0) / len; if (ny < 0) { nx = -nx; ny = -ny; }
+        const P = f => [x0 + (x1 - x0) * f + nx * 0.104, y0 + (y1 - y0) * f + ny * 0.104], a0 = P(0.78), a1 = P(0.93), wd = W - 0.44, g = new THREE.BufferGeometry();
+        g.setAttribute('position', new THREE.BufferAttribute(new Float32Array([a0[0], a0[1], wd / 2, a0[0], a0[1], -wd / 2, a1[0], a1[1], -wd / 2, a1[0], a1[1], wd / 2]), 3)); g.setAttribute('uv', new THREE.BufferAttribute(new Float32Array([0, 0, 1, 0, 1, 1, 0, 1]), 2)); g.setIndex([0, 1, 2, 0, 2, 3]); G.add(new THREE.Mesh(g, D.sun));
+        const w0 = P(0.14); for (const zc of [0.28, -0.22]) { const wp = box(w0[0], w0[1], zc, 0.02, 0.02, 0.5, D.seam); wp.rotation.y = 0.25; } }
+      // takventil
+      box(aT - 0.3, top + 0.03, 0, 0.26, 0.06, 0.32, dark); }
     // Hjulen sitter i G (följer marken), allt annat i en fjädrad kaross som kan kränga, nicka och vibrera
     const bodyG = new THREE.Group(), rollP = new THREE.Group(), keep = new Set(wheels.map(w => w.piv));
     for (const ch of [...G.children]) if (!keep.has(ch)) bodyG.add(ch);
