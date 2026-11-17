@@ -637,17 +637,33 @@ export class Race {
   }
 
   audioInit() { try { const vol = (this.cfg.settings?.vol ?? 50) / 100; if (!vol) return; const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return;
-      const ac = this.ac = new AC(), o1 = ac.createOscillator(), o2 = ac.createOscillator(), lp = ac.createBiquadFilter(), g = ac.createGain();
-      o1.type = 'sawtooth'; o2.type = 'square'; lp.type = 'lowpass'; lp.frequency.value = 900; g.gain.value = 0; o1.connect(lp); o2.connect(lp); lp.connect(g); g.connect(ac.destination); o1.start(); o2.start();
-      this.o1 = o1; this.o2 = o2; this.gain = g; this.lp = lp; this.vol = vol;
+      const ac = this.ac = new AC(), lp = ac.createBiquadFilter(), g = ac.createGain();
+      // V8-ljud: en vågform per motorcykel (720° vevaxel) med 8 avgaspulser. Korsplans-V8 (tändföljd 1-8-4-3-6-5-7-2) ger
+      // ojämna pulser per cylinderbank – det är det som ger det typiska mullrande "burble"-ljudet.
+      const H = 120, re = new Float32Array(H + 1), im = new Float32Array(H + 1), bank = [1, 0, 0, 1, 0, 1, 1, 0], sig = 0.16;
+      for (let n = 1; n <= H; n++) { const env = Math.exp(-0.5 * (n * sig) ** 2 * 0.09); for (let k = 0; k < 8; k++) { const th = k * Math.PI / 4 + (bank[k] ? 0.1 : -0.1), a = (bank[k] ? 1 : 0.55) * [1, 0.94, 1.05, 0.97, 1.03, 0.92, 1, 1.06][k]; re[n] += a * Math.cos(n * th) * env; im[n] -= a * Math.sin(n * th) * env; } }
+      const wave = ac.createPeriodicWave(re, im), o1 = ac.createOscillator(), o2 = ac.createOscillator(); o1.setPeriodicWave(wave); o2.setPeriodicWave(wave); o2.detune.value = 9;
+      const sh = ac.createWaveShaper(), cv = new Float32Array(1024); for (let i = 0; i < 1024; i++) { const x = i / 511.5 - 1; cv[i] = Math.tanh(x * 2.2); } sh.curve = cv; // lite mättnad = morr
+      const g1 = ac.createGain(), g2 = ac.createGain(); g1.gain.value = 0.6; g2.gain.value = 0.45; o1.connect(g1); o2.connect(g2); g1.connect(sh); g2.connect(sh); sh.connect(lp);
+      const lo = ac.createBiquadFilter(); lo.type = 'peaking'; lo.frequency.value = 90; lo.gain.value = 7; lo.Q.value = 0.8; // tryck i basen
+      lp.type = 'lowpass'; lp.frequency.value = 900; lp.Q.value = 1.4; g.gain.value = 0; lp.connect(lo); lo.connect(g); g.connect(ac.destination); o1.start(); o2.start();
+      this.o1 = o1; this.o2 = o2; this.gain = g; this.lp = lp; this.vol = vol; this.v8wave = wave;
+      // motståndarnas V8:or (närmaste bilen hörs svagare)
+      { const oo = ac.createOscillator(), og = ac.createGain(), of = ac.createBiquadFilter(); oo.setPeriodicWave(wave); of.type = 'lowpass'; of.frequency.value = 700; og.gain.value = 0; oo.connect(of); of.connect(og); og.connect(ac.destination); oo.start(); this.oo = oo; this.og = og; this.of = of; }
       // däck- och underlagsljud (brus genom filter) + skrammel från skadad motor
       const nb = ac.createBuffer(1, ac.sampleRate * 2, ac.sampleRate), nd = nb.getChannelData(0); for (let i = 0; i < nd.length; i++) nd[i] = Math.random() * 2 - 1;
       const ns = ac.createBufferSource(); ns.buffer = nb; ns.loop = true; const tf = ac.createBiquadFilter(), tg = ac.createGain(); tf.type = 'bandpass'; tf.Q.value = 1.2; tg.gain.value = 0; ns.connect(tf); tf.connect(tg); tg.connect(ac.destination); ns.start();
       const o3 = ac.createOscillator(), rg = ac.createGain(); o3.type = 'square'; rg.gain.value = 0; o3.connect(rg); rg.connect(lp); o3.start();
       this.tf = tf; this.tg = tg; this.o3 = o3; this.rg = rg; } catch (e) { } }
-  audio() { if (!this.gain) return; const c = this.player, f = c.rpm / 60 * c.spec.cyl / 2, t = this.ac.currentTime;
-    this.o1.frequency.setTargetAtTime(f, t, 0.03); this.o2.frequency.setTargetAtTime(f / 2, t, 0.03); this.lp.frequency.setTargetAtTime(500 + c.rpm * 0.25 + c.thr * 900, t, 0.05);
-    this.gain.gain.setTargetAtTime(this.vol * (0.035 + 0.075 * c.thr), t, 0.05);
+  pop(k) { const ac = this.ac; if (!ac) return; const n = ac.createBuffer(1, ac.sampleRate * 0.05 | 0, ac.sampleRate), d = n.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * Math.exp(-i / (d.length * 0.18));
+    const s = ac.createBufferSource(), bp = ac.createBiquadFilter(), g = ac.createGain(); s.buffer = n; bp.type = 'bandpass'; bp.frequency.value = 500 + Math.random() * 900; bp.Q.value = 0.9; g.gain.value = this.vol * 0.35 * k; s.connect(bp); bp.connect(g); g.connect(ac.destination); s.start(); }
+  audio() { if (!this.gain) return; const c = this.player, f = c.rpm / 60 * c.spec.cyl / 2, t = this.ac.currentTime, fc = c.rpm / 120; // fc = ett helt motorvarv-par (720°)
+    this.o1.frequency.setTargetAtTime(fc, t, 0.025); this.o2.frequency.setTargetAtTime(fc, t, 0.025); this.lp.frequency.setTargetAtTime(380 + c.rpm * 0.32 + c.thr * 1300, t, 0.05);
+    this.gain.gain.setTargetAtTime(this.vol * (0.05 + 0.11 * c.thr), t, 0.05);
+    // knatter/smällar i avgasröret när man släpper gasen på höga varv
+    if (c.thr < 0.08 && c.rpm > 3200 && Math.random() < 0.05) this.pop(0.5 + Math.random() * 0.5);
+    if (this.oo) { let best = null, bd = 1e9; for (const o of this.cars) { if (o === c || o.retired) continue; const d = Math.hypot(o.x - c.x, o.z - c.z); if (d < bd) { bd = d; best = o; } }
+      const ga = best ? this.vol * 0.07 * (0.3 + 0.7 * (best.thr || 0)) / (1 + bd * 0.12) : 0; this.og.gain.setTargetAtTime(ga, t, 0.1); if (best) { this.oo.frequency.setTargetAtTime(Math.max(6, best.rpm / 120), t, 0.05); this.of.frequency.setTargetAtTime(400 + best.rpm * 0.15, t, 0.1); } }
     if (this.tg) {
       const st = this.trk.surfTypeAt ? this.trk.surfTypeAt(c.i) : this.trk.surface, v = Math.hypot(c.vx, c.vy), slide = Math.min(1, Math.abs(c.vy) * 0.15 + c.slip * 0.8 + (c.lock ? 0.6 : 0));
       const roll = Math.min(1, v / 30), asph = st === 'asfalt';
