@@ -45,6 +45,8 @@ export function makeCar(def, trk, slot, isPlayer, gridRows = 2, totalCars = 6) {
   };
 }
 
+// Bakhjulsdrift: hur mycket sidogrepp bakaxeln behåller vid hjulspinn / fullt drivmoment / svetsad diff
+export const RW = { sp: 0.3, fl: 0.7, wd: 0.5 }; // mildare: sladden går att fånga med motstyrning
 export function phys(c, dt, trk) {
   const s = c.spec, surf = trk.surfAt ? trk.surfAt(c.i) : trk.surf;
   const L = s.wb, a = L * (1 - s.front), b = L * s.front, m = s.mass, fwd = s.drv === 'fwd', awd = s.drv === 'awd';
@@ -83,7 +85,7 @@ export function phys(c, dt, trk) {
     // antispinn: lämnar sidogrepp kvar på bakaxeln så bilen inte blir instabil på raksträckor
     if (c.aids.tc) { const nf = Math.abs(shape(af)), nr = Math.abs(shape(ar)), need = Math.abs(shape(fwd ? af : ar)), lim = awd ? 0.95 * capF * Math.sqrt(Math.max(0.08, 1 - 0.92 * nf * nf)) + 0.86 * capR * Math.sqrt(Math.max(0.05, 1 - 0.95 * nr * nr)) : capD * (fwd ? 0.97 : 0.94) * Math.sqrt(Math.max(0.08, 1 - 0.92 * need * need)); if (Fd > lim) Fd = lim; }
     // hjulspinn: på löst grus gräver däcket och tappar lite drivkraft, på asfalt/is mer; sidogreppet försvinner
-    else if (Fd > capD) { slip = Math.min(2, Fd / capD - 1); Fd = capD * (st === 'grus' ? 0.97 - 0.03 * Math.min(1, slip) : 0.92 - 0.1 * Math.min(1, slip)); latD = 1 / (1 + (fwd ? 1.4 : 2.6) * slip); } // hjulspinn: glidfriktion < statisk, sidogreppet försvinner
+    else if (Fd > capD) { slip = Math.min(2, Fd / capD - 1); Fd = capD * (st === 'grus' ? 0.97 - 0.03 * Math.min(1, slip) : 0.92 - 0.1 * Math.min(1, slip)); latD = 1 / (1 + (fwd ? 1.4 : awd ? 2.6 : RW.sp) * slip); } // hjulspinn: glidfriktion < statisk, sidogreppet försvinner
     if (Fd < -capD) Fd = -capD;
     c.slip = slip;
     let Fbf = 0, Fbr = 0, lockF = false, lockR = false; const sg = c.vx >= 0 ? 1 : -1;
@@ -99,16 +101,16 @@ export function phys(c, dt, trk) {
     // aktiv mittdiff: mer kraft till axeln som har greppmarginal kvar
     if (awd) { const sF = capF * (1 - 0.9 * Math.abs(shape(af))) + 1, sR = capR * (1 - 0.9 * Math.abs(shape(ar))) + 1, kF = Fd < 0 ? 0.7 : Math.min(0.75, 0.45 * 2 * sF / (sF + sR)); dF = Fd * kF; dR = Fd * (1 - kF); const rMax = capR * 0.8; if (Math.abs(dR) > rMax) { dF += dR - Math.sign(dR) * rMax; dR = Math.sign(dR) * rMax; } if (Math.abs(dF) > capF) { dR += dF - Math.sign(dF) * capF; dF = Math.sign(dF) * capF; } }
     const Fxf = dF - sg * Fbf, Fxr = dR - sg * Fbr;
-    const latF = (al, cap, Fx, sc, kB = 1) => -cap * Math.sqrt(Math.max(0.12, 1 - (Fx / cap) ** 2)) * sc * Math.sin(surf.C * Math.atan(surf.B * kB * al));
+    const latF = (al, cap, Fx, sc, kB = 1, fl0 = 0.12) => -cap * Math.sqrt(Math.max(fl0, 1 - (Fx / cap) ** 2)) * sc * Math.sin(surf.C * Math.atan(surf.B * kB * al));
     // Framhjulsdrift: odrivna bakhjul med toe-in och styv bakaxel bygger sidokraft snabbt och greppar mer -> bilen understyr
     // och "plogar" när man överdriver, bakvagnen följer med. Bakhjulsdrift: bakaxeln är mjukare och släpper lättare.
     const rearB = (fwd ? 1.3 : awd ? 1.15 : 1) * (s.fourlink && !fwd ? 1.12 : 1), rearG = (fwd ? 1.1 : awd ? 1.08 : 1.05) * (s.fourlink && !fwd ? 1.05 : 1), frontG = fwd ? 0.97 : 1;
     // Svetsad diff på drivaxeln: gas eller motorbroms mitt i kurvan gör att båda hjulen tappar sidogrepp samtidigt
-    let wl = 1; if (welded && !awd && Math.abs(c.vx) > 4) { const u = Math.abs(fwd ? Fxf : Fxr) / Math.max(1, fwd ? capF : capR); wl = 1 / (1 + (s.fourlink ? 1.8 : 2.0) * u * u * (0.25 + latUse)); }
+    let wl = 1; if (welded && !awd && Math.abs(c.vx) > 4) { const u = Math.abs(fwd ? Fxf : Fxr) / Math.max(1, fwd ? capF : capR); wl = 1 / (1 + (s.fourlink ? 0.9 : 1) * RW.wd * u * u * (0.25 + latUse)); }
     // momentstyrning: en stark framhjulsdriven bil drar lite åt ena hållet vid fullt gaspådrag
     c.tsq = fwd && Fxf > 0 ? Math.max(0, Fxf / capF - 0.55) * 0.12 * ((c.slot || 0) % 2 ? 1 : -1) : 0;
     const Fyf = latF(af, capF, Fxf, (fwd || awd ? latD : 1) * (fwd ? wl : 1) * (lockF ? 0.3 : 1) * frontG);
-    const Fyr = latF(ar, capR, Fxr, (fwd ? 1 : latD * wl) * (lockR ? 0.35 : 1) * rearG, rearB);
+    const Fyr = latF(ar, capR, Fxr, (fwd ? 1 : latD * wl) * (lockR ? 0.35 : 1) * rearG, rearB, fwd || awd ? 0.12 : RW.fl);
     const drag = 0.6 * s.CdA * c.vx * Math.abs(c.vx) + (Math.abs(c.vx) > 0.2 ? crr * m * G * sg : 0);
     const cd = Math.cos(delta), sd = Math.sin(delta);
     const axn = (Fxf * cd - Fyf * sd + Fxr - drag) / m, ayn = (Fyf * cd + Fxf * sd + Fyr) / m;
@@ -127,7 +129,7 @@ export function phys(c, dt, trk) {
     // växling
     if (c.aids.auto && c.shiftT <= 0) {
       if (c.gear < s.gears.length && wheelRpm > c.upRpm && slip < 0.3) { c.gear++; c.shiftT = s.shift; }
-      else if (c.gear > 1 && (wheelRpm < s.idle * 1.5 || (c.thr > 0.6 || c.brk > 0.2) && wheelRpm * s.gears[c.gear - 2] / s.gears[c.gear - 1] < c.upRpm * (0.55 + 0.25 * c.thr))) { c.gear--; c.shiftT = s.shift * 0.6; } // växlar bara ner vid gaspådrag, inbromsning eller för låga varv
+      else if (c.gear > 1 && (wheelRpm < s.idle * 1.5 || (c.thr > 0.6 && Math.abs(c.vy) < 0.15 * Math.abs(c.vx) || c.brk > 0.2) && wheelRpm * s.gears[c.gear - 2] / s.gears[c.gear - 1] < c.upRpm * (0.55 + 0.25 * c.thr))) { c.gear--; c.shiftT = s.shift * 0.6; } // växlar bara ner vid gaspådrag, inbromsning eller för låga varv
     }
   }
   const ch = Math.cos(c.h), sh = Math.sin(c.h);
