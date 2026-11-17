@@ -1007,10 +1007,13 @@ export class Race {
     if (this.cam === DEFAULT_CAM) {
       // Förarens ögon bakom ratten, innanför taket och vindrutan.
       // Samma stabila bilram för kamera och kupé: ingen extra skakning/krängning.
-      const m = pMat;
+      // Huvudet följer marken men bara delvis karossen (kroppen/nacken tar upp rörelsen), så man SER hur huven och
+      // instrumentbrädan reser sig vid gas, dyker vid broms och kränger i kurvor. I kurvor kastas huvudet åt sidan, utåt.
+      const ayL = p.vx * p.r, hs = clamp(-ayL * 0.014, -0.13, 0.13), hf = clamp(-p.ax * 0.006, -0.05, 0.05);
+      const m = M4.car(p.x, pY + (p.bY || 0) * 0.5, p.z, p.h, (p.tRoll || 0) - (p.bRoll || 0) * 0.25 - hs * 0.35, (p.tPitch || 0) + (p.bPitch || 0) * 0.2);
       const point = (x, y, z) => [m[0]*x + m[4]*y + m[8]*z + m[12], m[1]*x + m[5]*y + m[9]*z + m[13], m[2]*x + m[6]*y + m[10]*z + m[14]];
-      eye = point(-0.30, 1.08, -0.31);
-      at = point(25, 0.95, -0.31);
+      eye = point(-0.30 + hf, 1.08, -0.31 + hs);
+      at = point(25, 0.95, -0.31 + hs);
       up = [m[4], m[5], m[6]];
       fov = 1.15;
     } else if (this.cam === 0) {
