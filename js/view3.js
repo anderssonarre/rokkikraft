@@ -8,10 +8,10 @@ const SPONSORS = ['HITSIPILLI RACING', 'TEAM SORAKUOPPA', 'NAVETTA MOTORSPORT', 
 
 // Modellstil per bil: proportioner och typiska drag (utan emblem). nose: box = upprätt, wedge = sluttande kil, shark = framåtlutad nos
 const STYLE = {
-  mazda626: { L: 4.52, H: 1.40, nose: 'wedge', lights: 'rect', grille: 'slot', tails: 'wide', tailT: 'notch', deck: 0.62 },
-  passat_rx: { L: 4.67, H: 1.46, nose: 'wedge', lights: 'slim', grille: 'slat', tails: 'wide', tailT: 'wagon', rails: 1, round: 0.3 },
-  passat_vetari: { L: 4.67, H: 1.44, nose: 'wedge', lights: 'slim', grille: 'slat', tails: 'wide', tailT: 'notch', deck: 0.75, round: 0.3 },
-  passat_kardaani: { L: 4.67, H: 1.44, nose: 'wedge', lights: 'slim', grille: 'slat', tails: 'wide', tailT: 'notch', deck: 0.75, round: 0.3 },
+  mazda626: { L: 4.52, H: 1.37, nose: 'wedge', lights: 'wideRect', grille: 'slot', tails: 'wide', tailT: 'liftback', rub: 1, round: 0.2 },
+  passat_rx: { L: 4.67, H: 1.46, nose: 'wedge', lights: 'slim', grille: 'slat', tails: 'wide', tailT: 'notch', deck: 0.7, arch: 1, alloy: 1, round: 0.34 },
+  passat_vetari: { L: 4.67, H: 1.46, nose: 'wedge', lights: 'slim', grille: 'slat', tails: 'wide', tailT: 'notch', deck: 0.7, arch: 1, alloy: 1, round: 0.34 },
+  passat_kardaani: { L: 4.67, H: 1.46, nose: 'wedge', lights: 'slim', grille: 'slat', tails: 'wide', tailT: 'notch', deck: 0.7, arch: 1, alloy: 1, round: 0.34 },
   mondeo_st: { L: 4.73, H: 1.42, nose: 'wedge', lights: 'slim', grille: 'trapezoid', tails: 'tall', tailT: 'hatch', round: 0.3 },
   mondeo: { L: 4.73, H: 1.42, nose: 'wedge', lights: 'slim', grille: 'slat', tails: 'wide', tailT: 'notch', deck: 0.78, round: 0.3 },
   mazda3: { L: 4.42, H: 1.46, nose: 'wedge', lights: 'slim', grille: 'trapezoid', tails: 'round', tailT: 'hatch', round: 0.32 },
@@ -20,7 +20,7 @@ const STYLE = {
   civic: { L: 4.71, H: 1.45, nose: 'box', lights: 'rect', grille: 'volvo', tails: 'vertical', tailT: 'wagon', rails: 1, round: 0.12 },
   v940: { L: 4.79, H: 1.44, nose: 'box', lights: 'squareWide', grille: 'volvo', tails: 'vertical', tailT: 'wagon', rails: 1, round: 0.08, bigBumper: 1 },
   volvo_v8_super: { L: 4.79, H: 1.42, nose: 'box', lights: 'squareWide', grille: 'volvo', tails: 'tall', tailT: 'notch', deck: 0.95, round: 0.08, bigBumper: 1 },
-  bmw325: { L: 4.43, H: 1.39, nose: 'shark', lights: 'twinRound', grille: 'kidney', tails: 'wide', tailT: 'notch', deck: 0.8, kink: 1, round: 0.24 },
+  bmw325: { L: 4.43, H: 1.34, nose: 'shark', lights: 'twinRound', grille: 'kidney', tails: 'wide', tailT: 'notch', deck: 0.78, kink: 1, coupe: 1, gtwing: 1, lip: 1, alloy: 1, round: 0.26 },
   v343: { L: 4.2, H: 1.38, nose: 'box', W: 1.6, lights: 'round', grille: 'bars', tails: 'wide', tailT: 'notch', deck: 0.78, round: 0.14 },
   ascona_super: { L: 4.32, H: 1.38, nose: 'box', W: 1.62, lights: 'rect', grille: 'bars', tails: 'wide', tailT: 'notch', deck: 0.8, round: 0.14 },
   sierra: { L: 4.43, H: 1.40, nose: 'wedge', lights: 'rect', grille: 'blackbar', tails: 'wide', tailT: 'notch', deck: 0.7, round: 0.32 },
@@ -210,10 +210,11 @@ export class View3 {
     ext([[-h + 0.06, 0.32], ...rear.slice().reverse(), ...front.slice().reverse(), [h - 0.06, 0.32]], W, pm);
     // växthus: vindrutans lutning och taklinje efter stil
     const top = st.H, aB = h - st.hood, aT = aB - st.rake;
-    const rT = st.tailT === 'notch' ? -h + st.deck + 0.42 : st.tailT === 'hatch' ? -h + 0.45 : -h + 0.12, rB = st.tailT === 'notch' ? -h + st.deck : st.tailT === 'hatch' ? -h + 0.12 : -h + 0.04;
-    ext([[rB, belt - 0.02], [rT, top], [aT, top + 0.01], [aB, belt - 0.02]], W - 0.2, pm, 0.09);
+    const rT = st.tailT === 'notch' ? -h + st.deck + 0.42 : st.tailT === 'liftback' ? -h + 1.3 : st.tailT === 'hatch' ? -h + 0.45 : -h + 0.12,
+      rB = st.tailT === 'notch' ? -h + st.deck : st.tailT === 'liftback' ? -h + 0.18 : st.tailT === 'hatch' ? -h + 0.12 : -h + 0.04;
+    ext(st.arch ? [[rB, belt - 0.02], [rT, top - 0.03], [(rT + aT) / 2, top + 0.05], [aT, top - 0.01], [aB, belt - 0.02]] : [[rB, belt - 0.02], [rT, top], [aT, top + 0.01], [aB, belt - 0.02]], W - 0.2, pm, 0.09);
     const win = (pts, z) => { const s = new THREE.Shape(); pts.forEach((p, i) => i ? s.lineTo(p[0], p[1]) : s.moveTo(p[0], p[1])); const m = new THREE.Mesh(new THREE.ShapeGeometry(s), glass); m.position.z = z; G.add(m); };
-    const bx = (aT + rT) / 2 - 0.05 + (st.tailT === 'wagon' ? -0.25 : 0), zs = (W - 0.2) / 2 + 0.006, wb0 = belt + 0.03, wt = top - 0.07;
+    const bx = (aT + rT) / 2 - 0.05 + (st.tailT === 'wagon' ? -0.25 : 0) - (st.coupe ? 0.35 : 0) + (st.tailT === 'liftback' ? 0.1 : 0), zs = (W - 0.2) / 2 + 0.006, wb0 = belt + 0.03, wt = top - 0.07;
     for (const z of [zs, -zs]) { win([[aB - 0.16, wb0], [aT + 0.02, wt], [bx + 0.06, wt], [bx + 0.06, wb0]], z);
       const kink = st.kink ? [[rT + 0.2, wt], [rT + 0.32, wt - 0.08], [rB + 0.36, wb0]] : [[rT + 0.12, wt], [rB + 0.2, wb0]];
       win([[bx - 0.06, wb0], [bx - 0.06, wt], ...kink], z);
@@ -228,6 +229,7 @@ export class View3 {
       if (st.lights === 'twinRound') { disc(lx, ly, sd * (lz + 0.04), 0.085, lamp); disc(lx - 0.01, ly, sd * (lz - 0.17), 0.075, lamp); box(lx - 0.01, ly, sd * (lz - 0.06), 0.02, 0.2, 0.5, dark); }
       else if (st.lights === 'round') { box(lx - 0.005, ly, sd * lz, 0.02, 0.22, 0.24, dark); disc(lx, ly, sd * lz, 0.09, lamp); }
       else if (st.lights === 'squareWide') { box(lx, ly, sd * (lz - 0.02), 0.03, 0.17, 0.42, lamp); box(lx, ly, sd * (lz + 0.24), 0.03, 0.17, 0.09, amber); }
+      else if (st.lights === 'wideRect') { box(lx - 0.02, ly - 0.02, sd * (lz - 0.06), 0.03, 0.11, 0.5, lamp); box(lx - 0.025, ly - 0.02, sd * (lz + 0.24), 0.03, 0.09, 0.1, amber); }
       else if (st.lights === 'slim') { box(lx - 0.03, ly + 0.05, sd * (lz - 0.02), 0.06, 0.1, 0.4, lamp, sd * 0.15); }
       else { box(lx, ly, sd * lz, 0.03, 0.14, 0.34, lamp); box(lx - 0.01, ly - 0.12, sd * (lz + 0.1), 0.02, 0.05, 0.16, amber); }
     }
@@ -247,6 +249,9 @@ export class View3 {
       else box(tx, ty, sd * (W / 2 - 0.3), 0.03, st.tails === 'tall' ? 0.2 : 0.13, 0.42, tail);
     }
     if (st.wing) { box(-h + 0.35, top - 0.12, 0, 0.32, 0.03, W - 0.2, pm); for (const sd of [1, -1]) box(-h + 0.38, top - 0.22, sd * (W / 2 - 0.2), 0.12, 0.2, 0.04, pm); box(-h + 0.22, belt + 0.12, 0, 0.26, 0.025, W - 0.25, pm); }
+    if (st.rub) for (const sd of [1, -1]) { box(0.1, 0.56, sd * (W / 2 + 0.105), L - 0.9, 0.07, 0.03, dark); box(h + 0.06, 0.4, 0, 0.12, 0.14, W - 0.1, dark); box(-h - 0.06, 0.42, 0, 0.12, 0.13, W - 0.1, dark); }
+    if (st.lip) { box(h + 0.04, 0.25, 0, 0.14, 0.04, W - 0.16, dark); for (const sd of [1, -1]) box(0.0, 0.3, sd * (W / 2 + 0.1), L - 1.9, 0.06, 0.05, pm); }
+    if (st.gtwing) { const wx = -h + 0.32, wy = belt + 0.42; box(wx, wy, 0, 0.36, 0.035, W - 0.08, pm); for (const sd of [1, -1]) { box(wx + 0.04, wy - 0.17, sd * 0.42, 0.14, 0.34, 0.03, pm); box(wx, wy + 0.02, sd * (W / 2 - 0.04), 0.4, 0.14, 0.02, pm); } }
     if (st.rails) for (const sd of [1, -1]) box((aT + rT) / 2 - 0.1, top + 0.05, sd * (W / 2 - 0.28), Math.abs(aT - rT) * 0.8, 0.035, 0.035, dark);
     G.userData.style = st;
     // tävlingsnummer på bakre sidorutan
@@ -256,7 +261,7 @@ export class View3 {
     // hjul, hjulhus, stötfångare, bromsljus
     const wb = L * 0.6, wheels = []; G.userData.wheels = wheels;
     for (const x of [wb / 2, -wb / 2]) for (const z of [W / 2 - 0.1, -W / 2 + 0.1]) { const piv = new THREE.Group(); piv.position.set(x, 0.31, z); const wh = new THREE.Group(); const t = new THREE.Mesh(new THREE.CylinderGeometry(0.31, 0.31, 0.21, 18), dark); t.rotation.x = Math.PI / 2; t.castShadow = true; wh.add(t);
-      const rim = new THREE.Mesh(new THREE.CylinderGeometry(0.19, 0.19, 0.22, 10), steel); rim.rotation.x = Math.PI / 2; wh.add(rim); for (let s = 0; s < 4; s++) { const sp = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.34, 0.225), dark); sp.rotation.z = s * Math.PI / 4; wh.add(sp); }
+      const rim = new THREE.Mesh(new THREE.CylinderGeometry(0.19, 0.19, 0.22, 10), steel); rim.rotation.x = Math.PI / 2; wh.add(rim); for (let s = 0; s < (st.alloy ? 5 : 4); s++) { const sp = new THREE.Mesh(new THREE.BoxGeometry(st.alloy ? 0.045 : 0.06, 0.34, 0.225), st.alloy ? steel : dark); sp.rotation.z = s * Math.PI / (st.alloy ? 5 : 4); wh.add(sp); }
       piv.add(wh); G.add(piv); wheels.push({ piv, wh, front: x > 0 }); const arch = new THREE.Mesh(new THREE.CircleGeometry(0.39, 16, 0, Math.PI), dark); arch.position.set(x, 0.33, z > 0 ? W / 2 + 0.004 : -W / 2 - 0.004); if (z < 0) arch.rotation.y = Math.PI; G.add(arch); }
     const bm = opt.bars ? steel : dark; for (const [x, s] of [[h + 0.02, 1], [-h - 0.02, -1]]) { const br = st.bigBumper ? 0.13 : 0.1; const b = new THREE.Mesh(new THREE.CylinderGeometry(br, br, W - 0.16, 14), st.bigBumper && !opt.bars ? dark : bm); b.rotation.x = Math.PI / 2; b.scale.set(0.85, 1, 1); b.position.set(x + Math.sign(x) * (st.bigBumper ? 0.06 : 0), 0.42, 0); G.add(b);
       for (const z of [(W - 0.16) / 2, -(W - 0.16) / 2]) { const e = new THREE.Mesh(new THREE.SphereGeometry(0.1, 12, 8), bm); e.scale.set(0.85, 1, 1); e.position.set(x, 0.42, z); G.add(e); } }

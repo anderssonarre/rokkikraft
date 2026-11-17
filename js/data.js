@@ -66,13 +66,13 @@ export const CLASS_RULES = {
 
 export const CARS = [
   // ===================== RALLYCROSS-BILAR (myyntiluokka 850 €). Mazda 626 är spelets startbil i originalskick =====================
-  { id: 'mazda626', name: 'Mazda 626 1989', nick: 'Sexhundra', cls: 'vetari', drv: 'fwd', body: 'sedan', price: 850, starter: 1,
+  { id: 'mazda626', name: 'Mazda 626 1989', nick: 'Sexhundra', cls: 'vetari', drv: 'fwd', body: 'hatch', price: 850, starter: 1,
     Vd: 2.0, cyl: 5, redline: 6500, rc: 9.6, etaPeak: 0.88, peakRpm: 4600, mass: 1024, showMass: 998, regMass: 1090, wb: 2.52, front: 0.62,
     final: 4.1, gears: [3.31, 1.83, 1.31, 1.03, 0.80], CdA: 0.66, cool: 50, boost: 0,
     defaultEng: 'g20_5', engines: ['g20_5'],
     tag: 'Lätt framhjulsdriven – 2,0 L femcylindrig, 150 hk, 998 kg (startbil i originalskick)',
     desc: 'Lättast av de tre. Svänger villigt och tappar lite fart i kurvorna – men får se sig slagen på långa raksträckor.' },
-  { id: 'passat_rx', name: 'Volkswagen Passat 3.0 V6', nick: 'Passaten', cls: 'kardaani', drv: 'rwd', body: 'wagon', price: 850, starter: 1,
+  { id: 'passat_rx', name: 'Volkswagen Passat 3.0 V6', nick: 'Passaten', cls: 'kardaani', drv: 'rwd', body: 'sedan', price: 850, starter: 1,
     Vd: 3.0, cyl: 6, redline: 6800, rc: 10.5, etaPeak: 0.92, peakRpm: 5200, mass: 1481, showMass: 1455, regMass: 1550, wb: 2.70, front: 0.56,
     final: 3.7, gears: [3.56, 2.05, 1.43, 1.10, 0.89, 0.72], CdA: 0.70, cool: 70, boost: 0,
     defaultEng: 'vw30_v6', engines: ['vw30_v6'],
