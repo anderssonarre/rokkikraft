@@ -108,7 +108,7 @@ export function phys(c, dt, trk) {
     // Svetsad diff på drivaxeln: gas eller motorbroms mitt i kurvan gör att båda hjulen tappar sidogrepp samtidigt
     let wl = 1; if (welded && !awd && Math.abs(c.vx) > 4) { const u = Math.abs(fwd ? Fxf : Fxr) / Math.max(1, fwd ? capF : capR); wl = 1 / (1 + (s.fourlink ? 0.9 : 1) * RW.wd * u * u * (0.25 + latUse)); }
     // momentstyrning: en stark framhjulsdriven bil drar lite åt ena hållet vid fullt gaspådrag
-    c.tsq = fwd && Fxf > 0 ? Math.max(0, Fxf / capF - 0.55) * 0.12 * ((c.slot || 0) % 2 ? 1 : -1) : 0;
+    c.tsq = 0; // ingen momentstyrning – bilen ska gå rakt på fullgas
     const Fyf = latF(af, capF, Fxf, (fwd || awd ? latD : 1) * (fwd ? wl : 1) * (lockF ? 0.3 : 1) * frontG);
     const Fyr = latF(ar, capR, Fxr, (fwd ? 1 : latD * wl) * (lockR ? 0.35 : 1) * rearG, rearB, fwd || awd ? 0.12 : RW.fl);
     const drag = 0.6 * s.CdA * c.vx * Math.abs(c.vx) + (Math.abs(c.vx) > 0.2 ? crr * m * G * sg : 0);
@@ -671,12 +671,13 @@ export class Race {
     // (själva vridningen sker i steerRamp() med verklig tid, så den blir exakt även om datorn laggar)
     if (brk && !gas && c.vx < 0.4 && this.state === 'run') c.rev = true; else if (gas || !brk) c.rev = false; }
 
-  // Rattvridning mätt i verkliga sekunder (inte spelets tid): 1 s mitten → fullt utslag, 2 s fullt vänster → fullt höger,
+  // Rattvridning mätt i verkliga sekunder (inte spelets tid): 0,6 s mitten → fullt utslag, 1,2 s fullt vänster → fullt höger,
   // lika snabbt tillbaka mot mitten. Riktig ratt följs 1:1.
   steerRamp(realDt) { const c = this.player, I = this.ctl && this.ctl.state; if (!c || !I || c.auto) return;
     if (!(this.state === 'grid' || (this.state === 'run' && !c.finished && !c.retired))) return;
     if (I.wheel) { c.steer = clamp(I.steer, -1, 1); return; }
-    c.steer += clamp(clamp(I.steer, -1, 1) - c.steer, -realDt, realDt); }
+    const rate = 1 / 0.6; // 0,6 s från mitten till fullt utslag, lika snabbt tillbaka
+    c.steer += clamp(clamp(I.steer, -1, 1) - c.steer, -rate * realDt, rate * realDt); }
 
   giveSanction(c, code, title, desc) {
     if (this.t - (c.lastWarn || -9) < 3.0) return;
