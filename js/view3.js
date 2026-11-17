@@ -290,7 +290,10 @@ export class View3 {
       : st.nose === 'shark' ? [[fx - 0.04, 0.36], [fx + 0.02, 0.5], [fx + 0.03, 0.66], [fx - 0.22, belt - 0.03], [fx - 0.7, belt]]
       : [[fx - 0.04, 0.34], [fx + 0.01, 0.52], [fx - 0.12, 0.70], [fx - 0.75, belt - 0.03], [fx - 1.15, belt]];
     const rear = st.tailT === 'notch' ? [[-h + 0.35, belt + 0.03], [-h + 0.02, belt], [-h, 0.62], [-h + 0.04, 0.36]] : [[-h + 0.1, belt + 0.02], [-h, belt - 0.05], [-h - 0.01, 0.62], [-h + 0.04, 0.36]];
-    const bodyPts = [[-h + 0.06, 0.32], ...rear.slice().reverse(), ...front.slice().reverse(), [h - 0.06, 0.32]]; ext(bodyPts, W, pm);
+    // öppna hjulhus: halvcirkelformade urtag i karossens underkant vid varje hjulaxel
+    const axX = L * 0.3, AR = 0.41, arch = cx => { const pts = []; for (let k = 0; k <= 10; k++) { const a = k / 10 * Math.PI; pts.push([cx + AR * Math.cos(a), 0.31 + AR * Math.sin(a) + (k === 0 || k === 10 ? 0.01 : 0)]); } return pts; };
+    const bodyPts = [[-h + 0.06, 0.32], ...rear.slice().reverse(), ...front.slice().reverse(), [h - 0.06, 0.32], ...arch(axX), ...arch(-axX)]; ext(bodyPts, W, pm);
+    { const lin = new THREE.MeshStandardMaterial({ color: 0x0c0c0d, roughness: 0.95 }); for (const cx of [axX, -axX]) { const b = new THREE.Mesh(new THREE.BoxGeometry(AR * 2 + 0.04, AR + 0.02, W - 0.46), lin); b.position.set(cx, 0.31 + (AR + 0.02) / 2, 0); G.add(b); } } // hjulhusens innerskärmar
     const rr = mulberry(hash((opt.model || body) + ':' + (opt.num || 0) + ':' + paint.join(','))); // samma bil ser alltid likadan ut
     // växthus: vindrutans lutning och taklinje efter stil
     const top = st.H, aB = h - st.hood, aT = aB - st.rake;
@@ -333,8 +336,8 @@ export class View3 {
       else box(tx, ty, sd * (W / 2 - 0.3), 0.03, st.tails === 'tall' ? 0.2 : 0.13, 0.42, tail);
     }
     if (st.wing) { box(-h + 0.35, top - 0.12, 0, 0.32, 0.03, W - 0.2, pm); for (const sd of [1, -1]) box(-h + 0.38, top - 0.22, sd * (W / 2 - 0.2), 0.12, 0.2, 0.04, pm); box(-h + 0.22, belt + 0.12, 0, 0.26, 0.025, W - 0.25, pm); }
-    if (st.rub) for (const sd of [1, -1]) { box(0.1, 0.56, sd * (W / 2 + 0.105), L - 0.9, 0.07, 0.03, dark); box(h + 0.06, 0.4, 0, 0.12, 0.14, W - 0.1, dark); box(-h - 0.06, 0.42, 0, 0.12, 0.13, W - 0.1, dark); }
-    if (st.lip) { box(h + 0.04, 0.25, 0, 0.14, 0.04, W - 0.16, dark); for (const sd of [1, -1]) box(0.0, 0.3, sd * (W / 2 + 0.1), L - 1.9, 0.06, 0.05, pm); }
+    if (st.rub) for (const sd of [1, -1]) { const e0 = 0.1 - (L - 0.9) / 2, e1 = 0.1 + (L - 0.9) / 2; for (const [x0, x1] of [[e0, -axX - AR - 0.02], [-axX + AR + 0.02, axX - AR - 0.02], [axX + AR + 0.02, e1]]) if (x1 > x0) box((x0 + x1) / 2, 0.56, sd * (W / 2 + 0.105), x1 - x0, 0.07, 0.03, dark); box(h + 0.06, 0.4, 0, 0.12, 0.14, W - 0.1, dark); box(-h - 0.06, 0.42, 0, 0.12, 0.13, W - 0.1, dark); }
+    if (st.lip) { box(h + 0.04, 0.25, 0, 0.14, 0.04, W - 0.16, dark); for (const sd of [1, -1]) box(0.0, 0.3, sd * (W / 2 + 0.1), 2 * (axX - AR - 0.04), 0.06, 0.05, pm); }
     if (st.gtwing) { const wx = -h + 0.32, wy = belt + 0.42; box(wx, wy, 0, 0.36, 0.035, W - 0.08, pm); for (const sd of [1, -1]) { box(wx + 0.04, wy - 0.17, sd * 0.42, 0.14, 0.34, 0.03, pm); box(wx, wy + 0.02, sd * (W / 2 - 0.04), 0.4, 0.14, 0.02, pm); } }
     if (st.rails) for (const sd of [1, -1]) box((aT + rT) / 2 - 0.1, top + 0.05, sd * (W / 2 - 0.28), Math.abs(aT - rT) * 0.8, 0.035, 0.035, dark);
     G.userData.style = st;
@@ -353,7 +356,7 @@ export class View3 {
       const rim = new THREE.Mesh(new THREE.CylinderGeometry(0.19, 0.19, 0.22, 10), steel); rim.rotation.x = Math.PI / 2; wh.add(rim); for (let s = 0; s < (st.alloy ? 5 : 4); s++) { const sp = new THREE.Mesh(new THREE.BoxGeometry(st.alloy ? 0.045 : 0.06, 0.34, 0.225), st.alloy ? steel : dark); sp.rotation.z = s * Math.PI / (st.alloy ? 5 : 4); wh.add(sp); }
       for (let s = 0; s < 4; s++) { const nut = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, 0.235, 6), dark); nut.rotation.x = Math.PI / 2; nut.position.set(Math.cos(s * 1.571 + 0.785) * 0.07, Math.sin(s * 1.571 + 0.785) * 0.07, 0); wh.add(nut); }
       { const disc = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.16, 0.03, 16), steel); disc.rotation.x = Math.PI / 2; disc.position.z = z > 0 ? -0.08 : 0.08; piv.add(disc); const cal = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.12, 0.06), detMats().red); cal.position.set(-0.1, 0.06, z > 0 ? -0.06 : 0.06); piv.add(cal); }
-      piv.add(wh); G.add(piv); wheels.push({ piv, wh, front: x > 0 }); const arch = new THREE.Mesh(new THREE.CircleGeometry(0.39, 16, 0, Math.PI), dark); arch.position.set(x, 0.33, z > 0 ? W / 2 + 0.004 : -W / 2 - 0.004); if (z < 0) arch.rotation.y = Math.PI; G.add(arch); }
+      piv.add(wh); G.add(piv); wheels.push({ piv, wh, front: x > 0 }); }
     const bm = opt.bars ? steel : dark; for (const [x, s] of [[h + 0.02, 1], [-h - 0.02, -1]]) { const br = st.bigBumper ? 0.13 : 0.1; const b = new THREE.Mesh(new THREE.CylinderGeometry(br, br, W - 0.16, 14), st.bigBumper && !opt.bars ? dark : bm); b.rotation.x = Math.PI / 2; b.scale.set(0.85, 1, 1); b.position.set(x + Math.sign(x) * (st.bigBumper ? 0.06 : 0), 0.42, 0); G.add(b);
       for (const z of [(W - 0.16) / 2, -(W - 0.16) / 2]) { const e = new THREE.Mesh(new THREE.SphereGeometry(0.1, 12, 8), bm); e.scale.set(0.85, 1, 1); e.position.set(x, 0.42, z); G.add(e); } }
     if (opt.mirrors) for (const z of [W / 2 + 0.08, -W / 2 - 0.08]) { const m = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.1, 0.16), dark); m.position.set(aB - 0.1, 0.99, z); G.add(m); }
