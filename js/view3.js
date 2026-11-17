@@ -261,6 +261,10 @@ export class View3 {
     const bm = opt.bars ? steel : dark; for (const [x, s] of [[h + 0.02, 1], [-h - 0.02, -1]]) { const br = st.bigBumper ? 0.13 : 0.1; const b = new THREE.Mesh(new THREE.CylinderGeometry(br, br, W - 0.16, 14), st.bigBumper && !opt.bars ? dark : bm); b.rotation.x = Math.PI / 2; b.scale.set(0.85, 1, 1); b.position.set(x + Math.sign(x) * (st.bigBumper ? 0.06 : 0), 0.42, 0); G.add(b);
       for (const z of [(W - 0.16) / 2, -(W - 0.16) / 2]) { const e = new THREE.Mesh(new THREE.SphereGeometry(0.1, 12, 8), bm); e.scale.set(0.85, 1, 1); e.position.set(x, 0.42, z); G.add(e); } }
     if (opt.mirrors) for (const z of [W / 2 + 0.08, -W / 2 - 0.08]) { const m = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.1, 0.16), dark); m.position.set(aB - 0.1, 0.99, z); G.add(m); }
+    // Hjulen sitter i G (följer marken), allt annat i en fjädrad kaross som kan kränga, nicka och vibrera
+    const bodyG = new THREE.Group(), rollP = new THREE.Group(), keep = new Set(wheels.map(w => w.piv));
+    for (const ch of [...G.children]) if (!keep.has(ch)) bodyG.add(ch);
+    rollP.add(bodyG); G.add(rollP); G.userData.bodyG = bodyG; G.userData.rollP = rollP; G.userData.halfW = W / 2;
     this.scene.add(G); this.cars.push(G); return G; }
   // Synliga skador: bucklar in lackerade delar (deterministiskt per bil) och gör lacken mattare/repig
   damageCar(G, dmg) {
@@ -280,7 +284,10 @@ export class View3 {
       m.material.color.copy(m.userData.c0).lerp(new (T().Color)(0.35, 0.33, 0.3), k * 0.35); m.material.roughness = 0.42 + k * 0.45; m.material.metalness = 0.35; // behåll markören
     });
   }
-  poseCar(G, x, y, z, hdg, roll, pitch, steer, spin, braking, visible) { G.visible = visible; if (!visible) return; G.position.set(x, y, z); G.rotation.order = 'YZX'; G.rotation.set(-roll, -hdg, pitch);
+  // roll/pitch = markens lutning (hjulen följer den). bRoll/bPitch/bY = karossens krängning, nickning och vibration ovanpå fjädringen.
+  // Krängning sker kring yttre sidans tröskel: yttre sidan stannar på samma höjd, inre sidan lyfts.
+  poseCar(G, x, y, z, hdg, roll, pitch, steer, spin, braking, visible, bRoll = 0, bPitch = 0, bY = 0) { G.visible = visible; if (!visible) return; G.position.set(x, y, z); G.rotation.order = 'YZX'; G.rotation.set(-roll, -hdg, pitch);
+    const U = G.userData, pz = bRoll < 0 ? -U.halfW : U.halfW; if (U.rollP) { U.rollP.position.set(0, 0.28, pz); U.rollP.rotation.x = bRoll; U.bodyG.position.set(0, -0.28 + bY, -pz); U.bodyG.rotation.z = bPitch; }
     for (const w of G.userData.wheels) { w.wh.rotation.z = -spin; if (w.front) w.piv.rotation.y = -steer * 0.45; } G.userData.brake.color.setHex(braking ? 0xff2a1a : 0x8a0f0a); }
 
   // kupén: Antigravitys in-car-modeller (samma hörndata som förut) som three-geometri

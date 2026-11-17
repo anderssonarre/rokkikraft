@@ -980,24 +980,34 @@ export class Race {
       this.camH += wrapA(tgt - this.camH) * Math.min(1, 5 * dt);
     }
     const ch = Math.cos(this.camH), sh = Math.sin(this.camH);
-    const pRoll = clamp(-p.vx * p.r * 0.0045, -0.07, 0.07), pPitch = clamp(p.ax * 0.004, -0.045, 0.045);
     // Kaross följer marken under de fyra hjulen: höjd = medel, lutning fram/bak och sida/sida ur hjulens höjdskillnad
     for (const c of this.cars) {
       const T = this.trk, ch = Math.cos(c.h), sh = Math.sin(c.h), L = (c.spec.wb || 2.6) / 2, W = 0.75;
       const hF = (T.heightAt(c.x + ch * L - sh * W, c.z + sh * L + ch * W) + T.heightAt(c.x + ch * L + sh * W, c.z + sh * L - ch * W)) / 2;
       const hR = (T.heightAt(c.x - ch * L - sh * W, c.z - sh * L + ch * W) + T.heightAt(c.x - ch * L + sh * W, c.z - sh * L - ch * W)) / 2;
       const hL = (T.heightAt(c.x - sh * W, c.z + ch * W) + T.heightAt(c.x - sh * W + ch * L * 0.5, c.z + ch * W + sh * L * 0.5)) / 2, hRt = (T.heightAt(c.x + sh * W, c.z - ch * W) + T.heightAt(c.x + sh * W + ch * L * 0.5, c.z - ch * W + sh * L * 0.5)) / 2;
-      const ty = (hF + hR) / 2, tp = Math.atan2(hF - hR, 2 * L), tr = Math.atan2(hL - hRt, 2 * W), k = Math.min(1, 18 * dt);
-      if (c.y === undefined || !isFinite(c.tPitch)) { c.y = ty; c.tPitch = tp; c.tRoll = tr; } else { c.y += (ty - c.y) * k; c.tPitch += (tp - c.tPitch) * k; c.tRoll += (tr - c.tRoll) * k; }
+      // hjulen ska alltid stå på marken: höjd och lutning sätts direkt (ingen eftersläpning som gör att bilen sjunker/svävar)
+      c.y = (hF + hR) / 2; c.tPitch = Math.atan2(hF - hR, 2 * L); c.tRoll = Math.atan2(hL - hRt, 2 * W);
+      // Fjädring: nickning av längsacceleration (gas = fronten upp, broms = fronten ner) – starkare bil ger större acceleration och mer nickning.
+      // Krängning av sidoacceleration utåt i kurvan (mjukare fjädring = mer krängning). Dämpad med fjäder-dämparsvar.
+      const s = c.spec, soft = s.roll || 1, ay = c.vx * c.r, k = Math.min(1, 7 * dt);
+      const tgtP = clamp(c.ax * 0.0075 * soft, -0.075, 0.075), tgtR = clamp(-ay * 0.0105 * soft, -0.1, 0.1);
+      c.bPitch = (c.bPitch || 0) + (tgtP - (c.bPitch || 0)) * k; c.bRoll = (c.bRoll || 0) + (tgtR - (c.bRoll || 0)) * k;
+      // Vibrationer: växer med farten och beror på underlaget (grus mest, asfalt minst) + motorvibration vid höga varv
+      const v = Math.hypot(c.vx, c.vy), st = T.surfTypeAt ? T.surfTypeAt(c.i) : T.surface, rough = (st === 'grus' ? 1 : st === 'is' ? 0.55 : 0.3) * (c.onSurf ? 1 : 2.2) * (1.6 - (s.setup?.damper || 5) * 0.09);
+      c.odo = (c.odo || 0) + v * dt; const a = Math.pow(Math.min(1, v / 33), 1.6) * rough, o = c.odo, sd = c.slot * 1.7;
+      const nz = Math.sin(o * 2.9 + sd) * 0.5 + Math.sin(o * 7.3 + sd * 2) * 0.3 + Math.sin(o * 13.1 + sd * 3) * 0.2, er = Math.sin(this.t * (c.rpm / 60) * 6.283) * Math.max(0, c.rpm - 4500) / 30000;
+      c.bY = a * nz * 0.022 + er * 0.004; c.vR = a * Math.sin(o * 5.3 + sd * 1.3) * 0.006; c.vP = a * Math.sin(o * 4.1 + sd * 0.7) * 0.005;
     }
     const pY = p.y, pSl = Math.atan(p.slope || 0);
-    const pMat = M4.car(p.x, pY, p.z, p.h, pRoll, pPitch + pSl);
+    // kupén och förarkameran följer karossen (markens lutning + krängning, nickning och vibration)
+    const pMat = M4.car(p.x, pY + (p.bY || 0), p.z, p.h, (p.tRoll || 0) - (p.bRoll || 0) - (p.vR || 0), (p.tPitch || 0) + (p.bPitch || 0) + (p.vP || 0));
 
     let eye, at, up = [0, 1, 0], fov = 1.05;
     if (this.cam === DEFAULT_CAM) {
       // Förarens ögon bakom ratten, innanför taket och vindrutan.
       // Samma stabila bilram för kamera och kupé: ingen extra skakning/krängning.
-      const m = M4.car(p.x, pY, p.z, p.h, 0, pSl);
+      const m = pMat;
       const point = (x, y, z) => [m[0]*x + m[4]*y + m[8]*z + m[12], m[1]*x + m[5]*y + m[9]*z + m[13], m[2]*x + m[6]*y + m[10]*z + m[14]];
       eye = point(-0.30, 1.08, -0.31);
       at = point(25, 0.95, -0.31);
@@ -1033,12 +1043,12 @@ export class Race {
     }
 
     for (const c of this.cars) if (c.obj && (c.dmg || 0) > 4) this.view.damageCar(c.obj, c.dmg);
-    for (const c of this.cars) this.view.poseCar(c.obj, c.x, c.y, c.z, c.h, clamp(-c.vx * c.r * 0.0045, -0.07, 0.07) + (c.tRoll || 0), clamp(c.ax * 0.004, -0.045, 0.045) + (c.tPitch ?? Math.atan(c.slope || 0)), c.steer, c.wspin, c.brk > 0.1, !(c === p && (this.cam === 0 || this.cam === 1 || this.cam === DEFAULT_CAM)));
+    for (const c of this.cars) this.view.poseCar(c.obj, c.x, c.y, c.z, c.h, c.tRoll || 0, c.tPitch || 0, c.steer, c.wspin, c.brk > 0.1, !(c === p && (this.cam === 0 || this.cam === 1 || this.cam === DEFAULT_CAM)), (c.bRoll || 0) + (c.vR || 0), (c.bPitch || 0) + (c.vP || 0), c.bY || 0);
     let cockpit = null;
     if (this.cam === 0) { const sway = clamp((p.ay || 0) * 0.045 + Math.sin(this.t * 6.0) * 0.03, -0.45, 0.45);
       cockpit = [pMat, M4.mul(pMat, M4.localRotX(0.16, 0.78, -0.31, 0.22, p.steer * 0.85)), M4.mul(pMat, M4.localRotX(0.30, 1.06, -0.02, 0.0, sway)), null]; }
     if (this.cam === DEFAULT_CAM) {
-      const m = M4.car(p.x, pY, p.z, p.h, 0, pSl);
+      const m = pMat;
       cockpit = [null, M4.mul(m, M4.localRotX(0.16, 0.78, -0.31, 0.22, p.steer * 0.85)), null, m];
     }
     this.view.frame({ eye, at, up, fov, focus: [p.x, pY, p.z], particles: this.pl, dust: this.trk.surf.dust, cockpit });
