@@ -371,7 +371,7 @@ export const TRACKS = [
       'Grabbskogin Rata (E-TMK/UA), Tenholantie 416, 10620 Tammisaari',
       'Banlängd ca 800 m (moturs)',
       'Asfalterade partier (streckade i banprofilen): Startrakan (L → 7), norra kurvan (post 3) och västra hårnålen (före post 5)',
-      'Sakkolenkki (Lisälenkki) vid post 6: Vaihtoehto 1 (inre högersväng) / Vaihtoehto 2 (röd yttre slinga runt ön D före M)',
+      'Normalrutt: den yttre slingan förbi PL och post 6. Lisälenkki: den raka innerrutten från post 5 som ansluter före mål (M)',
     ],
     // Kontrollpunkter [x, z, bredd(m), underlag('grus'|'asfalt')] i moturs varvriktning med start vid post 7 / L-sammanfogningen
     waypoints: [
@@ -388,17 +388,22 @@ export const TRACKS = [
       [-95, -60, 11.5, 'grus'],   // 10: Mot västra hårnålen (EP)
       [-136,-33, 12.5, 'asfalt'], // 11: Ingång västra hårnålen (asfalt)
       [-138,  8, 12.5, 'asfalt'], // 12: Utgång västra hårnålen (Hinaus-väg)
-      [-100, 18, 12.0, 'grus'],   // 13: Post 5
-      [-56,  18, 12.0, 'grus'],   // 14: PL (Päälippu)
-      [-24,  21, 12.0, 'grus'],   // 15: Post 6 – delning Vaihtoehto 1 (inre) / 2 (Sakkolenkki röd yttre)
-      [-14,  42, 11.5, 'grus'],   // 16: Förbi ön D (Vaihtoehto 1 huvudspår)
-      [-36,  64, 12.0, 'grus'],   // 17: M = Maali (mellan Toimisto och Johto)
-      [-50,  84, 12.5, 'asfalt'], // 18: Kurva in mot post 7 / startrakan
+      [-98,  18, 12.0, 'grus'],   // 13: Post 5 – här delar sig banan (normalrutt = den yttre slingan, lisälenkki = den raka innerrutten)
+      [-82,  13, 12.0, 'grus'],   // 14: Normalrutten svänger ut mot norr
+      [-67,   4, 12.0, 'grus'],   // 15
+      [-50,   0, 12.0, 'grus'],   // 16: Slingans yttersta punkt (förbi PL)
+      [-33,   4, 12.0, 'grus'],   // 17
+      [-22,  11, 12.0, 'grus'],   // 18: Post 6
+      [-15,  21, 11.5, 'grus'],   // 19
+      [-12,  31, 11.5, 'grus'],   // 20
+      [-14,  42, 11.5, 'grus'],   // 21: Lisälenkki ansluter igen
+      [-36,  64, 12.0, 'grus'],   // 22: M = Maali (mellan Toimisto och Johto) – mållinjen
+      [-50,  84, 12.5, 'asfalt'], // 23: Kurva in mot post 7 / startrakan
     ],
-    // Sakkolenkki (Vaihtoehto 2): röd yttre slinga på utsidan (österut) av högersvängen efter post 6
-    customJoker: { startFrac: 0.78, endFrac: 0.91, side: -1, D: 18.0, w: 8.5, skew: -0.1 },
+    // Lisälenkki: den raka innerrutten mellan post 5 och anslutningen före M (normalrutten är den yttre slingan förbi PL och post 6)
+    customJoker: { startFrac: 0.7623, endFrac: 0.9069, side: 1, D: 18.5, w: 8.5, uShape: true, skew: -0.15 },
     startChute: { x0: -108, z0: 95, x1: -38, z1: 95, w: 13.5, surface: 'asfalt', label: 'L (KERÄILY)' },
-    finishFrac: 0.91,
+    finishFrac: 0.9436,
     posts: [
       { n: '1', x: 74, z: 90 }, { n: '2', x: 96, z: -10 }, { n: '3', x: 42, z: -82 },
       { n: '4', x: -42, z: -58 }, { n: '5', x: -102, z: 6 }, { n: 'PL', x: -60, z: 6 },
