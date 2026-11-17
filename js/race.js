@@ -988,7 +988,7 @@ export class Race {
       const hR = (T.heightAt(c.x - ch * L - sh * W, c.z - sh * L + ch * W) + T.heightAt(c.x - ch * L + sh * W, c.z - sh * L - ch * W)) / 2;
       const hL = (T.heightAt(c.x - sh * W, c.z + ch * W) + T.heightAt(c.x - sh * W + ch * L * 0.5, c.z + ch * W + sh * L * 0.5)) / 2, hRt = (T.heightAt(c.x + sh * W, c.z - ch * W) + T.heightAt(c.x + sh * W + ch * L * 0.5, c.z - ch * W + sh * L * 0.5)) / 2;
       const ty = (hF + hR) / 2, tp = Math.atan2(hF - hR, 2 * L), tr = Math.atan2(hL - hRt, 2 * W), k = Math.min(1, 18 * dt);
-      if (c.y === undefined) { c.y = ty; c.tPitch = tp; c.tRoll = tr; } else { c.y += (ty - c.y) * k; c.tPitch += (tp - c.tPitch) * k; c.tRoll += (tr - c.tRoll) * k; }
+      if (c.y === undefined || !isFinite(c.tPitch)) { c.y = ty; c.tPitch = tp; c.tRoll = tr; } else { c.y += (ty - c.y) * k; c.tPitch += (tp - c.tPitch) * k; c.tRoll += (tr - c.tRoll) * k; }
     }
     const pY = p.y, pSl = Math.atan(p.slope || 0);
     const pMat = M4.car(p.x, pY, p.z, p.h, pRoll, pPitch + pSl);

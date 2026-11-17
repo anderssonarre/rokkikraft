@@ -577,25 +577,7 @@ export function cockpitMesh({ driverView = false } = {}) {
   // GoPro-kameran sitter vid [-0.62, 1.06, 0.02], så hjälmen vid x = -0.34, y = 1.04, z = -0.38 ligger perfekt i vänster bildkant!
   const suitBlack = [0.10, 0.11, 0.13, 1], suitFold = [0.15, 0.16, 0.19, 1], sparcoBlue = [0.12, 0.38, 0.78, 1];
   // Hjälmskal (vit/mörk rallyhjälm med mörkt visir och skärm uppe till vänster som i foto 1 & 2!)
-  // Dölj det egna huvudet när kameran sitter vid förarens ögon.
-  if (!driverView) {
-  m.tube([-0.38, 1.01, -0.40], [-0.20, 1.03, -0.37], 0.115, 0.105, [0.92, 0.93, 0.95, 1], 12, true); // Vitt hjälmskal (foto 1)
-  m.tube([-0.36, 1.08, -0.39], [-0.18, 1.09, -0.35], 0.102, 0.090, [0.12, 0.14, 0.16, 1], 12, true); // Mörk hjälmtopp / skärm (foto 2)
-  m.tube([-0.22, 1.08, -0.35], [-0.15, 1.07, -0.33], 0.088, 0.076, [0.95, 0.96, 0.98, 1], 10, true); // Vit Sparco-skärmkant
-  m.tube([-0.23, 0.99, -0.35], [-0.16, 1.00, -0.33], 0.085, 0.072, [0.06, 0.07, 0.09, 1], 10, true); // Mörkt visir
-  }
-  // Förarstolens ryggstöd (kuppipenkki) & förarens svarta racingoverall-axlar och överarmar med blå/vit Sparco-epålett (foto 1 & 2!)
-  m.box(-0.42, 0.42, -0.34, 0.10, 0.44, 0.32, suitBlack);
-  // Vänster & höger överarm som sträcker sig framåt från förarens axlar [-0.32] fram till underarmarna vid [0.00]
-  m.tube([-0.32, 0.76, -0.44], [0.02, 0.77, -0.44], 0.062, 0.052, suitBlack, 10, true);
-  m.tube([-0.32, 0.73, -0.20], [0.02, 0.76, -0.19], 0.066, 0.054, suitBlack, 10, true);
-  // Blå/vit Sparco-epålett på höger axel/ärm nere till vänster (exakt som i foto 1 & 2!)
-  m.box(-0.18, 0.76, -0.20, 0.068, 0.032, 0.052, sparcoBlue);
-  m.box(-0.18, 0.788, -0.20, 0.060, 0.008, 0.044, [0.95, 0.96, 0.98, 1]);
-  // Textilveck i overall-ärmarna
-  m.tube([-0.18, 0.74, -0.20], [-0.12, 0.75, -0.19], 0.060, 0.058, suitFold, 10);
-  m.tube([-0.08, 0.75, -0.19], [-0.03, 0.76, -0.19], 0.056, 0.054, suitFold, 10);
-
+  // Föraren (hjälm, kropp och överarmar) ritas med runda former i view3.js (roundDriver)
   return m.data();
 }
 

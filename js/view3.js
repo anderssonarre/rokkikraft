@@ -6,6 +6,19 @@ import { hash, mulberry } from './gl.js';
 const T = () => window.THREE;
 const SPONSORS = ['HITSIPILLI RACING', 'TEAM SORAKUOPPA', 'NAVETTA MOTORSPORT', 'PÄRINÄPOJAT', 'KURARALLI', 'RAUTAKANKI RT', 'LÖYSÄ PULTTI', 'SAUNAN TAKA RACING', 'ROKKIKRAFT'];
 
+// Rundade hörn på en polygonprofil (mjukare karossformer)
+function roundShape(pts, r) { const THREE = T(), s = new THREE.Shape(), n = pts.length;
+  const at = (a, b, d) => { const dx = b[0] - a[0], dy = b[1] - a[1], L = Math.hypot(dx, dy) || 1, k = Math.min(d, L / 2.2) / L; return [a[0] + dx * k, a[1] + dy * k]; };
+  for (let i = 0; i < n; i++) { const p = pts[i], prev = pts[(i - 1 + n) % n], next = pts[(i + 1) % n], a = at(p, prev, r), b = at(p, next, r);
+    if (i === 0) s.moveTo(a[0], a[1]); else s.lineTo(a[0], a[1]); s.quadraticCurveTo(p[0], p[1], b[0], b[1]); }
+  s.closePath(); return s; }
+// Nascar-nät (verkko): svarta remmar i rutnät, genomskinligt mellan
+let _netMat = null;
+function netMat() { const THREE = T(); if (_netMat) return _netMat;
+  const tex = canvasTex(256, 128, (g, w, h) => { g.clearRect(0, 0, w, h); g.strokeStyle = '#0d0d0f'; g.lineWidth = 7;
+    for (let x = 4; x <= w; x += 28) { g.beginPath(); g.moveTo(x, 0); g.lineTo(x, h); g.stroke(); } for (let y = 4; y <= h; y += 28) { g.beginPath(); g.moveTo(0, y); g.lineTo(w, y); g.stroke(); }
+    g.lineWidth = 12; g.strokeRect(3, 3, w - 6, h - 6); });
+  return _netMat = new THREE.MeshLambertMaterial({ map: tex, transparent: true, alphaTest: 0.35, side: THREE.DoubleSide }); }
 function canvasTex(w, h, draw, repeat) { const THREE = T(), c = document.createElement('canvas'); c.width = w; c.height = h; draw(c.getContext('2d'), w, h);
   const t = new THREE.CanvasTexture(c); t.anisotropy = 4; if (repeat) { t.wrapS = t.wrapT = THREE.RepeatWrapping; } return t; }
 // gråskalebrus som multipliceras med hörnfärgen: ger grus-, asfalt- och gräsyta
@@ -155,7 +168,7 @@ export class View3 {
   addCar(body, paint, opt = {}) { const THREE = T(), G = new THREE.Group(), L = body === 'wagon' ? 4.5 : body === 'sedan' ? 4.3 : 3.95, W = 1.64, h = L / 2;
     const col = new THREE.Color(paint[0], paint[1], paint[2]);
     const pm = new THREE.MeshStandardMaterial({ color: col, metalness: 0.35, roughness: 0.42 }), dark = new THREE.MeshStandardMaterial({ color: 0x141416, roughness: 0.85 }), glass = new THREE.MeshStandardMaterial({ color: 0x1a2530, roughness: 0.08, metalness: 0.85, side: THREE.DoubleSide }), steel = new THREE.MeshStandardMaterial({ color: 0x9aa0a6, metalness: 0.8, roughness: 0.35 });
-    const ext = (pts, width, mat, bevel = 0.07) => { const s = new THREE.Shape(); pts.forEach((p, i) => i ? s.lineTo(p[0], p[1]) : s.moveTo(p[0], p[1])); const g = new THREE.ExtrudeGeometry(s, { depth: width - bevel * 2, bevelEnabled: true, bevelThickness: bevel, bevelSize: bevel, bevelSegments: 3, curveSegments: 4 }); g.translate(0, 0, -(width - bevel * 2) / 2); const m = new THREE.Mesh(g, mat); m.castShadow = true; G.add(m); return m; };
+    const ext = (pts, width, mat, bevel = 0.11) => { const s = roundShape(pts, 0.22); const g = new THREE.ExtrudeGeometry(s, { depth: width - bevel * 2, bevelEnabled: true, bevelThickness: bevel, bevelSize: bevel, bevelSegments: 5, curveSegments: 8 }); g.translate(0, 0, -(width - bevel * 2) / 2); const m = new THREE.Mesh(g, mat); m.castShadow = true; G.add(m); return m; };
     // underkaross med sluttande front och hjulhus
     ext([[-h + 0.06, 0.34], [-h, 0.62], [-h + 0.05, 0.86], [-h + 0.4, 0.93], [h - 1.25, 0.94], [h - 0.45, 0.86], [h - 0.05, 0.74], [h, 0.52], [h - 0.06, 0.34]], W, pm);
     // växthus
@@ -172,12 +185,14 @@ export class View3 {
     // tävlingsnummer på bakre sidorutan
     if (opt.num) { const bw = opt.bw === 'bw', tex = canvasTex(128, 64, (g) => { g.fillStyle = bw ? '#111' : '#f6f4ec'; g.fillRect(0, 0, 128, 64); g.fillStyle = bw ? '#f6f4ec' : '#111'; g.font = '900 50px Impact, "Arial Narrow", Arial'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(String(opt.num), 64, 34, 118); });
       for (const z of [zs + 0.004, -zs - 0.004]) { const m = new THREE.Mesh(new THREE.PlaneGeometry(0.62, 0.3), new THREE.MeshBasicMaterial({ map: tex })); m.position.set((bx + rT) / 2 - 0.02, 1.14, z); if (z < 0) m.rotation.y = Math.PI; G.add(m); } }
+    { const net = new THREE.Mesh(new THREE.PlaneGeometry(0.66, 0.36), netMat()); net.position.set((aB - 0.16 + bx + 0.06) / 2 - 0.02, 1.13, -zs - 0.012); net.rotation.y = Math.PI; G.add(net); }
     // hjul, hjulhus, stötfångare, bromsljus
     const wb = L * 0.6, wheels = []; G.userData.wheels = wheels;
     for (const x of [wb / 2, -wb / 2]) for (const z of [W / 2 - 0.1, -W / 2 + 0.1]) { const piv = new THREE.Group(); piv.position.set(x, 0.31, z); const wh = new THREE.Group(); const t = new THREE.Mesh(new THREE.CylinderGeometry(0.31, 0.31, 0.21, 18), dark); t.rotation.x = Math.PI / 2; t.castShadow = true; wh.add(t);
       const rim = new THREE.Mesh(new THREE.CylinderGeometry(0.19, 0.19, 0.22, 10), steel); rim.rotation.x = Math.PI / 2; wh.add(rim); for (let s = 0; s < 4; s++) { const sp = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.34, 0.225), dark); sp.rotation.z = s * Math.PI / 4; wh.add(sp); }
       piv.add(wh); G.add(piv); wheels.push({ piv, wh, front: x > 0 }); const arch = new THREE.Mesh(new THREE.CircleGeometry(0.39, 16, 0, Math.PI), dark); arch.position.set(x, 0.33, z > 0 ? W / 2 + 0.004 : -W / 2 - 0.004); if (z < 0) arch.rotation.y = Math.PI; G.add(arch); }
-    const bm = opt.bars ? steel : dark; for (const [x, s] of [[h + 0.02, 1], [-h - 0.02, -1]]) { const b = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.2, W - 0.06), bm); b.position.set(x, 0.42, 0); G.add(b); }
+    const bm = opt.bars ? steel : dark; for (const [x, s] of [[h + 0.02, 1], [-h - 0.02, -1]]) { const b = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, W - 0.16, 14), bm); b.rotation.x = Math.PI / 2; b.scale.set(0.85, 1, 1); b.position.set(x, 0.42, 0); G.add(b);
+      for (const z of [(W - 0.16) / 2, -(W - 0.16) / 2]) { const e = new THREE.Mesh(new THREE.SphereGeometry(0.1, 12, 8), bm); e.scale.set(0.85, 1, 1); e.position.set(x, 0.42, z); G.add(e); } }
     const bl = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.09, 0.5), new THREE.MeshBasicMaterial({ color: 0x8a0f0a })); bl.position.set(rT - 0.02 > -h ? -h - 0.005 : -h, 0.8, 0); G.add(bl); G.userData.brake = bl.material;
     for (const z of [0.5, -0.5]) { const hl = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.13, 0.34), dark); hl.position.set(h - 0.02, 0.66, z); G.add(hl); }
     if (opt.mirrors) for (const z of [W / 2 + 0.08, -W / 2 - 0.08]) { const m = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.1, 0.16), dark); m.position.set(aB - 0.1, 0.99, z); G.add(m); }
@@ -204,10 +219,38 @@ export class View3 {
     for (const w of G.userData.wheels) { w.wh.rotation.z = -spin; if (w.front) w.piv.rotation.y = -steer * 0.45; } G.userData.brake.color.setHex(braking ? 0xff2a1a : 0x8a0f0a); }
 
   // kupén: Antigravitys in-car-modeller (samma hörndata som förut) som three-geometri
-  setCockpit(parts, paint) { const THREE = T(); this.cockParts = parts.map(arr => { const n = arr.length / 10, pos = new Float32Array(n * 3), nor = new Float32Array(n * 3), col = new Float32Array(n * 3);
+  setCockpit(parts, paint) { const THREE = T(); this.buildCockExtra(paint); this.cockParts = parts.map(arr => { const n = arr.length / 10, pos = new Float32Array(n * 3), nor = new Float32Array(n * 3), col = new Float32Array(n * 3);
       for (let i = 0; i < n; i++) { const o = i * 10; pos.set([arr[o], arr[o + 1], arr[o + 2]], i * 3); nor.set([arr[o + 3], arr[o + 4], arr[o + 5]], i * 3); const p = arr[o + 9] < 0.5; col.set(p ? [paint[0] * arr[o + 6], paint[1] * arr[o + 6], paint[2] * arr[o + 6]] : [arr[o + 6], arr[o + 7], arr[o + 8]], i * 3); }
       const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g.setAttribute('normal', new THREE.BufferAttribute(nor, 3)); g.setAttribute('color', new THREE.BufferAttribute(col, 3));
       const m = new THREE.Mesh(g, new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide })); m.matrixAutoUpdate = false; m.frustumCulled = false; this.cock.add(m); return m; }); }
+
+  // Kupédetaljer med runda former (samma koordinater som cockpitMesh: x fram, y upp, z höger; föraren sitter vid z ≈ −0.31)
+  buildCockExtra(paint) { const THREE = T(), L = (c) => new THREE.MeshLambertMaterial({ color: c }), col = new THREE.Color(paint[0], paint[1], paint[2]);
+    const body = this.cockX = new THREE.Group(), helm = this.cockH = new THREE.Group(); body.matrixAutoUpdate = helm.matrixAutoUpdate = false;
+    const suit = L(0x15161a), suitHi = L(0x23252b), cage = L(0x2a2d32), white = L(0xeef0f2), visor = new THREE.MeshLambertMaterial({ color: 0x0b0d10 }), paintM = L(col), raw = L(0x4a4448), trim = L(0x1c1e22);
+    const tube = (a, b, r, m, caps = true, g = body) => { const A = new THREE.Vector3(...a), B = new THREE.Vector3(...b), d = B.clone().sub(A), len = d.length();
+      const c = new THREE.Mesh(new THREE.CylinderGeometry(r, r, len, 16), m); c.position.copy(A).add(B).multiplyScalar(0.5); c.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), d.normalize()); g.add(c);
+      if (caps) for (const P of [A, B]) { const sp = new THREE.Mesh(new THREE.SphereGeometry(r, 16, 10), m); sp.position.copy(P); g.add(sp); } };
+    // förardörr (rensad plåtdörr med mjuka hörn), dörrlist och dörrsträvor i buren
+    const door = new THREE.Mesh(new THREE.ExtrudeGeometry(roundShape([[-0.58, 0.28], [0.50, 0.28], [0.56, 0.52], [0.50, 0.74], [-0.58, 0.74]], 0.09), { depth: 0.03, bevelEnabled: true, bevelThickness: 0.012, bevelSize: 0.012, bevelSegments: 3, curveSegments: 8 }), paintM);
+    door.position.z = -0.68; body.add(door);
+    const inner = new THREE.Mesh(new THREE.ExtrudeGeometry(roundShape([[-0.5, 0.33], [0.42, 0.33], [0.46, 0.52], [0.42, 0.68], [-0.5, 0.68]], 0.07), { depth: 0.012, bevelEnabled: false, curveSegments: 8 }), raw);
+    inner.position.z = -0.645; body.add(inner);
+    tube([-0.6, 0.745, -0.655], [0.52, 0.745, -0.655], 0.024, trim);                        // dörrlist under sidorutan
+    tube([-0.56, 0.36, -0.60], [0.46, 0.66, -0.60], 0.027, cage); tube([-0.56, 0.64, -0.60], [0.46, 0.38, -0.60], 0.027, cage); // oviputket (X)
+    tube([0.46, 0.34, -0.60], [0.44, 0.74, -0.60], 0.028, cage); tube([0.44, 0.72, -0.60], [0.16, 1.22, -0.54], 0.027, cage); // vänster A-stolpe i buren
+    // Nascar-nät i förarens sidoruta
+    const net = new THREE.Mesh(new THREE.PlaneGeometry(0.88, 0.4), netMat()); net.position.set(-0.1, 0.96, -0.63); body.add(net);
+    // föraren: rundad bål, axlar och överarmar i overall (handskar och underarmar sitter på ratten)
+    tube([-0.47, 0.42, -0.33], [-0.44, 0.80, -0.33], 0.155, suit);
+    tube([-0.40, 0.84, -0.47], [-0.40, 0.83, -0.19], 0.075, suit);
+    tube([-0.34, 0.80, -0.46], [0.01, 0.775, -0.44], 0.058, suit); tube([-0.34, 0.79, -0.20], [0.01, 0.765, -0.19], 0.060, suit);
+    tube([-0.40, 0.84, -0.33], [-0.36, 0.95, -0.36], 0.05, suitHi);                           // nacke / HANS
+    // hjälm (bara när kameran inte sitter i förarens ögon)
+    const hel = new THREE.Mesh(new THREE.SphereGeometry(0.13, 24, 18), white); hel.scale.set(1.05, 1.0, 0.95); hel.position.set(-0.30, 1.04, -0.37); helm.add(hel);
+    const top = new THREE.Mesh(new THREE.SphereGeometry(0.132, 24, 12, 0, Math.PI * 2, 0, Math.PI * 0.32), L(0x14171b)); top.scale.copy(hel.scale); top.position.copy(hel.position); helm.add(top);
+    const vis = new THREE.Mesh(new THREE.SphereGeometry(0.134, 20, 10, -0.75, 1.5, Math.PI * 0.40, Math.PI * 0.22), visor); vis.scale.copy(hel.scale); vis.position.copy(hel.position); vis.rotation.y = Math.PI / 2; helm.add(vis);
+    this.cock.add(body); this.cock.add(helm); }
 
   resize() { const r = this.canvas.getBoundingClientRect(), dpr = window.devicePixelRatio || 1, target = { '540': 540, '720': 720, '1080': 1080, '1440': 1440 }[this.res];
     const ratio = target ? Math.min(3, Math.max(0.3, target / Math.max(1, r.height))) : Math.min(dpr, this.q ? 2 : 1.25);
@@ -224,7 +267,8 @@ export class View3 {
     for (let i = 0; i < N; i++) { const q = pl[i], d = q.d || o.dust; pa.position.setXYZ(i, q.x, q.y, q.z); pa.col.setXYZW(i, d[0], d[1], d[2], 0.55 * (1 - q.life / q.max)); pa.sz.setX(i, q.s * 2.2); }
     pa.position.needsUpdate = pa.col.needsUpdate = pa.sz.needsUpdate = true; this.pGeo.setDrawRange(0, N); this.pMat.uniforms.sc.value = (this.pxH || 800) / (2 * Math.tan(o.fov / 2));
     R.clear(); R.render(this.scene, cam);
-    if (o.cockpit && this.cockParts) { o.cockpit.forEach((m, i) => { if (this.cockParts[i]) { this.cockParts[i].visible = !!m; if (m) this.cockParts[i].matrix.fromArray(m); } }); R.clearDepth(); R.render(this.cock, cam); }
+    if (o.cockpit && this.cockParts) { o.cockpit.forEach((m, i) => { if (this.cockParts[i]) { this.cockParts[i].visible = !!m; if (m) this.cockParts[i].matrix.fromArray(m); } });
+      const base = o.cockpit[0] || o.cockpit[3]; if (this.cockX) { this.cockX.visible = !!base; if (base) this.cockX.matrix.fromArray(base); this.cockH.visible = !!o.cockpit[0]; if (o.cockpit[0]) this.cockH.matrix.fromArray(o.cockpit[0]); } R.clearDepth(); R.render(this.cock, cam); }
   }
   dispose() { try { this.r.dispose(); this.scene.traverse(o => { if (o.geometry) o.geometry.dispose(); }); } catch (e) { } }
 }
