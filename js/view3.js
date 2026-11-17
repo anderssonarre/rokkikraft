@@ -194,7 +194,12 @@ export class View3 {
       const m = new THREE.InstancedMesh(new THREE.ConeGeometry(0.26, 0.75, 10).translate(0, 0.375, 0), new THREE.MeshLambertMaterial({ color: 0xff6a12 }), Math.max(1, list.length)), d = new THREE.Object3D(); list.forEach((p, i) => { d.position.set(p[0], p[1], p[2]); d.updateMatrix(); m.setMatrixAt(i, d.matrix); }); m.count = list.length; m.castShadow = true; S.add(m); }
     // flaggposter
     const posts = (trk.posts && trk.posts.length ? trk.posts.map(p => [p.x, p.z]) : [...Array(7)].map((_, q) => { const p = edge(Math.round((q + 0.5) * n / 7), 1, trk.verge + 4); return [p[0], p[2]]; }));
-    for (const [x, z] of posts) { const o = {}; trk.heightAt(x, z, o); if (o.d < 1.5) continue; box(x, o.h, z, 1.8, 0.25, 1.8, lam(0x6b5a45)); box(x, o.h + 0.25, z, 1.6, 1.0, 1.6, lam(0xf0b415)); box(x + 0.7, o.h + 1.25, z + 0.7, 0.06, 1.9, 0.06, lam(0x333333)); box(x + 1.0, o.h + 2.6, z + 0.7, 0.6, 0.45, 0.03, lam(0xffe100)); }
+    // gul flagga som lippumiehen viftar med vid incident (dold tills race.js säger till via setYellow)
+    this.yFlags = []; const yMat = new THREE.MeshLambertMaterial({ color: 0xffd400, side: THREE.DoubleSide, emissive: 0x3a3000 });
+    for (const [q, [x, z]] of posts.entries()) { const o = {}; trk.heightAt(x, z, o); if (o.d < 1.5) continue;
+      { const fg = new THREE.Group(), pole = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 1.8, 5).translate(0, 0.9, 0), lam(0x222222)), cl = new THREE.Mesh(new THREE.PlaneGeometry(1.1, 0.8).translate(0.55, 0, 0), yMat);
+        cl.position.y = 1.45; fg.add(pole, cl); fg.position.set(x - 1.2, o.h + 1.35, z); fg.visible = false; S.add(fg); this.yFlags[q] = { g: fg, cl }; }
+      box(x, o.h, z, 1.8, 0.25, 1.8, lam(0x6b5a45)); box(x, o.h + 0.25, z, 1.6, 1.0, 1.6, lam(0xf0b415)); box(x + 0.7, o.h + 1.25, z + 0.7, 0.06, 1.9, 0.06, lam(0x333333)); box(x + 1.0, o.h + 2.6, z + 0.7, 0.6, 0.45, 0.03, lam(0xffe100)); }
     // depå: tält, släp och servicebilar utanför startområdet
     { const i0 = trk.finishIdx || 0, sd = -trk.outSign || 1, tent = [0xd92b20, 0x1f5fb8, 0xf4f1e8, 0xffd400, 0x1e8a4a], o = {};
       for (let k = 0; k < (this.q ? 16 : 7); k++) { const p = edge(i0 - 40 + k * 7, sd, trk.verge + 16 + (k % 3) * 9 + rnd() * 4); trk.heightAt(p[0], p[2], o); if (o.d < trk.verge + 8) continue;
@@ -517,6 +522,9 @@ export class View3 {
     const ratio = target ? Math.min(3, Math.max(0.3, target / Math.max(1, r.height))) : Math.min(dpr, this.q ? 2 : 1.25);
     this.r.setPixelRatio(ratio); this.r.setSize(r.width, r.height, false); this.cam.aspect = r.width / Math.max(1, r.height); this.pxH = r.height * ratio; }
 
+  // Viftar med gul flagga på de poster (index i trk.posts / reservposterna) som har gul flagg just nu
+  setYellow(set, t) { for (const [q, f] of (this.yFlags || []).entries()) { if (!f) continue; const on = set.has(q); f.g.visible = on;
+      if (on) { const a = Math.sin(t * 7 + q); f.g.rotation.set(0, t * 1.3 % (Math.PI * 2), a * 0.9); f.cl.rotation.y = Math.sin(t * 11 + q) * 0.5; } } }
   frame(o) { if (!this.ok) return; const THREE = T(), cam = this.cam, R = this.r;
     cam.fov = o.fov * 180 / Math.PI; cam.updateProjectionMatrix(); cam.position.set(o.eye[0], o.eye[1], o.eye[2]); cam.up.set(o.up[0], o.up[1], o.up[2]); cam.lookAt(o.at[0], o.at[1], o.at[2]);
     this.sky.position.copy(cam.position);

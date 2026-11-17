@@ -238,6 +238,7 @@ export function aiDrive(c, race, dt) {
   }
   if (wantJ && idx >= j.i1 && idx <= j.i2 && j.uShape) vt = Math.min(vt, ai.vJ * 0.62);
   vt = Math.min(vt, cap);
+  if (c.yCap != null) vt = Math.min(vt, c.yCap); // gul flagg: max 45 km/h och ingen omkörning
   // starka bilar: AI:n doserar gasen i kurvor och när bilen glider (annars spinner/understyr den av banan)
   ai.pwr ??= c.tq(c.upRpm) * c.upRpm / 9549 / c.spec.mass;
   const thrK = clamp(1 - Math.abs(c.steer) * (0.45 + Math.min(0.4, ai.pwr * 1.1)), 0.2, 1) * clamp(1 - (Math.abs(Math.atan2(c.vy, Math.max(3, c.vx))) - (c.spec.drv === 'awd' ? 0.35 : 0.28)) * 3, 0.35, 1);
@@ -262,6 +263,7 @@ export class Race {
 
     host.innerHTML = `<div class="race"><canvas class="race-cv"></canvas>
       <div class="hud gopro-clean" id="hHudRoot">
+        <div id="hYellow" hidden style="position:absolute;top:74px;left:50%;transform:translateX(-50%);background:#facc15;color:#111;font-weight:800;padding:6px 16px;border-radius:6px;z-index:6;text-align:center;font-size:.86rem;line-height:1.25;box-shadow:0 2px 12px rgba(0,0,0,.45);pointer-events:none"></div>
         <!-- ÖVRE RADEN: Leaderboard + Bränsle/Skada/Lisälenkki + 5 Startljus + Underlag/Minimap/Tider -->
         <div class="hud-row-top">
           <div class="hud-col-l">
@@ -694,6 +696,56 @@ export class Race {
     const rate = 1 / 0.6; // 0,6 s från mitten till fullt utslag, lika snabbt tillbaka
     c.steer += clamp(clamp(I.steer, -1, 1) - c.steer, -rate * realDt, rate * realDt); }
 
+  // ── GUL FLAGG ──────────────────────────────────────────────────────────────────────────────────────────────
+  // När en bil spinner (glider tvärs/baklänges, står vänd mot fel håll eller står still på banan) visar lippupisteen
+  // FÖRE bilen gul flagg. Mellan den posten och den spinnade bilen gäller: sänk till högst 45 km/h inom 5 s och ingen
+  // omkörning. Bryter man mot det blir det B1 (saktar inte in), B3 (omkörning) eller B4 (kontakt) – varning, och två
+  // varningar i heatet ger svart flagg.
+  yellowPosts() { if (this._yp) return this._yp; const trk = this.trk, n = trk.n;
+    const list = trk.posts && trk.posts.length ? trk.posts.map((pt, q) => ({ q, name: pt.n, i: trk.locateFull(pt.x, pt.z).i }))
+      : [...Array(7)].map((_, q) => ({ q, name: String(q + 1), i: trk.w(Math.round((q + 0.5) * n / 7)) }));
+    return (this._yp = list); }
+  yellowStep(dt) { const trk = this.trk, n = trk.n, j = trk.joker, posts = this.yellowPosts(), run = this.state === 'run' && this.t > 2;
+    const inJ = c => this.useJoker && c.i >= j.i1 && c.i <= j.i2 && Math.abs((c.lat || 0) - trk.bulge(c.i)) < j.w / 2 + 1.5;
+    // 1) vilka bilar har spunnit just nu
+    const spun = [];
+    for (const c of this.cars) {
+      if (!run || c.finished || c.retired) { c.spun = false; c.stillT = 0; continue; }
+      const v = Math.hypot(c.vx, c.vy), beta = Math.abs(Math.atan2(c.vy, c.vx));
+      const rel = Math.abs(wrapA(c.h - Math.atan2(trk.TZ[trk.w(c.i)], trk.TX[trk.w(c.i)])));
+      c.stillT = v < 1 ? (c.stillT || 0) + dt : 0;
+      const bad = (v > 4 && beta > 1.3) || (!inJ(c) && c.prog > 0 && rel > 2.0) || c.stillT > 2;
+      if (bad) { c.spun = true; c.okT = 0; } else if (c.spun) { c.okT = v > 6 ? (c.okT || 0) + dt : 0; if (c.okT > 1.2) c.spun = false; }
+      if (c.spun) { // zonen börjar vid posten före bilen (minst 25 m bakom den)
+        const si = trk.w(c.i); let best = null, bd = 1e9, any = null, ad = 1e9;
+        for (const pt of posts) { const d = (si - pt.i + n) % n; if (d < ad) { ad = d; any = pt; } if (d * trk.ds >= 25 && d < bd) { bd = d; best = pt; } }
+        if (!best) { best = any; bd = ad; }
+        spun.push({ c, si, post: best, len: bd });
+      } }
+    this.yZones = spun;
+    const zoneOf = c => { let z = null, zd = 1e9; for (const Z of spun) { if (Z.c === c) continue; const b = (Z.si - trk.w(c.i) + n) % n; if (b > 0 && b <= Z.len && b < zd) { zd = b; z = Z; } } return z; };
+    // 2) AI-bilarna: max 45 km/h i zonen och ingen omkörning
+    for (const c of this.cars) { if (c.isPlayer || c.remote) continue; const Z = c.spun ? null : zoneOf(c); if (!Z) { c.yCap = null; continue; }
+      let cap = 12.2; for (const o of this.cars) { if (o === c || o.spun || o.retired) continue; const ahead = o.prog - c.prog; if (ahead > 0 && ahead * trk.ds < 16) cap = Math.min(cap, Math.max(1.5, Math.hypot(o.vx, o.vy) - 0.3)); }
+      c.yCap = cap; }
+    // 3) spelaren
+    const p = this.player; if (!p || p.remote || p.spun) { if (p) p.yz = null; return; }
+    const Z = zoneOf(p);
+    if (!Z) { p.yz = null; return; }
+    if (p.yz !== Z.c) { p.yz = Z.c; p.yT0 = this.t; p.yB1 = false; p.yAhead = new Set(this.cars.filter(o => o !== p && o !== Z.c && !o.spun && !o.retired && o.prog > p.prog && zoneOf(o) === Z)); }
+    const kmh = Math.hypot(p.vx, p.vy) * 3.6;
+    if (this.t - p.yT0 > 5 && kmh > 47 && !p.yB1) { p.yB1 = true; this.giveSanction(p, 'B1', 'Saktar inte in vid gul flagg', 'Hiljentämättä keltaisella lipulla – max 45 km/h inom 5 s efter posten'); }
+    for (const o of p.yAhead) { if (o.spun || o.retired) { p.yAhead.delete(o); continue; }
+      if (p.prog > o.prog + 0.5) { p.yAhead.delete(o); this.giveSanction(p, 'B3', 'Omkörning under gul flagg', `Ohitus keltaisella lipulla – du körde om ${o.name}`); } } }
+  yellowHud() { const el = this.$('hYellow'); if (!el) return; const p = this.player, trk = this.trk, n = trk.n, Zs = this.yZones || [];
+    if (this.view && this.view.setYellow) this.view.setYellow(new Set(Zs.map(Z => Z.post.q)), this.t);
+    let html = '';
+    if (p && p.yz) { const Z = Zs.find(z => z.c === p.yz), left = Math.max(0, 5 - (this.t - p.yT0)), kmh = Math.hypot(p.vx, p.vy) * 3.6, over = kmh > 47;
+      html = `🟨 GUL FLAGG – post ${Z ? Z.post.name : ''} · ${Z ? Z.c.name : ''} har spunnit<br><small>${left > 0 ? `Sänk till 45 km/h: <b>${left.toFixed(1).replace('.', ',')} s</b>` : over ? '<b style="color:#b91c1c">FÖR FORT! max 45 km/h</b>' : 'Max 45 km/h ✓'} · ingen omkörning · ${Math.round(kmh)} km/h</small>`;
+    } else if (p && !p.spun) { // varna när man närmar sig en post med gul flagg
+      for (const Z of Zs) { if (Z.c === p) continue; const d = (Z.post.i - trk.w(p.i) + n) % n; if (d * trk.ds < 70) { html = `🟨 GUL FLAGG vid post ${Z.post.name}<br><small>Sänk till 45 km/h efter posten – ingen omkörning</small>`; break; } } }
+    el.hidden = !html; if (html && el.innerHTML !== html) el.innerHTML = html; }
+
   giveSanction(c, code, title, desc) {
     if (this.t - (c.lastWarn || -9) < 3.0) return;
     c.lastWarn = this.t;
@@ -823,6 +875,8 @@ export class Race {
       if (hit > 1.2 && (A.isPlayer || B.isPlayer)) {
         this.damage(hit * hit * 0.09, true); this.crash(hit);
       }
+      if (hit > 2 && this.state === 'run') { const fr = collide.front === 'A' ? A : collide.front === 'B' ? B : null; // B4: kontakt under gul flagg
+        if (fr && fr.isPlayer && !fr.remote && fr.yz) this.giveSanction(fr, 'B4', 'Kontakt under gul flagg', 'Kontakti keltaisella lipulla – du körde på en bil inom gulflaggzonen'); }
       if (hit > 6.5 && this.state === 'run') { // A6: hård kollision i hög hastighet (liten knuff i låg fart ger inget straff)
         const rammer = collide.front === 'A' ? A : collide.front === 'B' ? B : null, other = rammer === A ? B : A;
         if (rammer && !rammer.remote && Math.hypot(rammer.vx, rammer.vy) > 12 && (collide.type === 'rear' || Math.hypot(rammer.vx, rammer.vy) > Math.hypot(other.vx, other.vy) + 4)) this.giveSanction(rammer, 'A6', 'Kollision i hög hastighet', 'Hård påkörning – straff A6');
@@ -841,6 +895,7 @@ export class Race {
       if (this.cars.every(c => c.finished || c.retired)) this.endAt = this.t + 2; else if (this.t > first + 60) this.endAt = this.t;
     }
     if (this.spectate && this.endAt !== undefined && this.t >= this.endAt) return this.finish();
+    this.yellowStep(dt);
     if (this.state === 'flag' && this.flagT !== undefined && this.t - this.flagT > (this.cfg.mode === 'time' || p.retired || this.cars.every(c => c.finished || c.retired) ? 3 : 45)) this.finish();
     if (this.t > 600) this.finish();
   }
@@ -1099,7 +1154,7 @@ export class Race {
   hud(dt) {
     const p = this.player, $ = this.$;
     if (this.msgT > 0) { this.msgT -= dt; if (this.msgT <= 0) $('hMsg').className = 'hud-msg'; }
-    this.hudT -= dt; if (this.hudT > 0) return; this.hudT = 0.07;
+    this.hudT -= dt; if (this.hudT > 0) return; this.hudT = 0.07; this.yellowHud();
 
     // 1. 5 Startljus
     const L = $('hLights');
