@@ -278,7 +278,7 @@ export class View3 {
   // ---------- bilar ----------
   addCar(body, paint, opt = {}) { const THREE = T(), G = new THREE.Group(), st = carStyle(opt.model, body), L = st.L, W = st.W, h = L / 2;
     const col = new THREE.Color(paint[0], paint[1], paint[2]);
-    const pm = new THREE.MeshStandardMaterial({ color: col, metalness: 0.35, roughness: 0.42 }), dark = new THREE.MeshStandardMaterial({ color: 0x141416, roughness: 0.85 }), glass = new THREE.MeshStandardMaterial({ color: 0x1a2530, roughness: 0.08, metalness: 0.85, side: THREE.DoubleSide }), steel = new THREE.MeshStandardMaterial({ color: 0x9aa0a8, metalness: 0.8, roughness: 0.3 });
+    const pm = new THREE.MeshStandardMaterial({ color: col, metalness: 0.35, roughness: 0.78 }), dark = new THREE.MeshStandardMaterial({ color: 0x141416, roughness: 0.85 }), glass = new THREE.MeshStandardMaterial({ color: 0x1a2530, roughness: 0.08, metalness: 0.85, side: THREE.DoubleSide }), steel = new THREE.MeshStandardMaterial({ color: 0x9aa0a8, metalness: 0.8, roughness: 0.3 });
     const lamp = new THREE.MeshStandardMaterial({ color: 0xf2f0e4, emissive: 0x3a3628, roughness: 0.2, metalness: 0.3 }), amber = new THREE.MeshStandardMaterial({ color: 0xe8901c, emissive: 0x3a2008, roughness: 0.3 });
     const tail = new THREE.MeshBasicMaterial({ color: 0x8a0f0a }); G.userData.brake = tail;
     const ext = (pts, width, mat, bevel = 0.11) => { const s = roundShape(pts, st.round); const g = new THREE.ExtrudeGeometry(s, { depth: width - bevel * 2, bevelEnabled: true, bevelThickness: bevel, bevelSize: bevel, bevelSegments: 5, curveSegments: 8 }); g.translate(0, 0, -width / 2 + bevel); const m = new THREE.Mesh(g, mat); m.castShadow = true; G.add(m); return m; };
@@ -290,7 +290,8 @@ export class View3 {
       : st.nose === 'shark' ? [[fx - 0.04, 0.36], [fx + 0.02, 0.5], [fx + 0.03, 0.66], [fx - 0.22, belt - 0.03], [fx - 0.7, belt]]
       : [[fx - 0.04, 0.34], [fx + 0.01, 0.52], [fx - 0.12, 0.70], [fx - 0.75, belt - 0.03], [fx - 1.15, belt]];
     const rear = st.tailT === 'notch' ? [[-h + 0.35, belt + 0.03], [-h + 0.02, belt], [-h, 0.62], [-h + 0.04, 0.36]] : [[-h + 0.1, belt + 0.02], [-h, belt - 0.05], [-h - 0.01, 0.62], [-h + 0.04, 0.36]];
-    ext([[-h + 0.06, 0.32], ...rear.slice().reverse(), ...front.slice().reverse(), [h - 0.06, 0.32]], W, pm);
+    const bodyPts = [[-h + 0.06, 0.32], ...rear.slice().reverse(), ...front.slice().reverse(), [h - 0.06, 0.32]]; ext(bodyPts, W, pm);
+    const rr = mulberry(hash((opt.model || body) + ':' + (opt.num || 0) + ':' + paint.join(','))); // samma bil ser alltid likadan ut
     // växthus: vindrutans lutning och taklinje efter stil
     const top = st.H, aB = h - st.hood, aT = aB - st.rake;
     const rT = st.tailT === 'notch' ? -h + st.deck + 0.42 : st.tailT === 'liftback' ? -h + 1.3 : st.tailT === 'hatch' ? -h + 0.45 : -h + 0.12,
@@ -337,9 +338,14 @@ export class View3 {
     if (st.gtwing) { const wx = -h + 0.32, wy = belt + 0.42; box(wx, wy, 0, 0.36, 0.035, W - 0.08, pm); for (const sd of [1, -1]) { box(wx + 0.04, wy - 0.17, sd * 0.42, 0.14, 0.34, 0.03, pm); box(wx, wy + 0.02, sd * (W / 2 - 0.04), 0.4, 0.14, 0.02, pm); } }
     if (st.rails) for (const sd of [1, -1]) box((aT + rT) / 2 - 0.1, top + 0.05, sd * (W / 2 - 0.28), Math.abs(aT - rT) * 0.8, 0.035, 0.035, dark);
     G.userData.style = st;
-    // tävlingsnummer på bakre sidorutan
-    if (opt.num) { const bw = opt.bw === 'bw', tex = canvasTex(128, 64, (g) => { g.fillStyle = bw ? '#111' : '#f6f4ec'; g.fillRect(0, 0, 128, 64); g.fillStyle = bw ? '#f6f4ec' : '#111'; g.font = '900 50px Impact, "Arial Narrow", Arial'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(String(opt.num), 64, 34, 118); });
-      for (const z of [zs + 0.004, -zs - 0.004]) { const m = new THREE.Mesh(new THREE.PlaneGeometry(0.62, 0.3), new THREE.MeshBasicMaterial({ map: tex })); m.position.set((bx + rT) / 2 - 0.02, 1.14, z); if (z < 0) m.rotation.y = Math.PI; G.add(m); } }
+    // tävlingsnummer: svart plåt över hela bakre sidorutan med stora vita siffror (som på riktiga rokkibilar)
+    if (opt.num) { const numTxt = String(opt.num), tex = canvasTex(256, 160, (g, w2, h2) => { g.fillStyle = '#0d0d0f'; g.fillRect(0, 0, w2, h2); g.fillStyle = '#f7f6f0'; g.font = '900 128px "Arial Black", Impact, Arial'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(numTxt, w2 * 0.42, h2 / 2 + 6, w2 * 0.72); });
+      const plateM = new THREE.MeshBasicMaterial({ map: tex, side: THREE.DoubleSide });
+      const kink = st.kink ? [[rT + 0.2, wt], [rT + 0.32, wt - 0.08], [rB + 0.36, wb0]] : [[rT + 0.12, wt], [rB + 0.2, wb0]], poly = [[bx - 0.08, wb0 - 0.02], [bx - 0.08, wt + 0.02], ...kink.map(p => [p[0] - 0.01, p[1]])];
+      for (const z of [zs + 0.006, -zs - 0.006]) { const sh = new THREE.Shape(); poly.forEach((p, k) => k ? sh.lineTo(p[0], p[1]) : sh.moveTo(p[0], p[1])); const g = new THREE.ShapeGeometry(sh), pa = g.attributes.position, uv = g.attributes.uv;
+        const xs = poly.map(p => p[0]), ys = poly.map(p => p[1]), x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
+        for (let k = 0; k < pa.count; k++) { const u = (pa.getX(k) - x0) / (x1 - x0); uv.setXY(k, z > 0 ? u : 1 - u, (pa.getY(k) - y0) / (y1 - y0)); }
+        const m = new THREE.Mesh(g, plateM); m.position.z = z; G.add(m); } }
     { const net = new THREE.Mesh(new THREE.PlaneGeometry(0.66, 0.36), netMat()); net.position.set((aB - 0.16 + bx + 0.06) / 2 - 0.02, 1.13, -zs - 0.012); net.rotation.y = Math.PI; G.add(net); }
     // hjul, hjulhus, stötfångare, bromsljus
     const wb = L * 0.6, wheels = []; G.userData.wheels = wheels;
@@ -363,14 +369,15 @@ export class View3 {
         // stänkskydd bakom bakhjulen
         box(-wb / 2 - 0.4, 0.2, sd * (W / 2 - 0.13), 0.012, 0.26, 0.24, D.flap); }
       // registerskyltar fram och bak
-      for (const [x, ry] of [[h + 0.125, Math.PI / 2], [-h - 0.125, -Math.PI / 2]]) { const pl = new THREE.Mesh(new THREE.PlaneGeometry(0.52, 0.115), D.plate); pl.position.set(x, 0.43, 0); pl.rotation.y = ry; G.add(pl); }
+      const plTxt = ['ABC', 'RKK', 'ZXL', 'GHT', 'NOP', 'KJU', 'VBG', 'EFT'][(String(opt.num || 0).length + (+opt.num || 0)) % 8] + '-' + (100 + ((+opt.num || 7) * 37) % 899), plateMat = new THREE.MeshBasicMaterial({ map: canvasTex(256, 56, (g, w2, h2) => { g.fillStyle = '#f4f4f0'; g.fillRect(0, 0, w2, h2); g.fillStyle = '#1d3f9a'; g.fillRect(0, 0, 30, h2); g.fillStyle = '#ffd400'; g.font = '700 12px Arial'; g.textAlign = 'center'; g.fillText('FIN', 15, h2 - 8); g.strokeStyle = '#111'; g.lineWidth = 3; g.strokeRect(1.5, 1.5, w2 - 3, h2 - 3); g.fillStyle = '#111'; g.font = '900 40px "Arial Narrow", Arial'; g.fillText(plTxt, 143, 43, 210); }) });
+      for (const [x, ry] of [[h + 0.125, Math.PI / 2], [-h - 0.125, -Math.PI / 2]]) { const pl = new THREE.Mesh(new THREE.PlaneGeometry(0.52, 0.115), plateMat); pl.position.set(x, 0.43, 0); pl.rotation.y = ry; G.add(pl); }
       // bogserkrokar (röda band) och avgasrör
       box(h + 0.13, 0.27, 0.36, 0.04, 0.05, 0.06, D.red); box(-h - 0.13, 0.27, -0.36, 0.04, 0.05, 0.06, D.red);
       { const ex = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 0.3, 10), steel); ex.rotation.z = Math.PI / 2; ex.position.set(-h - 0.02, 0.24, W / 2 - 0.38); G.add(ex); }
       // solskyddsremsa överst på vindrutan + torkare
       { const x0 = aB, y0 = belt - 0.02, x1 = aT, y1 = top, len = Math.hypot(x1 - x0, y1 - y0); let nx = (y1 - y0) / len, ny = -(x1 - x0) / len; if (ny < 0) { nx = -nx; ny = -ny; }
-        const P = f => [x0 + (x1 - x0) * f + nx * 0.104, y0 + (y1 - y0) * f + ny * 0.104], a0 = P(0.78), a1 = P(0.93), wd = W - 0.44, g = new THREE.BufferGeometry();
-        g.setAttribute('position', new THREE.BufferAttribute(new Float32Array([a0[0], a0[1], wd / 2, a0[0], a0[1], -wd / 2, a1[0], a1[1], -wd / 2, a1[0], a1[1], wd / 2]), 3)); g.setAttribute('uv', new THREE.BufferAttribute(new Float32Array([0, 0, 1, 0, 1, 1, 0, 1]), 2)); g.setIndex([0, 1, 2, 0, 2, 3]); G.add(new THREE.Mesh(g, D.sun));
+        const P = f => [x0 + (x1 - x0) * f + nx * 0.104, y0 + (y1 - y0) * f + ny * 0.104], a0 = P(opt.num ? 0.66 : 0.78), a1 = P(0.95), wd = W - 0.44, g = new THREE.BufferGeometry();
+        g.setAttribute('position', new THREE.BufferAttribute(new Float32Array([a0[0], a0[1], wd / 2, a0[0], a0[1], -wd / 2, a1[0], a1[1], -wd / 2, a1[0], a1[1], wd / 2]), 3)); g.setAttribute('uv', new THREE.BufferAttribute(new Float32Array([0, 0, 1, 0, 1, 1, 0, 1]), 2)); g.setIndex([0, 1, 2, 0, 2, 3]); G.add(new THREE.Mesh(g, opt.num ? new THREE.MeshBasicMaterial({ transparent: true, side: THREE.DoubleSide, depthWrite: false, map: canvasTex(512, 112, (c, w2, h2) => { c.fillStyle = 'rgba(10,14,22,0.35)'; c.fillRect(0, 0, w2, h2); c.fillStyle = '#fff'; c.font = '900 96px "Arial Black", Impact, Arial'; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText(String(opt.num), w2 / 2, h2 / 2 + 3); }) }) : D.sun));
         const w0 = P(0.14); for (const zc of [0.28, -0.22]) { const wp = box(w0[0], w0[1], zc, 0.02, 0.02, 0.5, D.seam); wp.rotation.y = 0.25; } }
       // regnljus, motorhuvslås, tanklock, främre stänkskydd
       {
@@ -380,6 +387,57 @@ export class View3 {
         const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 0.02, 14), dark); cap.rotation.x = Math.PI / 2; cap.position.set(-wb / 2 - 0.05, belt - 0.12, W / 2 + 0.006); G.add(cap); }
       // takventil
       box(aT - 0.3, top + 0.03, 0, 0.26, 0.06, 0.32, dark); }
+    // ---- rokkiralli-look efter referensbilderna: omålade/felfärgade plåtar, smuts och repor, nätgrill, plåtade rutor, maskotar och flaggor
+    { const D = detMats(), PANEL = [0x121214, 0x121214, 0x5d6266, 0x7a1812, 0xe9e7e0, 0xd8a21c, 0x1f3f8a, 0x3a4a2a], pick = () => { let c; do c = PANEL[Math.floor(rr() * PANEL.length)]; while (new THREE.Color(c).distanceTo ? false : false); return c; };
+      const panelMat = c => new THREE.MeshStandardMaterial({ color: c, metalness: 0.35, roughness: 0.7 });
+      // huv i annan färg (vanligast svart) – följer huvens profil ovanpå karossen
+      if (rr() < 0.55) { const hp = [[aB - 0.04, belt], ...front.filter(p => p[1] >= (nb ? belt - 0.1 : 0.62)).sort((p, q) => q[0] - p[0]).reverse().filter(p => p[0] > aB - 0.04)].sort((p, q) => p[0] - q[0]);
+        if (hp.length >= 2) { const sh = new THREE.Shape(), up = 0.118, dn = 0.07; hp.forEach((p, k) => k ? sh.lineTo(p[0], p[1] + up) : sh.moveTo(p[0], p[1] + up)); for (let k = hp.length - 1; k >= 0; k--) sh.lineTo(hp[k][0] + (k === hp.length - 1 ? -0.04 : 0), hp[k][1] + up - dn);
+          const g = new THREE.ExtrudeGeometry(sh, { depth: W - 0.34, bevelEnabled: false }); g.translate(0, 0, -(W - 0.34) / 2); const hm = new THREE.Mesh(g, panelMat(rr() < 0.6 ? 0x121214 : pick())); hm.castShadow = true; G.add(hm);
+          if (rr() < 0.5) box(hp[0][0] + (hp[hp.length - 1][0] - hp[0][0]) * 0.55, (hp[0][1] + hp[hp.length - 1][1]) / 2 + up + 0.02, 0, 0.32, 0.04, 0.42, dark); } } // ventilationshål/scoop i huven
+      // en dörr eller en skärm i annan färg
+      if (rr() < 0.45) { const sd = rr() < 0.5 ? 1 : -1, c = pick(), x0 = rr() < 0.6 ? bx + 0.0 : -wb / 2 + 0.45, x1 = x0 === bx ? aB - 0.1 : bx - 0.04; const pl = new THREE.Mesh(new THREE.PlaneGeometry(Math.abs(x1 - x0) - 0.03, belt - 0.42), panelMat(c)); pl.position.set((x0 + x1) / 2, (belt + 0.38) / 2, sd * (W / 2 + 0.003)); if (sd < 0) pl.rotation.y = Math.PI; G.add(pl); }
+      // smuts, repor, rost och dekor på sidorna (en canvas per bil, följer karossens sidoprofil)
+      { const style = Math.floor(rr() * 5), accent = ['#f08a1c', '#e8d21a', '#e02a20', '#2bd0ff', '#f4f4f0'][Math.floor(rr() * 5)], seed = rr() * 1000;
+        const tex = canvasTex(512, 160, (g, w2, h2) => { const r2 = mulberry(seed | 0);
+          if (style === 1) { g.strokeStyle = accent; g.lineWidth = 9; g.beginPath(); let x = 40; g.moveTo(x, 110); while (x < 470) { x += 22 + r2() * 14; g.lineTo(x, 50 + r2() * 20); x += 22 + r2() * 14; g.lineTo(x, 105 + r2() * 15); } g.stroke(); }
+          else if (style === 2) { g.fillStyle = accent; g.fillRect(70, 60, 380, 14); g.fillRect(70, 82, 380, 7); }
+          else if (style === 3) { g.fillStyle = accent; g.beginPath(); g.moveTo(0, 160); g.lineTo(150, 160); g.lineTo(230, 0); g.lineTo(80, 0); g.fill(); }
+          for (let k = 0; k < 60; k++) { g.strokeStyle = `rgba(${r2() < 0.5 ? '230,230,225' : '40,30,20'},${0.15 + r2() * 0.35})`; g.lineWidth = 0.6 + r2() * 1.6; const x = r2() * w2, y = 20 + r2() * 120; g.beginPath(); g.moveTo(x, y); g.lineTo(x + (r2() - 0.5) * 120, y + (r2() - 0.5) * 18); g.stroke(); }
+          for (let k = 0; k < 14; k++) { g.fillStyle = `rgba(${120 + r2() * 40 | 0},${60 + r2() * 30 | 0},${20 + r2() * 15 | 0},${0.25 + r2() * 0.3})`; g.beginPath(); g.arc(r2() * w2, 60 + r2() * 100, 2 + r2() * 9, 0, 6.3); g.fill(); }
+          const mud = g.createLinearGradient(0, h2, 0, h2 * 0.35); mud.addColorStop(0, 'rgba(70,58,42,0.85)'); mud.addColorStop(0.45, 'rgba(85,70,50,0.45)'); mud.addColorStop(1, 'rgba(85,70,50,0)'); g.fillStyle = mud; g.fillRect(0, 0, w2, h2);
+          for (let k = 0; k < 220; k++) { g.fillStyle = `rgba(${70 + r2() * 30 | 0},${55 + r2() * 20 | 0},${38 + r2() * 15 | 0},${0.3 + r2() * 0.5})`; const y = h2 - Math.pow(r2(), 1.8) * h2 * 0.7; g.beginPath(); g.arc(r2() * w2, y, 0.8 + r2() * 3.5, 0, 6.3); g.fill(); }
+          g.fillStyle = 'rgba(255,255,255,0.9)'; g.font = '700 16px Arial'; g.fillText(['PJJ-Rakennus Ky', 'www.hespel.fi', 'Andersson Motorsport', 'Kuljetus Oy', 'KONEPAJA'][Math.floor(r2() * 5)], 205 + r2() * 60, 100); });
+        const sm = new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2 }), xs = bodyPts.map(p => p[0]), ys = bodyPts.map(p => p[1]), X0 = Math.min(...xs), X1 = Math.max(...xs), Y0 = Math.min(...ys), Y1 = Math.max(...ys);
+        for (const sd of [1, -1]) { const g = new THREE.ShapeGeometry(roundShape(bodyPts, st.round)), pa = g.attributes.position, uv = g.attributes.uv; for (let k = 0; k < pa.count; k++) { const u = (pa.getX(k) - X0) / (X1 - X0); uv.setXY(k, sd > 0 ? u : 1 - u, (pa.getY(k) - Y0) / (Y1 - Y0)); }
+          const m = new THREE.Mesh(g, sm); m.position.z = sd * (W / 2 + 0.002); G.add(m); } }
+      // nätgrill (perforerad plåt) i stället för grill, ibland nätplåt på stötfångaren
+      { const meshTex = (bg, dot) => canvasTex(128, 64, (g, w2, h2) => { g.fillStyle = bg; g.fillRect(0, 0, w2, h2); g.fillStyle = dot; for (let y = 4; y < h2; y += 7) for (let x = (y / 7) % 2 ? 7 : 3.5; x < w2; x += 7) { g.beginPath(); g.arc(x, y, 2.2, 0, 6.3); g.fill(); } });
+        const rust = rr() < 0.5, gm = new THREE.MeshLambertMaterial({ map: meshTex(rust ? '#9a5a26' : '#9aa0a6', '#1a1410') });
+        box(lx + 0.012, ly - 0.06, 0, 0.02, 0.24, Math.max(0.5, 2 * (lz - 0.3)), gm);
+        if (rr() < 0.4) box(h + 0.14, 0.32, 0, 0.02, 0.17, 0.62, new THREE.MeshLambertMaterial({ map: meshTex('#b9bec4', '#33373b') })); }
+      // plåtad bakruta (svart plåt) och ibland plåt i passagerarens sidoruta
+      if (rr() < 0.55) { const x0 = rB, y0 = belt - 0.02, x1 = rT, y1 = top, len = Math.hypot(x1 - x0, y1 - y0); let nx = (y1 - y0) / len, ny = -(x1 - x0) / len; if (ny < 0) { nx = -nx; ny = -ny; } const o2 = 0.106, wd = W - 0.42, g = new THREE.BufferGeometry(), A = [x0 + (x1 - x0) * 0.08 + nx * o2, y0 + (y1 - y0) * 0.08 + ny * o2], B = [x0 + (x1 - x0) * 0.95 + nx * o2, y0 + (y1 - y0) * 0.95 + ny * o2];
+        g.setAttribute('position', new THREE.BufferAttribute(new Float32Array([A[0], A[1], -wd / 2, A[0], A[1], wd / 2, B[0], B[1], wd / 2, B[0], B[1], -wd / 2]), 3)); g.setIndex([0, 1, 2, 0, 2, 3]); g.computeVertexNormals(); G.add(new THREE.Mesh(g, new THREE.MeshStandardMaterial({ color: 0x18191b, roughness: 0.8, side: THREE.DoubleSide }))); }
+      { const pas = new THREE.Mesh(new THREE.PlaneGeometry(0.62, 0.32), new THREE.MeshLambertMaterial({ map: canvasTex(64, 32, (g, w2, h2) => { g.fillStyle = 'rgba(0,0,0,0)'; g.clearRect(0, 0, w2, h2); g.strokeStyle = '#8c9298'; g.lineWidth = 1.2; for (let k = -h2; k < w2; k += 5) { g.beginPath(); g.moveTo(k, 0); g.lineTo(k + h2, h2); g.stroke(); g.beginPath(); g.moveTo(k + h2, 0); g.lineTo(k, h2); g.stroke(); } }), transparent: true }));
+        pas.position.set((aB - 0.16 + bx + 0.06) / 2 - 0.02, (wb0 + wt) / 2, zs + 0.01); G.add(pas); } // metallnät i passagerarsidans ruta
+      // gula/orange bogserpilar
+      { const arrM = new THREE.MeshBasicMaterial({ map: canvasTex(64, 64, (g) => { g.fillStyle = '#e8e21a'; g.beginPath(); g.moveTo(32, 60); g.lineTo(8, 30); g.lineTo(22, 30); g.lineTo(22, 4); g.lineTo(42, 4); g.lineTo(42, 30); g.lineTo(56, 30); g.fill(); }), transparent: true, side: THREE.DoubleSide });
+        const a1 = new THREE.Mesh(new THREE.PlaneGeometry(0.14, 0.14), arrM); a1.position.set(h + 0.135, 0.5, 0.36); a1.rotation.y = Math.PI / 2; G.add(a1); const a2 = a1.clone(); a2.position.set(-h - 0.135, 0.5, -0.36); a2.rotation.y = -Math.PI / 2; G.add(a2); }
+      // rörstötfångare bak (dubbla stålrör) ibland
+      if (rr() < 0.3) for (const yy of [0.34, 0.5]) { const tb = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, W - 0.1, 10), steel); tb.rotation.x = Math.PI / 2; tb.position.set(-h - 0.2, yy, 0); G.add(tb); }
+      // antenn, takräcke, finsk flagga och maskot (gås/anka) på taket
+      const roofX = (aT + rT) / 2;
+      if (rr() < 0.35) { const an = new THREE.Mesh(new THREE.CylinderGeometry(0.006, 0.01, 0.75, 4), dark); an.position.set(rT + 0.2, top + 0.4, -W / 2 + 0.45); an.rotation.z = 0.25; G.add(an); }
+      if (!st.rails && rr() < 0.3) for (const sd of [1, -1]) box(roofX, top + 0.06, sd * (W / 2 - 0.3), Math.abs(aT - rT) * 0.85, 0.035, 0.04, dark);
+      if (rr() < 0.25) { const fp = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 0.6, 4), dark); fp.position.set(rT + 0.15, top + 0.3, W / 2 - 0.35); G.add(fp);
+        const fl = new THREE.Mesh(new THREE.PlaneGeometry(0.3, 0.19), new THREE.MeshLambertMaterial({ side: THREE.DoubleSide, map: canvasTex(48, 30, (g) => { g.fillStyle = '#fff'; g.fillRect(0, 0, 48, 30); g.fillStyle = '#1a3d8f'; g.fillRect(13, 0, 8, 30); g.fillRect(0, 11, 48, 8); }) })); fl.position.set(rT, top + 0.5, W / 2 - 0.35); G.add(fl); }
+      if (rr() < 0.22) { const wm = new THREE.MeshLambertMaterial({ color: rr() < 0.7 ? 0xf2f2ee : 0x6b4a2a }), om = new THREE.MeshLambertMaterial({ color: 0xf08a1c }), GS = new THREE.Group(); // maskot: gås på taket
+        const add = (geo, mat, x, y, z, rz = 0, sc) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); m.rotation.z = rz; if (sc) m.scale.set(...sc); GS.add(m); };
+        add(new THREE.SphereGeometry(0.16, 12, 10), wm, 0, 0.16, 0, 0, [1.55, 0.85, 0.8]); add(new THREE.ConeGeometry(0.1, 0.18, 8), wm, -0.27, 0.2, 0, Math.PI / 2 + 0.5);
+        add(new THREE.CylinderGeometry(0.038, 0.055, 0.36, 8), wm, 0.2, 0.38, 0, -0.3); add(new THREE.SphereGeometry(0.065, 10, 8), wm, 0.26, 0.57, 0, 0, [1.25, 1, 1]);
+        add(new THREE.ConeGeometry(0.03, 0.11, 6), om, 0.37, 0.56, 0, -Math.PI / 2); for (const zz of [0.06, -0.06]) add(new THREE.BoxGeometry(0.12, 0.02, 0.08), om, 0.02, 0.01, zz);
+        GS.position.set((aT + rT) / 2 + 0.2, top + 0.02, 0); GS.scale.setScalar(1.5); G.add(GS); } }
     // Hjulen sitter i G (följer marken), allt annat i en fjädrad kaross som kan kränga, nicka och vibrera
     const bodyG = new THREE.Group(), rollP = new THREE.Group(), keep = new Set(wheels.map(w => w.piv));
     for (const ch of [...G.children]) if (!keep.has(ch)) bodyG.add(ch);
