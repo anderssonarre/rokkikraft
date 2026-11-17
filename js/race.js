@@ -708,7 +708,7 @@ export class Race {
       else { c.thr = 0; c.brk = 0.45; }
 
       phys(c, dt, trk);
-      { const ii = trk.w(c.i), sl = trk.SL[ii] * (Math.cos(c.h) * trk.TX[ii] + Math.sin(c.h) * trk.TZ[ii]); c.vx -= G * sl * dt; c.slope = sl; c.wspin += c.vx / 0.31 * dt;
+      { const ii = trk.w(c.i), fi = c.pf ?? ii, i0 = Math.floor(fi), tt = fi - i0, slI = trk.SL[trk.w(i0)] * (1 - tt) + trk.SL[trk.w(i0 + 1)] * tt, sl = slI * (Math.cos(c.h) * trk.TX[ii] + Math.sin(c.h) * trk.TZ[ii]); c.vx -= G * sl * dt; c.slope = sl; c.wspin += c.vx / 0.31 * dt;
         c.gripF = 1 - (c.tireWearF + c.tireWearR) * 0.0011; }
       const lapBefore = Math.floor(c.prog / n);
       const hit = trackStep(c, trk, this.t, this.useJoker);
@@ -981,7 +981,15 @@ export class Race {
     }
     const ch = Math.cos(this.camH), sh = Math.sin(this.camH);
     const pRoll = clamp(-p.vx * p.r * 0.0045, -0.07, 0.07), pPitch = clamp(p.ax * 0.004, -0.045, 0.045);
-    for (const c of this.cars) { const ty = this.trk.heightAt(c.x, c.z); c.y = c.y === undefined ? ty : c.y + (ty - c.y) * Math.min(1, 14 * dt); }
+    // Kaross följer marken under de fyra hjulen: höjd = medel, lutning fram/bak och sida/sida ur hjulens höjdskillnad
+    for (const c of this.cars) {
+      const T = this.trk, ch = Math.cos(c.h), sh = Math.sin(c.h), L = (c.spec.wb || 2.6) / 2, W = 0.75;
+      const hF = (T.heightAt(c.x + ch * L - sh * W, c.z + sh * L + ch * W) + T.heightAt(c.x + ch * L + sh * W, c.z + sh * L - ch * W)) / 2;
+      const hR = (T.heightAt(c.x - ch * L - sh * W, c.z - sh * L + ch * W) + T.heightAt(c.x - ch * L + sh * W, c.z - sh * L - ch * W)) / 2;
+      const hL = (T.heightAt(c.x - sh * W, c.z + ch * W) + T.heightAt(c.x - sh * W + ch * L * 0.5, c.z + ch * W + sh * L * 0.5)) / 2, hRt = (T.heightAt(c.x + sh * W, c.z - ch * W) + T.heightAt(c.x + sh * W + ch * L * 0.5, c.z - ch * W + sh * L * 0.5)) / 2;
+      const ty = (hF + hR) / 2, tp = Math.atan2(hF - hR, 2 * L), tr = Math.atan2(hL - hRt, 2 * W), k = Math.min(1, 18 * dt);
+      if (c.y === undefined) { c.y = ty; c.tPitch = tp; c.tRoll = tr; } else { c.y += (ty - c.y) * k; c.tPitch += (tp - c.tPitch) * k; c.tRoll += (tr - c.tRoll) * k; }
+    }
     const pY = p.y, pSl = Math.atan(p.slope || 0);
     const pMat = M4.car(p.x, pY, p.z, p.h, pRoll, pPitch + pSl);
 
@@ -1025,7 +1033,7 @@ export class Race {
     }
 
     for (const c of this.cars) if (c.obj && (c.dmg || 0) > 4) this.view.damageCar(c.obj, c.dmg);
-    for (const c of this.cars) this.view.poseCar(c.obj, c.x, c.y, c.z, c.h, clamp(-c.vx * c.r * 0.0045, -0.07, 0.07), clamp(c.ax * 0.004, -0.045, 0.045) + Math.atan(c.slope || 0), c.steer, c.wspin, c.brk > 0.1, !(c === p && (this.cam === 0 || this.cam === 1 || this.cam === DEFAULT_CAM)));
+    for (const c of this.cars) this.view.poseCar(c.obj, c.x, c.y, c.z, c.h, clamp(-c.vx * c.r * 0.0045, -0.07, 0.07) + (c.tRoll || 0), clamp(c.ax * 0.004, -0.045, 0.045) + (c.tPitch ?? Math.atan(c.slope || 0)), c.steer, c.wspin, c.brk > 0.1, !(c === p && (this.cam === 0 || this.cam === 1 || this.cam === DEFAULT_CAM)));
     let cockpit = null;
     if (this.cam === 0) { const sway = clamp((p.ay || 0) * 0.045 + Math.sin(this.t * 6.0) * 0.03, -0.45, 0.45);
       cockpit = [pMat, M4.mul(pMat, M4.localRotX(0.16, 0.78, -0.31, 0.22, -p.steer * 0.85)), M4.mul(pMat, M4.localRotX(0.30, 1.06, -0.02, 0.0, sway)), null]; }

@@ -27,8 +27,8 @@ export function ensureTerrain(trk) {
   trk.yAt = fi => { const i = w(Math.floor(fi)), t = fi - Math.floor(fi); return Y[i] + (Y[w(i + 1)] - Y[i]) * t; };
 
   // rumsligt index över alla körbara ytor: huvudbanan, lisälenkkin och startfållan
-  const grid = new Map(), add = (x, z, hw, y) => { const k = Math.floor(x / CELL) + ',' + Math.floor(z / CELL); let a = grid.get(k); if (!a) grid.set(k, a = []); a.push(x, z, hw, y); };
-  for (let i = 0; i < n; i++) { add(X[i], Z[i], trk.HW[i], Y[i]); const b = trk.bulge(i); if (b) add(X[i] + NX[i] * b, Z[i] + NZ[i] * b, trk.joker.w / 2, Y[i]); }
+  const grid = new Map(), add = (x, z, hw, y, idx = -1) => { const k = Math.floor(x / CELL) + ',' + Math.floor(z / CELL); let a = grid.get(k); if (!a) grid.set(k, a = []); a.push(x, z, hw, y, idx); };
+  for (let i = 0; i < n; i++) { add(X[i], Z[i], trk.HW[i], Y[i], i); const b = trk.bulge(i); if (b) add(X[i] + NX[i] * b, Z[i] + NZ[i] * b, trk.joker.w / 2, Y[i], i); }
   const ch = trk.startChute;
   if (ch) { const L = Math.hypot(ch.x1 - ch.x0, ch.z1 - ch.z0), near = trk.locateFull(ch.x1, ch.z1), yj = Y[near.i]; trk.chuteY = yj;
     for (let d = 0; d <= L; d += 2) add(ch.x0 + (ch.x1 - ch.x0) * d / L, ch.z0 + (ch.z1 - ch.z0) * d / L, (ch.w || 14) / 2, yj); }
@@ -36,9 +36,18 @@ export function ensureTerrain(trk) {
   const noise = (x, z) => Math.sin(x * 0.071 + z * 0.043) * Math.sin(z * 0.089 - x * 0.031);
   // höjd i en godtycklig punkt + avstånd till närmaste bankant (negativt = på banan)
   trk.heightAt = (x, z, out) => {
-    const gx = Math.floor(x / CELL), gz = Math.floor(z / CELL); let bd = 1e9, by = 0;
+    const gx = Math.floor(x / CELL), gz = Math.floor(z / CELL); let bd = 1e9, by = 0, bi = -1, bx = 0, bz = 0;
     for (let a = -2; a <= 2; a++) for (let b = -2; b <= 2; b++) { const c = grid.get((gx + a) + ',' + (gz + b)); if (!c) continue;
-      for (let q = 0; q < c.length; q += 4) { const d = Math.hypot(x - c[q], z - c[q + 1]) - c[q + 2]; if (d < bd) { bd = d; by = c[q + 3]; } } }
+      for (let q = 0; q < c.length; q += 5) { const d = Math.hypot(x - c[q], z - c[q + 1]) - c[q + 2];
+        // på själva banan vinner banans egna punkter över startfållan (som har konstant höjd) – annars blir det kanter där de överlappar
+        const better = d < bd ? !(bi >= 0 && bd <= 0 && c[q + 4] < 0) : (c[q + 4] >= 0 && bi < 0 && d <= 0);
+        if (better) { bd = d; by = c[q + 3]; bi = c[q + 4]; bx = c[q]; bz = c[q + 1]; } } }
+    // Banans höjd interpoleras längs banan mellan provpunkterna (var 2 m) – annars går bilen "i trappor" i backarna
+    if (bi >= 0) { // projicera på segmentet mellan provpunkten och grannen åt rätt håll (samma segment oavsett vilken punkt som är närmast)
+      const fw = (x - bx) * trk.TX[bi] + (z - bz) * trk.TZ[bi] >= 0, i0 = fw ? bi : w(bi - 1), i1 = w(i0 + 1);
+      // läget mellan två "snittplan" (vinkelräta mot banan i varje provpunkt) – kontinuerligt även i kurvor och vid sidan av mittlinjen
+      const a0 = (x - X[i0]) * trk.TX[i0] + (z - Z[i0]) * trk.TZ[i0], a1 = (x - X[i1]) * trk.TX[i1] + (z - Z[i1]) * trk.TZ[i1], t = Math.max(0, Math.min(1, a0 / ((a0 - a1) || 1e-6)));
+      by = Y[i0] + (Y[i1] - Y[i0]) * t; }
     let h;
     if (bd <= 0) h = by;
     else { const r = Math.hypot(x - cx, z - cz), far = Math.max(0, r - ext * 0.62 - 60);
