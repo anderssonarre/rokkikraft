@@ -48,6 +48,8 @@ export function makeCar(def, trk, slot, isPlayer, gridRows = 2, totalCars = 6) {
 }
 
 // Bakhjulsdrift: hur mycket sidogrepp bakaxeln behåller vid hjulspinn / fullt drivmoment / svetsad diff
+// Stabilitetshjälp (dämpning av överskottsgirning, 1/s): base = alltid, slide = under sladd (minskas av gas → går att hålla brett), center = extra när ratten är rak
+export const ASSIST = { base: 0.3, slide: 2.5, holdK: 1, center: 3, kb: 2.0 };
 export const RW = { sp: 0.3, fl: 0.7, wd: 0.5 }; // mildare: sladden går att fånga med motstyrning
 export function phys(c, dt, trk) {
   const s = c.spec, surf = trk.surfAt ? trk.surfAt(c.i) : trk.surf;
@@ -122,6 +124,14 @@ export function phys(c, dt, trk) {
       Mz -= Math.sign(c.r) * Math.min(1, need / 0.05) * grip * tw * 0.6;
     }
     if (fwd && Fbf > 0 && !c.hb) Mz -= c.r * m * 0.9 * Math.min(1, Fbf / (m * G * 0.4)); // inbromsning med framhjulsdrift: bilen vill gå rakt
+    // Stabilitet: dämpar bara ÖVERSKOTTSROTATION (mer girning än ratten ber om) – lägger aldrig till rotation, så vanlig kurvtagning är som förut.
+    // Under en sladd: med gasen kvar går det att hålla bilen bred; släpper man gasen och rätar upp ratten stabiliseras den snabbt till rakt.
+    { const vxa = Math.abs(c.vx); if (vxa > 3 && !c.rev) { const bs = Math.atan2(c.vy, vxa), beta = Math.abs(bs), slideW = clamp((beta - 0.06) / 0.25, 0, 1);
+        // mål-girning: vad ratten ber om, plus en vridning som riktar bilen mot färdriktningen när den står snett
+        const rt = c.vx * Math.tan(delta) / L + ASSIST.kb * slideW * bs * Math.sign(c.vx), ex = c.r - rt;
+        if (slideW > 0 ? ex * bs < 0 : ex * Math.sign(c.r || ex) > 0) { const thrO = fwd ? 0 : Math.min(1, c.thr * 1.6);
+          const kd = ASSIST.base * (1 - slideW) + slideW * (ASSIST.slide * (1 - ASSIST.holdK * thrO) + ASSIST.center * (1 - thrO) * (1 - Math.min(1, Math.abs(c.steer) * 2)));
+          Mz -= ex * kd * m * L * L * 0.36; } } }
     c.vx += (axn + c.vy * c.r) * dt; c.vy += (ayn - c.vx * c.r) * dt; c.r += Mz / (m * L * L * 0.36) * dt;
     c.ax += (axn - c.ax) * Math.min(1, 12 * dt);
     c.ay += (ayn - c.ay) * Math.min(1, 12 * dt);
@@ -689,13 +699,13 @@ export class Race {
     // (själva vridningen sker i steerRamp() med verklig tid, så den blir exakt även om datorn laggar)
     if (brk && !gas && c.vx < 0.4 && this.state === 'run') c.rev = true; else if (gas || !brk) c.rev = false; }
 
-  // Rattvridning mätt i verkliga sekunder (inte spelets tid): 0,6 s mitten → fullt utslag, 1,2 s fullt vänster → fullt höger,
-  // lika snabbt tillbaka mot mitten. Riktig ratt följs 1:1.
+  // Rattvridning i verkliga sekunder, samma takt som i första versionen av spelet. Riktig ratt följs 1:1.
   steerRamp(realDt) { const c = this.player, I = this.ctl && this.ctl.state; if (!c || !I || c.auto) return;
     if (!(this.state === 'grid' || (this.state === 'run' && !c.finished && !c.retired))) return;
     if (I.wheel) { c.steer = clamp(I.steer, -1, 1); return; }
-    const rate = 1 / 0.6; // 0,6 s från mitten till fullt utslag, lika snabbt tillbaka
-    c.steer += clamp(clamp(I.steer, -1, 1) - c.steer, -rate * realDt, rate * realDt); }
+    // som i första versionen: 3,2/s ut, 5,5/s tillbaka mot mitten, 7/s vid motstyrning åt andra hållet
+    const st = clamp(I.steer, -1, 1), rate = st === 0 ? 5.5 : (Math.sign(st) !== Math.sign(c.steer) && c.steer !== 0 ? 7 : 3.2);
+    c.steer += clamp(st - c.steer, -rate * realDt, rate * realDt); }
 
   // ── GUL FLAGG ──────────────────────────────────────────────────────────────────────────────────────────────
   // När en bil står helt stilla på banan (efter ett spinn / en krock) blir det gul flagg. Den gäller bara de sista
