@@ -1,5 +1,6 @@
 // Heatet: körfysik, AI, kollisioner, lisälenkki, varningskoder (A1–B9), Vi/Li/K/KA,
 // autentisk 3D In-Car kupévy med roterande mockaratt samt Pro Telemetri-HUD inspirerad av referensbilden.
+import { qualityLevel, rememberAuto } from './gfx.js';
 import { getTrack } from './track.js';
 import { M4, cockpitMesh, steerWheelMesh, pendantMesh } from './gl.js';
 import { View3 } from './view3.js';
@@ -445,8 +446,8 @@ export class Race {
     this.cv = host.querySelector('.race-cv');
     ensureTerrain(trk);
     trk.wetK = { regn: [0.78, 0.9], sno: [0.75, 0.82], dimma: [0.97, 0.98] }[cfg.weather] || null;
-    const q = cfg.settings?.quality === 'lag' ? 0 : 1; this.q = q;
-    this.view = new View3(this.cv, trk, { quality: q, res: cfg.settings?.res || 'auto', weather: cfg.weather || 'sol' }); this.R = this.view.ok ? this.view : null;
+    const QL = qualityLevel(cfg.settings?.quality), q = QL.level >= 1 ? 1 : 0; this.q = q; this.QL = QL;
+    this.view = new View3(this.cv, trk, { level: QL.level, auto: QL.auto, res: cfg.settings?.res || 'auto', weather: cfg.weather || 'sol' }); this.R = this.view.ok ? this.view : null;
     if (this.R) this.view.setCockpit([cockpitMesh(), steerWheelMesh(), pendantMesh(), cockpitMesh({ driverView: true })], cfg.player.paint);
     this.env = trk.winter
       ? { zenith: [0.46, 0.62, 0.82], fog: [0.82, 0.88, 0.94], fd: 0.000014, light: [0.42, 0.78, 0.32] }
@@ -1028,6 +1029,7 @@ export class Race {
 
   destroy() {
     cancelAnimationFrame(this.raf); window.removeEventListener('keydown', this.kd); window.removeEventListener('keyup', this.ku); window.removeEventListener('resize', this.rs);
+    try { const V = this.view; if (this.QL?.auto && V?.fN > 300) { if (V.dyn < 0.72 && this.QL.level > 0) rememberAuto(this.QL.level - 1); else if (V.dyn >= 1 && V.fAvg < 12 && this.QL.level < 3) rememberAuto(this.QL.level + 1); else rememberAuto(this.QL.level); } } catch (e) { } // Auto lär sig enhetens nivå
     try { if (this.ac) this.ac.close(); } catch (e) { } this.dead = true; if (this.net && this.net.race === this) this.net.race = null; if (this.view) this.view.dispose();
   }
 
@@ -1049,19 +1051,30 @@ export class Race {
       const v = Math.hypot(c.vx, c.vy), slide = Math.abs(c.vy) + c.slip * 6 + (c.lock ? 5 : 0);
       const st = this.trk.surfTypeAt ? this.trk.surfTypeAt(c.i) : this.trk.surface;
       const surf = this.trk.surfAt ? this.trk.surfAt(c.i) : this.trk.surf;
-      const rate = st === 'asfalt' ? (slide > 3 ? slide * 2 : 0) : (v > 2.2 ? v * 0.65 : 0) + slide * 3.8;
-      c.pe = (c.pe || 0) + rate * dt * (this.q ? 1 : 0.5);
-      while (c.pe > 1 && pl.length < 255) {
-        c.pe -= 1;
-        const bx = c.x - Math.cos(c.h) * 1.7 + (Math.random() - 0.5) * 1.5, bz = c.z - Math.sin(c.h) * 1.7 + (Math.random() - 0.5) * 1.5;
-        pl.push({ x: bx, y: (c.y || 0) + 0.28, z: bz, vx: (Math.random() - 0.5) * 1.8, vy: 0.9 + Math.random() * 1.4, vz: (Math.random() - 0.5) * 1.8, life: 0, max: 0.75 + Math.random() * 0.85, s: 0.45 + Math.random() * 0.40, d: surf.dust });
+      const rate = st === 'asfalt' ? (slide > 3 ? slide * 2 : 0) : (v > 2.2 ? v * 0.65 : 0) + slide * 3.8, cap = this.view?.pMax || 255, ch = Math.cos(c.h), sh = Math.sin(c.h);
+      const wvx = c.vx * ch - c.vy * sh, wvz = c.vx * sh + c.vy * ch, near = Math.hypot(c.x - this.player.x, c.z - this.player.z) < 220;
+      c.pe = (c.pe || 0) + rate * dt * (this.q ? 1 : 0.5) * (this.view?.level >= 2 ? 1.5 : 1);
+      while (c.pe > 1 && pl.length < cap) {
+        c.pe -= 1; const side = Math.random() < 0.5 ? 1 : -1;
+        const bx = c.x - ch * 1.45 - sh * 0.75 * side + (Math.random() - 0.5) * 0.6, bz = c.z - sh * 1.45 + ch * 0.75 * side + (Math.random() - 0.5) * 0.6;
+        pl.push({ x: bx, y: (c.y || 0) + 0.22, z: bz, vx: wvx * 0.3 + (Math.random() - 0.5) * 1.8, vy: 0.7 + Math.random() * 1.3, vz: wvz * 0.3 + (Math.random() - 0.5) * 1.8, life: 0, max: 0.9 + Math.random() * 1.1, s: 0.45 + Math.random() * 0.40, d: surf.dust });
       }
+      // grusstänk: små stenar som kastas bakåt av hjulen och faller med tyngdkraften
+      if (st !== 'asfalt' && near) { c.ge = (c.ge || 0) + (c.slip * 26 + Math.abs(c.vy) * 3 + (c.thr || 0) * Math.min(v, 20) * 0.5) * dt * (this.view?.level >= 2 ? 1.4 : 0.7);
+        while (c.ge > 1 && pl.length < cap + (this.view?.sMax || 0)) { c.ge -= 1; const side = Math.random() < 0.5 ? 1 : -1, kick = 3 + c.slip * 7 + Math.random() * 3;
+          pl.push({ stone: 1, x: c.x - ch * 1.6 - sh * 0.75 * side, y: (c.y || 0) + 0.15, z: c.z - sh * 1.6 + ch * 0.75 * side, vx: wvx * 0.6 - ch * kick + (Math.random() - 0.5) * 2.5, vy: 1.5 + Math.random() * 3, vz: wvz * 0.6 - sh * kick + (Math.random() - 0.5) * 2.5, life: 0, max: 0.5 + Math.random() * 0.6, s: 0 }); } }
+      // däckspår bakom bakhjulen
+      if (near && this.view?.mark && v > 1) { const mk = c.mk || (c.mk = []), skid = slide > 3, rgb = st === 'asfalt' ? (skid ? [0.1, 0.1, 0.1] : null) : st === 'is' ? [0.78, 0.84, 0.92] : skid ? [0.36, 0.29, 0.21] : [0.48, 0.4, 0.31];
+        for (let k = 0; k < 2; k++) { const sd = k ? 1 : -1, wx = c.x - ch * 1.35 - sh * 0.74 * sd, wz = c.z - sh * 1.35 + ch * 0.74 * sd, prev = mk[k];
+          if (!prev) { mk[k] = [wx, wz]; continue; } const d = Math.hypot(wx - prev[0], wz - prev[1]); if (d < 0.6) continue;
+          if (rgb && d < 3) this.view.mark(prev[0], prev[1], wx, wz, skid ? 0.34 : 0.28, rgb); mk[k] = [wx, wz]; } }
       if (c.pe > 1) c.pe = 0;
       const dm = Math.max(0, (c.dmg || 0) - 45) + (c.isPlayer && c.temp > 112 ? 30 : 0);
       if (dm > 0) { c.se = (c.se || 0) + dm * 0.09 * dt * (this.q ? 1 : 0.5); while (c.se > 1 && pl.length < 255) { c.se -= 1; const g = 0.18 + Math.random() * 0.12 + (c.temp > 112 ? 0.4 : 0);
         pl.push({ x: c.x + Math.cos(c.h) * 1.6, y: (c.y || 0) + 1.0, z: c.z + Math.sin(c.h) * 1.6, vx: (Math.random() - 0.5) * 0.6 - c.vx * Math.cos(c.h) * 0.2, vy: 1.2 + Math.random(), vz: (Math.random() - 0.5) * 0.6 - c.vx * Math.sin(c.h) * 0.2, life: 0, max: 1.4 + Math.random(), s: 0.5 + Math.random() * 0.4, d: [g, g, g] }); } }
     }
-    for (let i = pl.length - 1; i >= 0; i--) { const p = pl[i]; p.life += dt; if (p.life > p.max) { pl[i] = pl[pl.length - 1]; pl.pop(); continue; } p.x += p.vx * dt; p.y += p.vy * dt; p.z += p.vz * dt; p.s += dt * 1.65; }
+    for (let i = pl.length - 1; i >= 0; i--) { const p = pl[i]; p.life += dt; if (p.life > p.max) { pl[i] = pl[pl.length - 1]; pl.pop(); continue; } p.x += p.vx * dt; p.y += p.vy * dt; p.z += p.vz * dt;
+      if (p.stone) { p.vy -= 9.8 * dt; if (p.vy < 0 && p.y < this.trk.heightAt(p.x, p.z) + 0.02) p.life = p.max + 1; } else { p.s += dt * 1.65; p.vx *= 1 - dt * 0.9; p.vz *= 1 - dt * 0.9; p.vy *= 1 - dt * 0.6; } }
   }
 
   render(dt) {
@@ -1146,7 +1159,7 @@ export class Race {
       const m = pMat;
       cockpit = [null, M4.mul(m, M4.localRotX(0.16, 0.78, -0.31, 0.22, p.steer * 0.85)), null, m];
     }
-    this.view.frame({ eye, at, up, fov, focus: [p.x, pY, p.z], particles: this.pl, dust: this.trk.surf.dust, cockpit });
+    this.view.frame({ eye, at, up, fov, focus: [p.x, pY, p.z], particles: this.pl, dust: this.trk.surf.dust, cockpit, gauges: { rpm: p.rpm || 0, max: (p.spec?.redline || 7000) + 500, kmh: Math.hypot(p.vx, p.vy) * 3.6, temp: p.temp || 80 } });
   }
 
   hud(dt) {
