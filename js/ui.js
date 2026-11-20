@@ -285,7 +285,8 @@ const AI_POOL = {
 const FIRST = ['Pena', 'Jorma', 'Late', 'Tuukka', 'Reiska', 'Vesa', 'Kake', 'Ilpo', 'Seppo', 'Hessu', 'Arska', 'Jere', 'Pate', 'Timppa', 'Masa', 'Olli', 'Rami', 'Sami', 'Veikko', 'Eki', 'Nipa', 'Tane', 'Juha', 'Aki', 'Kimmo', 'Jonne', 'Kalle', 'Mika', 'Sanna', 'Tiina', 'Jenni', 'Heikki', 'Lasse', 'Niko', 'Petteri', 'Raimo', 'Anu', 'Johanna'];
 const LAST = ['Rämäkkö', 'Kaasujalka', 'Sivuluisu', 'Soranen', 'Pultti', 'Vänkäri', 'Kardaani', 'Ilmanotto', 'Sytytys', 'Hiekkala', 'Akseli', 'Jousi', 'Pakosarja', 'Turbonen', 'Öljypohja', 'Rattinen', 'Vaihde', 'Etuveto', 'Takaveto', 'Jäärata', 'Kytkin', 'Mutkanen', 'Ruostela', 'Peltonen', 'Kolari', 'Lokasuoja', 'Nastarengas', 'Tunkki'];
 function aiNames(n) { const set = new Set(), out = shuffle(DRIVERS).slice(0, Math.min(n, 12)); out.forEach(x => set.add(x)); let g = 0; while (out.length < n && g++ < 5000) { const x = pick(FIRST) + ' ' + pick(LAST); if (!set.has(x)) { set.add(x); out.push(x); } } return shuffle(out); }
-function makeOpps(n, li, diff, cls) {
+// boostHp: om satt får ALLA AI exakt så många hk (karriär/online: starkaste riktiga spelarens hk + 100)
+function makeOpps(n, li, diff, cls, boostHp) {
   const names = aiNames(n), mine = activeCar().paint, full = { strip: 1, cage: 1, seat: 1, net: 1, switch: 1 };
   const ps = spec(), php = curve(ps).hp, tune = { ...defaultTune(), ...activeCar().tune };
   const poolKey = cls === 'super' || cls === 'supersenior' ? 'super' : cls === 'kardaani' ? 'kardaani' : 'vetari';
@@ -294,7 +295,7 @@ function makeOpps(n, li, diff, cls) {
     const cid = pick(pool), sp = buildSpec(cid, { build: full, upg: poolKey === 'super' ? { superkit: 1, ...(ps.drv === 'awd' ? { awd: 1 } : {}) } : Math.random() < 0.7 ? { rokkivaxel: 1 } : {} }, tune), hp = curve(sp).hp; // Super-AI kör fyrhjulsdrift om spelaren gör det
     const d = Math.max(0.01, Math.min(1, diff + (Math.random() - 0.5) * 0.08));
     return { name, paint: pick(PAINTS.filter(p => p.id !== mine)).rgb, bw: Math.random() < 0.35 ? 'bw' : 'wb', diff: d, skill: 0.6 + 0.4 * d, spec: sp,
-      powScale: Math.max(0.4, Math.min(3, php / hp * (0.92 + Math.random() * 0.16))) };
+      powScale: boostHp ? Math.max(0.4, Math.min(6, boostHp / hp)) : Math.max(0.4, Math.min(3, php / hp * (0.92 + Math.random() * 0.16))) };
   });
 }
 
@@ -312,7 +313,7 @@ function evStart(arg) {
   save();
   const cc = champCfg(), laps = Math.max(rules.minLaps, L.id === 'mestari' ? 3 : rules.minLaps), trk = getTrack(e.track);
   const diff = Math.max(0.01, Math.min(1, cc.diff / 100 + [-0.08, 0, 0.05, 0.1][+li]));
-  const opps = makeOpps(cc.perStart * cc.heats - 1, +li, diff, insp.cls), O = {};
+  const opps = makeOpps(cc.perStart * cc.heats - 1, +li, diff, insp.cls, curve(spec()).hp + 100), O = {}; // AI: 100 hk mer än du
   const ents = [{ id: 'me', name: `${S.name || 'Du'}`, me: 1, kgHp: curve(spec()).kgHp, diff: 1 }];
   opps.forEach((o, i) => { const id = 'ai' + i; O[id] = { ...o, nid: id }; ents.push({ id, name: o.name, diff: o.diff, kgHp: curve(o.spec).kgHp / (o.powScale || 1) }); });
   U.ev = {
@@ -520,7 +521,7 @@ function netRace(h, grid, cfg, lead, watch) {
 function hostStart() {
   const room = ON.room, cfg = room.cfg; if (!room || !room.isHost) return;
   const humans = room.members.filter(m => m.car && m.car.spec);
-  const nAi = Math.max(0, Math.min(30, cfg.ai)), opps = makeOpps(nAi, 1, Math.max(0.01, cfg.diff / 100), currentInsp().cls);
+  const maxHp = Math.max(curve(spec()).hp, ...humans.map(m => m.car.hp || 0)), nAi = Math.max(0, Math.min(30, cfg.ai)), opps = makeOpps(nAi, 1, Math.max(0.01, cfg.diff / 100), currentInsp().cls, maxHp + 100); // AI: 100 hk mer än starkaste spelaren
   ON.O = {}; const ents = humans.map(m => ({ id: m.id, name: m.name, human: 1, kgHp: m.car.kgHp || 7 }));
   opps.forEach((o, i) => { const id = 'ai' + i; ON.O[id] = { id, ai: 1, ...o }; ents.push({ id, name: o.name, diff: o.diff, kgHp: curve(o.spec).kgHp / (o.powScale || 1) }); });
   const trkLen = getTrack(cfg.track).len;
