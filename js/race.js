@@ -903,7 +903,7 @@ export class Race {
     if (this.net) return;
     if (this.spectate && this.state === 'run' && this.endAt === undefined) {
       let first = Infinity; for (const c of this.cars) if (c.finished && c.finishT < first) first = c.finishT;
-      if (this.cars.every(c => c.finished || c.retired)) this.endAt = this.t + 2; else if (this.t > first + 60) this.endAt = this.t;
+      if (this.cars.every(c => c.finished || c.retired)) this.endAt = this.t + 2; else if (this.t > first + (this.net ? 32 : 60)) this.endAt = this.t;
     }
     if (this.spectate && this.endAt !== undefined && this.t >= this.endAt) return this.finish();
     this.yellowStep(dt);
@@ -987,13 +987,15 @@ export class Race {
   netTick() {
     const net = this.net, now = performance.now(); if (now - (this.netLast || 0) < 80 || this.done) return; this.netLast = now;
     const mine = this.cars.filter(c => !c.remote); if (mine.length) net.send({ k: 's', h: this.heatId, t: Math.round(net.now()), c: mine.map(c => this.netPack(c)) });
+    if (!this.leadShown) { let first = Infinity; for (const c of this.cars) if (c.finished && !c.retired && c.finishT < first) first = c.finishT; if (isFinite(first)) { this.leadShown = true; this.leadT = first; if (!this.player.finished && !this.player.retired) this.msg('🏁 Ledaren är i mål – heatet avslutas om 30 s', 3, 'warn'); } }
+    if (this.leadT !== undefined && !this.player.finished && !this.player.retired) { const left = Math.ceil(30 - (this.t - this.leadT)); if (left <= 10 && left > 0 && left !== this.leftShown) { this.leftShown = left; this.msg(`⏱ ${left} s kvar av heatet`, 1.1, 'warn'); } }
     if (!this.netLead || this.state === 'grid') return;
     const wall = Date.now();
     for (const c of this.cars) if (c.remote && !c.finished && !c.retired && wall - c.seenT > 8000) c.retired = true; // tappad anslutning = K
     if (this.endAt === undefined) {
       let first = Infinity; for (const c of this.cars) if (c.finished && c.finishT < first) first = c.finishT;
       if (this.cars.every(c => c.finished || c.retired)) this.endAt = this.t + 2.5;
-      else if (this.t > first + 75 || this.t > 900) this.endAt = this.t;
+      else if (this.t > first + 30 || this.t > 900) this.endAt = this.t; // 30 s efter att ledaren gått i mål avslutas heatet
     }
     if (this.endAt !== undefined && this.t >= this.endAt) {
       const order = this.order().map(r => ({ id: r.c.nid, name: r.name, flag: r.flag, time: r.c.finished && !r.c.retired ? r.t : null, best: isFinite(r.c.bestLap) ? r.c.bestLap : null, jokerLap: r.c.jokerLap ?? null }));
