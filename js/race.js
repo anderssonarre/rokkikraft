@@ -822,8 +822,8 @@ export class Race {
 
       if (hit > 2.5 && c.isPlayer) {
         this.damage(hit * hit * 0.11, true);
-        // Kaato bara om man kör in i vallen i över 100 km/h (inte vid lätt snuddning)
-        if (vIn > 100 / 3.6 && hit > 4 && !c.kaato && this.state === 'run') {
+        // Kaato bara om man kör in i vallen i över 150 km/h (inte vid lätt snuddning)
+        if (vIn > 150 / 3.6 && hit > 4 && !c.kaato && this.state === 'run') {
           c.kaato = true; c.retired = true; this.state = 'flag';
           this.msg('KA – KAATO (RULLNING)!<br><small>Takrännan i marken – heatet avbryts, kräver kaatokatsastus!</small>', 3.6, 'warn');
           setTimeout(() => this.endLocal(), 2400);
