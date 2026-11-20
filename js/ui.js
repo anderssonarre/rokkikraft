@@ -1035,12 +1035,13 @@ const ACT = {
       window.scrollTo(0, 0);
     }
   },
-  // Personlig engångskod: bara SHA-256-summan finns i koden, själva koden vet bara ägaren. Ger 20 000 € en gång per sparfil.
+  // Personliga engångskoder: bara SHA-256-summorna finns i koden, själva koderna vet bara ägaren. Varje kod ger sin summa en gång per sparfil.
   async redeem() { const el = document.getElementById('redeemCode'), v = (el?.value || '').trim().toUpperCase(); if (!v) return;
     let h = ''; try { const b = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(v)); h = [...new Uint8Array(b)].map(x => x.toString(16).padStart(2, '0')).join(''); } catch (e) { }
-    if (h !== '81afbefeea7f5c78f397572e3cbe5ae098074b53899f6610335cb547e92dfdfb') { toast('Ogiltig kod.'); render(); return; }
+    const amt = { '81afbefeea7f5c78f397572e3cbe5ae098074b53899f6610335cb547e92dfdfb': 20000, '96b73c55ac1fef46e5181e7cad3e7b45b64e61a848f66879f31572350fb6940d': 50000, '37fc61d348006100a72d0db722a1fa6bfdc1c4ad931bdd20a3e39cb6a5042c3d': 10000 }[h];
+    if (!amt) { toast('Ogiltig kod.'); render(); return; }
     S.redeemed = S.redeemed || []; if (S.redeemed.includes(h)) { toast('Koden är redan inlöst.'); render(); return; }
-    S.redeemed.push(h); S.money += 20000; save(); toast('+20 000 € insatt!'); render(); },
+    S.redeemed.push(h); S.money += amt; save(); toast(`+${eur(amt)} insatt!`); render(); },
   'car-pick'(a) { if (S.cars[a]) { S.active = a; U.preview = null; save(); window.scrollTo(0, 0); } },
   'eng-pick'(a) {
     const cs = activeCar();
