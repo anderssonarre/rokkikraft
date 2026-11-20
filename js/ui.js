@@ -584,6 +584,9 @@ function online() {
   if (st === 'notfound') return `<section class="panel">${head}<p>⚠ Hittade inget öppet rum med koden <b>${room.code}</b>.</p><div class="row"><button class="btn" data-act="on-retry">Försök igen</button><button class="btn ghost" data-act="on-leave">‹ Tillbaka</button></div></section>`;
   if (st === 'closed') return `<section class="panel">${head}<p>Värden stängde rummet eller tappade anslutningen.</p>${back}</section>`;
   const cfg = room.cfg, H = room.isHost, cs = room.champ, trk = TRACKS.find(t => t.id === cfg.track) || TRACKS[0];
+  // Prispengar online: när heatet/mästerskapet är klart får varje riktig spelare sitt pris (vinnaren mest) – en gång per tävling
+  if (cs?.done && cs.overall) { const key = room.code + ':' + cs.overall.map(r => r.id + r.pos).join(','), me = cs.overall.find(r => r.id === room.id); S.onlinePaid = S.onlinePaid || [];
+    if (me && !S.onlinePaid.includes(key)) { S.onlinePaid.push(key); if (S.onlinePaid.length > 40) S.onlinePaid.shift(); if (me.prize > 0) { S.money += me.prize; U.toast = `🏆 ${me.pos === 1 ? 'Du vann' : 'Plats ' + me.pos} – ${eur(me.prize)} insatt!`; } save(); } }
   const running = cs && !cs.all && !cs.done;
   let h = `<section class="panel">${head}
       <div class="row"><input class="on-in link" readonly value="${esc(roomLink(room.code))}" onclick="this.select()"><button class="btn small" data-act="on-copy">${ON.copied ? '✓ Kopierad' : '📋 Kopiera länk'}</button></div>

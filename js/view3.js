@@ -196,7 +196,7 @@ export class View3 {
     const SC = { asfalt: [0.36, 0.37, 0.40], grus: [0.66, 0.54, 0.39], is: [0.80, 0.89, 0.96] };
     const cAt = i => { let r = 0, g = 0, b = 0; for (let q = -2; q <= 2; q++) { const c = SC[trk.surfTypeAt(i + q)] || SC.grus; r += c[0]; g += c[1]; b += c[2]; } return [r / 5, g / 5, b / 5]; };
     let na = 0; for (let i = 0; i < n; i += 5) if (trk.surfTypeAt(i) === 'asfalt') na++; const kind = w ? 'is' : na * 5 > n * 0.6 ? 'asfalt' : 'grus', rt = roadTextures(kind, this.aniso), wet = this.weather === 'regn';
-    for (const t of [rt.map, rt.normal, rt.rough]) t.repeat.set(2, 2);
+    for (const t of [rt.map, rt.normal, rt.rough]) t.repeat.set(3, 3); // finare grus/asfalt
     const road = new THREE.MeshStandardMaterial({ vertexColors: true, map: rt.map, normalMap: rt.normal, normalScale: new THREE.Vector2(kind === 'grus' ? 0.8 : 0.6, kind === 'grus' ? 0.8 : 0.6), roughnessMap: rt.rough, roughness: w ? 0.5 : wet ? 0.5 : 1.0, metalness: 0, envMapIntensity: wet ? 0.9 : 0.22, side: THREE.DoubleSide });
     const add = (g, mat = road) => { const m = new THREE.Mesh(g, mat); m.receiveShadow = true; S.add(m); return m; };
     add(this.strip(0, n, i => -trk.hwAt(i), i => trk.hwAt(i), cAt, 0.02));
@@ -205,6 +205,16 @@ export class View3 {
     const flat = new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide, map: rt.map }); // vägren med grustextur
     for (const sd of [-1, 1]) { add(this.strip(0, n, i => sd * (trk.hwAt(i) - 0.32), i => sd * trk.hwAt(i), i => trk.surfTypeAt(i) === 'asfalt' ? [0.93, 0.93, 0.90] : cAt(i).map(v => v * 0.82), 0.035), flat);
       add(this.strip(0, n, i => sd * trk.hwAt(i), i => sd * (trk.hwAt(i) + 1.1), i => { const k = trk.K[trk.w(i)] * sd; return trk.surfTypeAt(i) === 'asfalt' && k > 0.012 ? ((i >> 1) & 1 ? [0.85, 0.10, 0.08] : [0.95, 0.95, 0.93]) : (w ? [0.90, 0.93, 0.97] : [0.50, 0.42, 0.30]); }, 0.03), flat); }
+    // vägbank: sluttande jordkant från vägrenen ner (eller upp) till terrängnätet, så att vägen aldrig svävar i luften
+    { const bank = new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide, map: terrainTextures(w, this.aniso).map }), dirt = w ? [0.86, 0.9, 0.95] : [0.46, 0.39, 0.29], jj = trk.joker;
+      const slope = (i0, i1, inner, sd, base) => { const cnt = i1 - i0 + 1, pos = new Float32Array(cnt * 6), col = new Float32Array(cnt * 6), uv = new Float32Array(cnt * 4), idx = [];
+        for (let s2 = 0; s2 < cnt; s2++) { const i = trk.w(i0 + s2), a = inner(i0 + s2), b = a + sd * 3.2, xa = trk.X[i] + trk.NX[i] * a, za = trk.Z[i] + trk.NZ[i] * a, xb = trk.X[i] + trk.NX[i] * b, zb = trk.Z[i] + trk.NZ[i] * b, ya = trk.Y[i] + base, yb = Math.min(this.meshH(xb, zb), ya + 1.5) - 0.04;
+          pos.set([xa, ya, za, xb, yb, zb], s2 * 6); col.set([...dirt, ...dirt.map(v => v * 0.92)], s2 * 6); uv.set([0, s2 * 0.25, 0.4, s2 * 0.25], s2 * 4); if (s2 < cnt - 1) { const q = s2 * 2; idx.push(q, q + 1, q + 2, q + 1, q + 3, q + 2); } }
+        const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g.setAttribute('color', new THREE.BufferAttribute(col, 3)); g.setAttribute('uv', new THREE.BufferAttribute(uv, 2)); g.setIndex(idx); g.computeVertexNormals(); const m = new THREE.Mesh(g, bank); m.receiveShadow = true; S.add(m); };
+      const inJ = i => { const k = trk.w(i); return k >= jj.i1 - 2 && k <= jj.i2 + 2; }, jSide = Math.sign(trk.bulge(Math.round((jj.i1 + jj.i2) / 2))) || 1;
+      for (const sd of [-1, 1]) { let st = null; for (let i = 0; i <= n; i++) { const skip = i === n || (sd === jSide && inJ(i)); if (!skip && st === null) st = i; if (skip && st !== null) { if (i - 1 > st) slope(st, i - 1, k => sd * (trk.hwAt(k) + 1.1), sd, 0.03); st = null; } } }
+      // lisälenkki: bank på båda sidor av jokervägen
+      for (const sd of [-1, 1]) slope(jj.i1, jj.i2, k => trk.bulge(k) + sd * (jj.w / 2), sd, 0.012); }
     // mållinje
     { const i = trk.finishIdx || 0, hw = trk.hwAt(i), tex = canvasTex(256, 32, (g, W, H) => { for (let a = 0; a < 16; a++) for (let b = 0; b < 2; b++) { g.fillStyle = (a + b) & 1 ? '#f4f4f4' : '#111'; g.fillRect(a * 16, b * 16, 16, 16); } });
       const m = new THREE.Mesh(new THREE.PlaneGeometry(hw * 2, 1.6), new THREE.MeshBasicMaterial({ map: tex })); m.rotation.x = -Math.PI / 2; m.rotation.z = -Math.atan2(trk.TZ[i], trk.TX[i]) + Math.PI / 2; m.position.set(trk.X[i], trk.Y[i] + 0.05, trk.Z[i]); S.add(m); }
