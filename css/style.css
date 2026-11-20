@@ -274,3 +274,9 @@ details{margin:6px 0}details summary{cursor:pointer;font-weight:700;padding:4px 
 #showroom{width:100%;height:clamp(240px,38vw,420px)}#showroom canvas{width:100%;height:100%;display:block}
 .sr-label{position:absolute;left:18px;bottom:14px;display:flex;flex-direction:column;gap:2px;text-shadow:0 2px 8px #000}
 .sr-label b{font-size:1.25rem;letter-spacing:.02em}.sr-label span{color:#8fd8ff;font-size:.85rem}
+
+.hud-watch { position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%); z-index: 31; display: flex; align-items: center; gap: 8px; background: rgba(12,15,20,.86); border: 1px solid var(--hi); border-radius: 12px; padding: 6px 8px; pointer-events: auto; }
+.hud-watch[hidden] { display: none; }
+.hud-watch span { font: 700 .7rem var(--mono); color: #cbd5e1; text-align: center; min-width: 9rem; line-height: 1.2; }
+.hud-watch b { display: block; font: 900 1.15rem var(--cond); color: #fff; letter-spacing: .04em; }
+.hud-watch button { font: 900 1.3rem var(--cond); width: 52px; height: 46px; border-radius: 10px; border: 0; background: var(--hi); color: #111; cursor: pointer; touch-action: manipulation; }
