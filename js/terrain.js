@@ -55,7 +55,7 @@ export function ensureTerrain(trk) {
       const wild = H0(x, z) + noise(x, z) * 0.9 + Math.min(95, far * far * 0.0011) * (0.55 + 0.45 * Math.sin(Math.atan2(z - cz, x - cx) * 3 + waves[0][2]) ** 2);
       if (bd > 1e8) h = wild;
       else { const t = Math.min(1, Math.max(0, (bd - 2) / 30)), s = t * t * (3 - 2 * t); h = by + (wild - by) * s;
-        const bb = (bd - verge - 1.4) / (bd < verge + 1.4 ? 1.0 : 2.6); h += bermH * Math.exp(-bb * bb); } }
+        const bermC = verge + 2.6, bb = (bd - bermC) / (bd < bermC ? 1.3 : 3.4); h += bermH * Math.exp(-bb * bb); } }
     if (out) { out.d = bd; out.h = h; }
     return h; };
   return trk;

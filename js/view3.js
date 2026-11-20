@@ -129,6 +129,44 @@ export class View3 {
       const near = Math.max(0, 1 - o.d / (trk.verge + 3.5)); if (near > 0) c = c.map((v, q) => v + (dirt[q] - v) * Math.min(1, near * 1.4));
       if (o.h > 26) { const t = Math.min(1, (o.h - 26) / 22); c = c.map((v, q) => v + (rock[q] - v) * t); } if (o.h > 58) { const t = Math.min(1, (o.h - 58) / 14); c = c.map((v, q) => v + (snow[q] - v) * t); }
       col[k * 3] = c[0]; col[k * 3 + 1] = c[1]; col[k * 3 + 2] = c[2]; }
+    // Håll alla terrängceller som rör körbanan (huvudspår, lisälenkki & startfålla) under vägytan så vallar aldrig skär in på vägen
+    const clampCell = (x, z, maxY) => {
+      const ix = Math.floor((x - ox) / cell), iz = Math.floor((z - oz) / cell);
+      for (let dj = 0; dj <= 1; dj++) for (let di = 0; di <= 1; di++) {
+        const ci = ix + di, cj = iz + dj;
+        if (ci < 0 || ci > nx || cj < 0 || cj > nz) continue;
+        const p = (cj * (nx + 1) + ci) * 3 + 1;
+        if (pos[p] > maxY) pos[p] = maxY;
+      }
+    };
+    const wStep = Math.min(2.5, cell * 0.45);
+    for (let i = 0; i < trk.n; i++) {
+      const hwi = trk.hwAt(i) + 0.8, yLim = trk.Y[i] - 0.22;
+      for (let lat = -hwi; lat <= hwi + 1e-3; lat = Math.min(hwi, lat + wStep)) {
+        clampCell(trk.X[i] + trk.NX[i] * lat, trk.Z[i] + trk.NZ[i] * lat, yLim);
+        if (lat >= hwi) break;
+      }
+      const bg = trk.bulge(i);
+      if (bg !== 0) {
+        const jhw = trk.joker.w * 0.5 + 0.8;
+        for (let off = -jhw; off <= jhw + 1e-3; off = Math.min(jhw, off + wStep)) {
+          clampCell(trk.X[i] + trk.NX[i] * (bg + off), trk.Z[i] + trk.NZ[i] * (bg + off), yLim);
+          if (off >= jhw) break;
+        }
+      }
+    }
+    if (trk.startChute) {
+      const sc = trk.startChute, dx = sc.x1 - sc.x0, dz = sc.z1 - sc.z0, L = Math.hypot(dx, dz) || 1;
+      const sx = -dz / L, sz = dx / L, chw = (sc.w || 14) * 0.5 + 0.8, yLim = trk.chuteY - 0.22;
+      for (let d = 0; d <= L + 1e-3; d = Math.min(L, d + 2)) {
+        const px = sc.x0 + dx * d / L, pz = sc.z0 + dz * d / L;
+        for (let off = -chw; off <= chw + 1e-3; off = Math.min(chw, off + wStep)) {
+          clampCell(px + sx * off, pz + sz * off, yLim);
+          if (off >= chw) break;
+        }
+        if (d >= L) break;
+      }
+    }
     const idx = new Uint32Array(nx * nz * 6); let q = 0; for (let j = 0; j < nz; j++) for (let i = 0; i < nx; i++) { const a = j * (nx + 1) + i, c = a + nx + 1; idx[q++] = a; idx[q++] = c; idx[q++] = a + 1; idx[q++] = a + 1; idx[q++] = c; idx[q++] = c + 1; }
     const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g.setAttribute('color', new THREE.BufferAttribute(col, 3)); g.setAttribute('uv', new THREE.BufferAttribute(uv, 2)); g.setIndex(new THREE.BufferAttribute(idx, 1)); g.computeVertexNormals();
     const tt = terrainTextures(w, this.aniso), mat = this.P.std ? new THREE.MeshStandardMaterial({ vertexColors: true, map: tt.map, normalMap: tt.normal, normalScale: new THREE.Vector2(0.9, 0.9), roughness: 0.96, metalness: 0, envMapIntensity: 0.18 }) : new THREE.MeshLambertMaterial({ vertexColors: true, map: tt.map });
