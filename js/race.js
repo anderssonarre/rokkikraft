@@ -57,7 +57,7 @@ export function phys(c, dt, trk) {
   const st = trk.surfTypeAt ? trk.surfTypeAt(c.i) : trk.surface;
   // lätta bilar har en liten fördel i kurvorna (lastkänslighet), skador försämrar väghållningen
   const mu = surf.mu * s.mu * (s.gripX || 1) * (c.gripF || 1) * (c.onSurf ? 1 : 0.72 + 0.12 * s.susp) * (s.surfK ? s.surfK[st] || 1 : 1) * Math.pow(1150 / m, 0.12) * (1 - Math.max(0, (c.dmg || 0) - 30) * 0.0025), crr = c.onSurf ? surf.crr : 0.09 - 0.03 * s.susp;
-  const v = Math.hypot(c.vx, c.vy), delta = (c.steer + (c.tsq || 0)) * 0.52 * (s.steerK || 1) * (1 - Math.max(0, (c.dmg || 0) - 50) * 0.002) / (1 + v * 0.035);
+  const v = Math.hypot(c.vx, c.vy), delta = (c.steer + (c.tsq || 0)) * 0.52 * (s.steerK || 1) * (1 - Math.max(0, (c.dmg || 0) - 50) * 0.002) / (1 + v * 0.035) * (s.steerX ? s.steerX / (1 + v * 0.03) : 1); // greppkoden: lugnare styrning, mer ju fortare
   if (c.rev) {
     c.vx += (-4.5 - c.vx) * Math.min(1, 2.2 * dt); c.vy *= 1 - Math.min(1, 8 * dt); c.r = c.vx * Math.tan(delta) / L; c.rpm = s.idle + 1200; c.slip = 0;
   } else {
