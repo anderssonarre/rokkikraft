@@ -57,6 +57,7 @@ function noiseTex(seed, lo, hi, streak) { return canvasTex(256, 256, (g, w, h) =
   g.filter = 'blur(0.6px)'; g.drawImage(g.canvas, 0, 0); }, true); }
 const bannerTex = (txt, bg, fg) => canvasTex(512, 96, (g, w, h) => { g.fillStyle = bg; g.fillRect(0, 0, w, h); g.fillStyle = fg; g.font = '900 54px "Arial Narrow", Impact, Arial, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(txt, w / 2, h / 2 + 3, w - 30); });
 
+let _aoTex = null;
 // Delade detaljmaterial för bilarna (skapas en gång)
 let _det = null;
 function detMats() { const THREE = T(); if (_det) return _det;
@@ -82,7 +83,7 @@ export class View3 {
     const S = this.scene = new THREE.Scene(), w = this.winter;
     const wx = this.weather = opt.weather || 'sol', grey = wx === 'mulet' || wx === 'regn' || wx === 'dimma' || wx === 'sno';
     const horizon = new THREE.Color(grey ? (wx === 'regn' ? 0x8a9198 : wx === 'sno' ? 0xd8dde2 : 0xb4bcc4) : w ? 0xd5e2ee : 0xa9cbe6), zenith = new THREE.Color(grey ? (wx === 'regn' ? 0x5d646c : 0x8e98a3) : w ? 0x5f8cc0 : 0x2764b4);
-    S.fog = new THREE.Fog(horizon, wx === 'dimma' ? 20 : wx === 'regn' || wx === 'sno' ? 60 : 140, wx === 'dimma' ? 220 : wx === 'regn' || wx === 'sno' ? 520 : w ? 900 : 1300);
+    S.fog = new THREE.Fog(horizon, wx === 'dimma' ? 20 : wx === 'regn' || wx === 'sno' ? 50 : 90, wx === 'dimma' ? 220 : wx === 'regn' || wx === 'sno' ? 480 : w ? 800 : 1050); // atmosfäriskt dis ger djup
     this.cam = new THREE.PerspectiveCamera(60, 1, 0.08, 4000);
     // himmel
     const sunDir = this.sunDir = new THREE.Vector3(0.55, 0.62, 0.42).normalize();
@@ -291,7 +292,7 @@ export class View3 {
         const m = new THREE.Mesh(new THREE.PlaneGeometry(7, 1.15), mats[k % mats.length]); m.position.set(p[0], p[1] + 0.75, p[2]); m.rotation.y = p[3]; S.add(m); for (const o of [-3.3, 3.3]) box(p[0] + Math.cos(p[3]) * o, p[1] - 0.2, p[2] - Math.sin(p[3]) * o, 0.08, 1.6, 0.08, lam(0x555555)); k++; } }
     // däckstaplar i ytterkurvor
     { const list = []; for (let i = 0; i < n; i += 2) { const k = trk.K[i]; if (Math.abs(k) < 0.018) continue; const sd = k > 0 ? -1 : 1; if (trk.bulge(i) * sd > 0) continue; list.push(edge(i, sd, trk.verge - 0.3)); }
-      const g = new THREE.CylinderGeometry(0.33, 0.33, 0.24, 12), m1 = new THREE.InstancedMesh(g, new THREE.MeshLambertMaterial({ color: 0x18181a }), list.length * 3), d = new THREE.Object3D(), col = new THREE.Color();
+      const g = new THREE.TorusGeometry(0.25, 0.1, 8, 16).rotateX(Math.PI / 2).scale(1, 1.2, 1), m1 = new THREE.InstancedMesh(g, new THREE.MeshLambertMaterial({ color: 0x18181a }), list.length * 3), d = new THREE.Object3D(), col = new THREE.Color();
       list.forEach((p, i) => { for (let s = 0; s < 3; s++) { d.position.set(p[0], p[1] + 0.12 + s * 0.25, p[2]); d.updateMatrix(); m1.setMatrixAt(i * 3 + s, d.matrix); m1.setColorAt(i * 3 + s, col.set(s === 2 && i % 2 ? 0xd8d8d8 : s === 2 ? 0xc2261d : 0x18181a)); } }); m1.castShadow = true; S.add(m1); }
     // koner på ön vid lisälenkkin
     { const j = trk.joker, list = []; for (let i = j.i1 + 2; i < j.i2 - 1; i += 3) { const b = trk.bulge(i), hw = trk.hwAt(i); if (Math.abs(b) < hw + j.w / 2 + 1.5) continue; const lat = (Math.sign(b) * hw + b - Math.sign(b) * j.w / 2) / 2, ii = trk.w(i), kx = trk.X[ii] + trk.NX[ii] * lat, kz = trk.Z[ii] + trk.NZ[ii] * lat; list.push([kx, this.meshH(kx, kz), kz]); }
@@ -390,6 +391,8 @@ export class View3 {
     const pm = new THREE.MeshStandardMaterial({ color: col, metalness: 0.02, roughness: 0.86, envMapIntensity: 0.35 }), dark = new THREE.MeshStandardMaterial({ color: 0x141416, roughness: 0.85 }), glass = new THREE.MeshStandardMaterial({ color: 0x1a2530, roughness: 0.32, metalness: 0.3, envMapIntensity: 0.55, side: THREE.DoubleSide }), steel = new THREE.MeshStandardMaterial({ color: 0x9aa0a8, metalness: 0.8, roughness: 0.3 }); pm.userData.paint = 1; // markör för skadesystemet (bucklor)
     const lamp = new THREE.MeshStandardMaterial({ color: 0xf2f0e4, emissive: 0x3a3628, roughness: 0.45, metalness: 0.1 }), amber = new THREE.MeshStandardMaterial({ color: 0xe8901c, emissive: 0x3a2008, roughness: 0.3 });
     const tail = new THREE.MeshBasicMaterial({ color: 0x8a0f0a }); G.userData.brake = tail;
+    { if (!_aoTex) { const c = document.createElement('canvas'); c.width = c.height = 64; const g = c.getContext('2d'), gr = g.createRadialGradient(32, 32, 4, 32, 32, 32); gr.addColorStop(0, 'rgba(0,0,0,0.62)'); gr.addColorStop(0.6, 'rgba(0,0,0,0.38)'); gr.addColorStop(1, 'rgba(0,0,0,0)'); g.fillStyle = gr; g.fillRect(0, 0, 64, 64); _aoTex = new THREE.CanvasTexture(c); }
+      const sh = new THREE.Mesh(new THREE.PlaneGeometry(L + 0.7, W + 0.6), new THREE.MeshBasicMaterial({ map: _aoTex, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -3 })); sh.rotation.x = -Math.PI / 2; sh.position.y = 0.035; sh.renderOrder = 2; sh.userData.keep = 1; G.add(sh); } // kontaktskugga under bilen
     const ext = (pts, width, mat, bevel = 0.11) => { const s = roundShape(pts, st.round); const g = new THREE.ExtrudeGeometry(s, { depth: width - bevel * 2, bevelEnabled: true, bevelThickness: bevel, bevelSize: bevel, bevelSegments: 5, curveSegments: 8 }); g.translate(0, 0, -width / 2 + bevel); const m = new THREE.Mesh(g, mat); m.castShadow = true; G.add(m); return m; };
     const box = (x, y, z, sx, sy, sz, m, ry = 0) => { const b = new THREE.Mesh(new THREE.BoxGeometry(sx, sy, sz), m); b.position.set(x, y, z); b.rotation.y = ry; G.add(b); return b; };
     const disc = (x, y, z, r, m) => { const c = new THREE.Mesh(new THREE.CylinderGeometry(r, r, 0.04, 18), m); c.rotation.z = Math.PI / 2; c.position.set(x, y, z); G.add(c); return c; };
@@ -551,7 +554,7 @@ export class View3 {
         add(new THREE.ConeGeometry(0.03, 0.11, 6), om, 0.37, 0.56, 0, -Math.PI / 2); for (const zz of [0.06, -0.06]) add(new THREE.BoxGeometry(0.12, 0.02, 0.08), om, 0.02, 0.01, zz);
         GS.position.set((aT + rT) / 2 + 0.2, top + 0.02, 0); GS.scale.setScalar(1.5); G.add(GS); } }
     // Hjulen sitter i G (följer marken), allt annat i en fjädrad kaross som kan kränga, nicka och vibrera
-    const bodyG = new THREE.Group(), rollP = new THREE.Group(), keep = new Set(wheels.map(w => w.piv));
+    const bodyG = new THREE.Group(), rollP = new THREE.Group(), keep = new Set([...wheels.map(w => w.piv), ...G.children.filter(c => c.userData.keep)]); // kontaktskuggan stannar på marken
     for (const ch of [...G.children]) if (!keep.has(ch)) bodyG.add(ch);
     rollP.add(bodyG); G.add(rollP); G.userData.bodyG = bodyG; G.userData.rollP = rollP; G.userData.halfW = W / 2;
     this.scene.add(G); this.cars.push(G); return G; }

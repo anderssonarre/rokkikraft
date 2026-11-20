@@ -85,7 +85,7 @@ let _grassMat = null;
 export function grassMaterial(winter) { const THREE = T(); if (_grassMat && _grassMat.userData.w === winter) return _grassMat;
   // färg (heltäckande, så att genomskinliga kanter aldrig blir svarta vid mipmapping) + separat alfakarta med stråna
   const c = cv(128, 128), g = c.getContext('2d'), a = cv(128, 128), ga = a.getContext('2d'), r = mulberry(8);
-  const grd = g.createLinearGradient(0, 0, 0, 128); grd.addColorStop(0, winter ? '#f2f5fa' : '#a8b860'); grd.addColorStop(0.55, winter ? '#e2e8ef' : '#7f9a45'); grd.addColorStop(1, winter ? '#cfd8e2' : '#4f6a2c'); g.fillStyle = grd; g.fillRect(0, 0, 128, 128);
+  const grd = g.createLinearGradient(0, 0, 0, 128); grd.addColorStop(0, winter ? '#f2f5fa' : '#9cc04e'); grd.addColorStop(0.55, winter ? '#e2e8ef' : '#6f9a38'); grd.addColorStop(1, winter ? '#cfd8e2' : '#3f6326'); g.fillStyle = grd; g.fillRect(0, 0, 128, 128);
   ga.fillStyle = '#000'; ga.fillRect(0, 0, 128, 128);
   for (let k = 0; k < 46; k++) { const x = 10 + r() * 108, h = 50 + r() * 74, bend = (r() - 0.5) * 30, lw = 1.5 + r() * 2.5;
     g.strokeStyle = winter ? `rgba(255,255,255,${0.2 + r() * 0.3})` : `rgba(${(110 + r() * 80) | 0},${(140 + r() * 60) | 0},${(40 + r() * 30) | 0},0.6)`; g.lineWidth = lw; g.beginPath(); g.moveTo(x, 128); g.quadraticCurveTo(x + bend * 0.3, 128 - h * 0.6, x + bend, 128 - h); g.stroke();
