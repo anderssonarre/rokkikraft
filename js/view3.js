@@ -179,6 +179,14 @@ export class View3 {
       }
     }
     this._tg = { ox, oz, cell, nx, nz, pos };
+    // naturligare mark: branta slänter (vallar, diken) blir jord/sten, stora fläckar av torrt gräs och mörkare mossa
+    { const st = nx + 1, earth = w ? [0.80, 0.83, 0.88] : [0.47, 0.40, 0.31], dry = w ? [0.95, 0.96, 0.99] : [0.55, 0.53, 0.30], moss = w ? [0.88, 0.91, 0.96] : [0.22, 0.36, 0.17];
+      for (let j = 1; j < nz; j++) for (let i = 1; i < nx; i++) { const q = j * st + i, hx = pos[(q + 1) * 3 + 1] - pos[(q - 1) * 3 + 1], hz = pos[(q + st) * 3 + 1] - pos[(q - st) * 3 + 1], sl = Math.hypot(hx, hz) / (2 * cell);
+        const x = pos[q * 3], z = pos[q * 3 + 2], n1 = Math.sin(x * 0.011 + Math.sin(z * 0.007) * 3) * Math.sin(z * 0.013 + 2.1), n2 = Math.sin(x * 0.023 + 1.7) * Math.sin(z * 0.019 + Math.sin(x * 0.009) * 2);
+        let r = col[q * 3], g = col[q * 3 + 1], b = col[q * 3 + 2];
+        const td = Math.max(0, n1 - 0.25) * 0.55, tm = Math.max(0, n2 - 0.3) * 0.5; r += (dry[0] - r) * td; g += (dry[1] - g) * td; b += (dry[2] - b) * td; r += (moss[0] - r) * tm; g += (moss[1] - g) * tm; b += (moss[2] - b) * tm;
+        const te = Math.min(0.85, Math.max(0, (sl - 0.32) / 0.45)); r += (earth[0] - r) * te; g += (earth[1] - g) * te; b += (earth[2] - b) * te;
+        col[q * 3] = r; col[q * 3 + 1] = g; col[q * 3 + 2] = b; } }
     const idx = new Uint32Array(nx * nz * 6); let q = 0; for (let j = 0; j < nz; j++) for (let i = 0; i < nx; i++) { const a = j * (nx + 1) + i, c = a + nx + 1; idx[q++] = a; idx[q++] = c; idx[q++] = a + 1; idx[q++] = a + 1; idx[q++] = c; idx[q++] = c + 1; }
     const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g.setAttribute('color', new THREE.BufferAttribute(col, 3)); g.setAttribute('uv', new THREE.BufferAttribute(uv, 2)); g.setIndex(new THREE.BufferAttribute(idx, 1)); g.computeVertexNormals();
     const tt = terrainTextures(w, this.aniso), mat = this.P.std ? new THREE.MeshStandardMaterial({ vertexColors: true, map: tt.map, normalMap: tt.normal, normalScale: new THREE.Vector2(0.9, 0.9), roughness: 0.96, metalness: 0, envMapIntensity: 0.18 }) : new THREE.MeshLambertMaterial({ vertexColors: true, map: tt.map });
@@ -205,6 +213,14 @@ export class View3 {
     const flat = new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide, map: rt.map }); // vägren med grustextur
     for (const sd of [-1, 1]) { add(this.strip(0, n, i => sd * (trk.hwAt(i) - 0.32), i => sd * trk.hwAt(i), i => trk.surfTypeAt(i) === 'asfalt' ? [0.93, 0.93, 0.90] : cAt(i).map(v => v * 0.82), 0.035), flat);
       add(this.strip(0, n, i => sd * trk.hwAt(i), i => sd * (trk.hwAt(i) + 1.1), i => { const k = trk.K[trk.w(i)] * sd; return trk.surfTypeAt(i) === 'asfalt' && k > 0.012 ? ((i >> 1) & 1 ? [0.85, 0.10, 0.08] : [0.95, 0.95, 0.93]) : (w ? [0.90, 0.93, 0.97] : [0.50, 0.42, 0.30]); }, 0.03), flat); }
+    // slitage på vägytan: två hårt packade hjulspår, löst grus i mitten och dammiga kanter (genomskinligt lager ovanpå vägen)
+    { const c = document.createElement('canvas'); c.width = 128; c.height = 4; const g = c.getContext('2d'), gr = g.createLinearGradient(0, 0, 128, 0);
+      const dk = w ? '120,135,150' : kind === 'asfalt' ? '20,20,22' : '70,55,38', lt = w ? '245,248,255' : kind === 'asfalt' ? '150,145,135' : '205,185,150';
+      [[0, lt, 0.55], [0.1, lt, 0.12], [0.24, dk, 0.0], [0.31, dk, 0.32], [0.38, dk, 0.0], [0.5, lt, 0.14], [0.62, dk, 0.0], [0.69, dk, 0.32], [0.76, dk, 0.0], [0.9, lt, 0.12], [1, lt, 0.55]].forEach(([o, c2, a2]) => gr.addColorStop(o, `rgba(${c2},${a2})`));
+      g.fillStyle = gr; g.fillRect(0, 0, 128, 4); const tex = new THREE.CanvasTexture(c); tex.wrapT = THREE.RepeatWrapping;
+      const wear = new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 }), cnt = n + 1, pos = new Float32Array(cnt * 6), uv = new Float32Array(cnt * 4), idx = [];
+      for (let s2 = 0; s2 < cnt; s2++) { const i = trk.w(s2), hw = trk.hwAt(s2), y = trk.Y[i] + 0.03; pos.set([trk.X[i] - trk.NX[i] * hw, y, trk.Z[i] - trk.NZ[i] * hw, trk.X[i] + trk.NX[i] * hw, y, trk.Z[i] + trk.NZ[i] * hw], s2 * 6); uv.set([0, s2 * 0.1, 1, s2 * 0.1], s2 * 4); if (s2 < cnt - 1) { const q = s2 * 2; idx.push(q, q + 1, q + 2, q + 1, q + 3, q + 2); } }
+      const gg = new THREE.BufferGeometry(); gg.setAttribute('position', new THREE.BufferAttribute(pos, 3)); gg.setAttribute('uv', new THREE.BufferAttribute(uv, 2)); gg.setIndex(idx); const m = new THREE.Mesh(gg, wear); m.renderOrder = 1; S.add(m); }
     // vägbank: sluttande jordkant från vägrenen ner (eller upp) till terrängnätet, så att vägen aldrig svävar i luften
     { const bank = new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide, map: terrainTextures(w, this.aniso).map }), dirt = w ? [0.86, 0.9, 0.95] : [0.46, 0.39, 0.29], jj = trk.joker;
       const slope = (i0, i1, inner, sd, base) => { const cnt = i1 - i0 + 1, pos = new Float32Array(cnt * 6), col = new Float32Array(cnt * 6), uv = new Float32Array(cnt * 4), idx = [];
@@ -371,8 +387,8 @@ export class View3 {
   // ---------- bilar ----------
   addCar(body, paint, opt = {}) { const THREE = T(), G = new THREE.Group(), st = carStyle(opt.model, body), L = st.L, W = st.W, h = L / 2;
     const col = new THREE.Color(paint[0], paint[1], paint[2]);
-    const pm = (this.P?.env ? new THREE.MeshPhysicalMaterial({ color: col, metalness: 0.35, roughness: 0.6, clearcoat: this.level >= 2 ? 0.45 : 0.25, clearcoatRoughness: 0.45 }) : new THREE.MeshStandardMaterial({ color: col, metalness: 0.35, roughness: 0.78 })), dark = new THREE.MeshStandardMaterial({ color: 0x141416, roughness: 0.85 }), glass = new THREE.MeshStandardMaterial({ color: 0x1a2530, roughness: 0.08, metalness: 0.85, side: THREE.DoubleSide }), steel = new THREE.MeshStandardMaterial({ color: 0x9aa0a8, metalness: 0.8, roughness: 0.3 });
-    const lamp = new THREE.MeshStandardMaterial({ color: 0xf2f0e4, emissive: 0x3a3628, roughness: 0.2, metalness: 0.3 }), amber = new THREE.MeshStandardMaterial({ color: 0xe8901c, emissive: 0x3a2008, roughness: 0.3 });
+    const pm = new THREE.MeshStandardMaterial({ color: col, metalness: 0.02, roughness: 0.86, envMapIntensity: 0.35 }), dark = new THREE.MeshStandardMaterial({ color: 0x141416, roughness: 0.85 }), glass = new THREE.MeshStandardMaterial({ color: 0x1a2530, roughness: 0.32, metalness: 0.3, envMapIntensity: 0.55, side: THREE.DoubleSide }), steel = new THREE.MeshStandardMaterial({ color: 0x9aa0a8, metalness: 0.8, roughness: 0.3 }); pm.userData.paint = 1; // markör för skadesystemet (bucklor)
+    const lamp = new THREE.MeshStandardMaterial({ color: 0xf2f0e4, emissive: 0x3a3628, roughness: 0.45, metalness: 0.1 }), amber = new THREE.MeshStandardMaterial({ color: 0xe8901c, emissive: 0x3a2008, roughness: 0.3 });
     const tail = new THREE.MeshBasicMaterial({ color: 0x8a0f0a }); G.userData.brake = tail;
     const ext = (pts, width, mat, bevel = 0.11) => { const s = roundShape(pts, st.round); const g = new THREE.ExtrudeGeometry(s, { depth: width - bevel * 2, bevelEnabled: true, bevelThickness: bevel, bevelSize: bevel, bevelSegments: 5, curveSegments: 8 }); g.translate(0, 0, -width / 2 + bevel); const m = new THREE.Mesh(g, mat); m.castShadow = true; G.add(m); return m; };
     const box = (x, y, z, sx, sy, sz, m, ry = 0) => { const b = new THREE.Mesh(new THREE.BoxGeometry(sx, sy, sz), m); b.position.set(x, y, z); b.rotation.y = ry; G.add(b); return b; };
@@ -485,7 +501,7 @@ export class View3 {
       box(aT - 0.3, top + 0.03, 0, 0.26, 0.06, 0.32, dark); }
     // ---- rokkiralli-look efter referensbilderna: omålade/felfärgade plåtar, smuts och repor, nätgrill, plåtade rutor, maskotar och flaggor
     { const D = detMats(), PANEL = [0x121214, 0x121214, 0x5d6266, 0x7a1812, 0xe9e7e0, 0xd8a21c, 0x1f3f8a, 0x3a4a2a], pick = () => { let c; do c = PANEL[Math.floor(rr() * PANEL.length)]; while (new THREE.Color(c).distanceTo ? false : false); return c; };
-      const panelMat = c => new THREE.MeshStandardMaterial({ color: c, metalness: 0.35, roughness: 0.7 });
+      const panelMat = c => { const m = new THREE.MeshStandardMaterial({ color: c, metalness: 0.02, roughness: 0.88, envMapIntensity: 0.35 }); m.userData.paint = 1; return m; };
       // huv i annan färg (vanligast svart) – följer huvens profil ovanpå karossen
       if (rr() < 0.55) { const hp = [[aB - 0.04, belt], ...front.filter(p => p[1] >= (nb ? belt - 0.1 : 0.62)).sort((p, q) => q[0] - p[0]).reverse().filter(p => p[0] > aB - 0.04)].sort((p, q) => p[0] - q[0]);
         if (hp.length >= 2) { const sh = new THREE.Shape(), up = 0.118, dn = 0.07; hp.forEach((p, k) => k ? sh.lineTo(p[0], p[1] + up) : sh.moveTo(p[0], p[1] + up)); for (let k = hp.length - 1; k >= 0; k--) sh.lineTo(hp[k][0] + (k === hp.length - 1 ? -0.04 : 0), hp[k][1] + up - dn);
@@ -544,7 +560,7 @@ export class View3 {
     const lvl = Math.round(dmg / 5) * 5; if (G.userData.dl === lvl) return; G.userData.dl = lvl;
     const seed = G.userData.seed ??= Math.random() * 100, k = lvl / 100;
     G.traverse(m => {
-      if (!m.isMesh || !m.material || m.material.metalness !== 0.35) return; // lackerade delar
+      if (!m.isMesh || !m.material || !m.material.userData?.paint) return; // lackerade delar
       const pos = m.geometry.attributes.position; if (!m.userData.orig) m.userData.orig = pos.array.slice();
       const o = m.userData.orig, a = pos.array;
       for (let i = 0; i < a.length; i += 3) {
@@ -554,7 +570,7 @@ export class View3 {
       }
       pos.needsUpdate = true; m.geometry.computeVertexNormals();
       if (!m.userData.c0) m.userData.c0 = m.material.color.clone();
-      m.material.color.copy(m.userData.c0).lerp(new (T().Color)(0.35, 0.33, 0.3), k * 0.35); m.material.roughness = 0.42 + k * 0.45; m.material.metalness = 0.35; // behåll markören
+      m.material.color.copy(m.userData.c0).lerp(new (T().Color)(0.35, 0.33, 0.3), k * 0.35); m.material.roughness = Math.min(1, 0.86 + k * 0.14);
     });
   }
   // roll/pitch = markens lutning (hjulen följer den). bRoll/bPitch/bY = karossens krängning, nickning och vibration ovanpå fjädringen.
