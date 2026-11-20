@@ -118,6 +118,17 @@ export class View3 {
       this.stones = new THREE.Points(sg, new THREE.PointsMaterial({ color: w ? 0xe8eef4 : 0x4a4034, size: 0.06, sizeAttenuation: true })); this.stones.frustumCulled = false; S.add(this.stones); }
   }
   hAt(x, z) { return this.trk.heightAt(x, z); }
+  // Exakt höjd på det ritade terrängnätets triangel i (x, z) – så inget längs sidorna någonsin svävar över marken
+  meshH(x, z) {
+    const g = this._tg;
+    if (!g) return this.trk.heightAt(x, z);
+    const fx = (x - g.ox) / g.cell, fz = (z - g.oz) / g.cell;
+    const ix = Math.floor(fx), iz = Math.floor(fz);
+    if (ix < 0 || ix >= g.nx || iz < 0 || iz >= g.nz) return this.trk.heightAt(x, z);
+    const u = fx - ix, v = fz - iz, stride = g.nx + 1, a = iz * stride + ix, c = a + stride, P = g.pos;
+    const ya = P[a * 3 + 1], yb = P[(a + 1) * 3 + 1], yc = P[c * 3 + 1], yd = P[(c + 1) * 3 + 1];
+    return u + v <= 1 ? ya + u * (yb - ya) + v * (yc - ya) : yd + (1 - u) * (yc - yd) + (1 - v) * (yb - yd);
+  }
 
   buildTerrain() { const THREE = T(), trk = this.trk, b = trk.bbox, w = this.winter, margin = 620, cell = this.P.cell;
     const nx = Math.ceil((b.x1 - b.x0 + 2 * margin) / cell), nz = Math.ceil((b.z1 - b.z0 + 2 * margin) / cell), ox = b.x0 - margin, oz = b.z0 - margin;
@@ -167,6 +178,7 @@ export class View3 {
         if (d >= L) break;
       }
     }
+    this._tg = { ox, oz, cell, nx, nz, pos };
     const idx = new Uint32Array(nx * nz * 6); let q = 0; for (let j = 0; j < nz; j++) for (let i = 0; i < nx; i++) { const a = j * (nx + 1) + i, c = a + nx + 1; idx[q++] = a; idx[q++] = c; idx[q++] = a + 1; idx[q++] = a + 1; idx[q++] = c; idx[q++] = c + 1; }
     const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g.setAttribute('color', new THREE.BufferAttribute(col, 3)); g.setAttribute('uv', new THREE.BufferAttribute(uv, 2)); g.setIndex(new THREE.BufferAttribute(idx, 1)); g.computeVertexNormals();
     const tt = terrainTextures(w, this.aniso), mat = this.P.std ? new THREE.MeshStandardMaterial({ vertexColors: true, map: tt.map, normalMap: tt.normal, normalScale: new THREE.Vector2(0.9, 0.9), roughness: 0.96, metalness: 0, envMapIntensity: 0.18 }) : new THREE.MeshLambertMaterial({ vertexColors: true, map: tt.map });
@@ -207,7 +219,7 @@ export class View3 {
     const spruce = [], birch = []; let tries = 0;
     while (spruce.length + birch.length < N && tries++ < N * 12) { const x = b.x0 - 330 + rnd() * (b.x1 - b.x0 + 660), z = b.z0 - 330 + rnd() * (b.z1 - b.z0 + 660); trk.heightAt(x, z, o);
       if (o.d < trk.verge + 7 || o.h > 52) continue; if (Math.sin(x * 0.02) * Math.sin(z * 0.017 + 1) < -0.35 && rnd() < 0.8) continue;      // gläntor
-      (rnd() < 0.72 ? spruce : birch).push([x, o.h, z, 0.75 + rnd() * 0.8, rnd() * 6.28, rnd()]); }
+      (rnd() < 0.72 ? spruce : birch).push([x, this.meshH(x, z), z, 0.75 + rnd() * 0.8, rnd() * 6.28, rnd()]); }
     const CH = 170, chunks = new Map(), key = t => Math.floor(t[0] / CH) + ',' + Math.floor(t[2] / CH);
     for (const [arr, kind] of [[spruce, 's'], [birch, 'b']]) for (const t of arr) { const k = key(t); if (!chunks.has(k)) chunks.set(k, { s: [], b: [], cx: (Math.floor(t[0] / CH) + 0.5) * CH, cz: (Math.floor(t[2] / CH) + 0.5) * CH }); chunks.get(k)[kind].push(t); }
     const bark = new THREE.MeshLambertMaterial({ color: 0x4a3524 }), white = new THREE.Color(), cone = (r, h, y, seg = 9) => new THREE.ConeGeometry(r, h, seg).translate(0, y + h / 2, 0);
@@ -229,14 +241,14 @@ export class View3 {
   // gräs-tuvor längs banan (inte på vägen), i rutor för culling
   buildGrass() { const THREE = T(), trk = this.trk, N = this.P.grass; if (!N) return; const rnd = mulberry(hash(trk.id + 'grass')), o = {}, n = trk.n, mat = grassMaterial(this.winter), geo = grassGeometry(), d = new THREE.Object3D(), CH = 120, chunks = new Map(), col = new THREE.Color();
     for (let k = 0, tries = 0; k < N && tries < N * 4; tries++) { const i = Math.floor(rnd() * n), sd = rnd() < 0.5 ? 1 : -1, lat = sd * (trk.hwAt(i) + trk.verge * 0.3 + Math.pow(rnd(), 1.6) * 34), x = trk.X[i] + trk.NX[i] * lat, z = trk.Z[i] + trk.NZ[i] * lat; trk.heightAt(x, z, o); if (o.d < 1.2 || trk.bulge?.(i) && Math.abs(lat) < 12) continue;
-      const kk = Math.floor(x / CH) + ',' + Math.floor(z / CH); if (!chunks.has(kk)) chunks.set(kk, { l: [], cx: (Math.floor(x / CH) + 0.5) * CH, cz: (Math.floor(z / CH) + 0.5) * CH }); chunks.get(kk).l.push([x, o.h - 0.04, z, 0.6 + rnd() * 0.9, rnd() * 6.28, rnd()]); k++; }
+      const kk = Math.floor(x / CH) + ',' + Math.floor(z / CH); if (!chunks.has(kk)) chunks.set(kk, { l: [], cx: (Math.floor(x / CH) + 0.5) * CH, cz: (Math.floor(z / CH) + 0.5) * CH }); chunks.get(kk).l.push([x, this.meshH(x, z) - 0.04, z, 0.6 + rnd() * 0.9, rnd() * 6.28, rnd()]); k++; }
     for (const c of chunks.values()) { const m = new THREE.InstancedMesh(geo, mat, c.l.length); c.l.forEach((t, i) => { d.position.set(t[0], t[1], t[2]); d.rotation.set(0, t[4], 0); d.scale.set(t[3], t[3] * (0.8 + t[5] * 0.6), t[3]); d.updateMatrix(); m.setMatrixAt(i, d.matrix); m.setColorAt(i, col.setRGB(0.8 + t[5] * 0.35, 0.85 + t[5] * 0.25, 0.75 + t[5] * 0.2)); });
       m.geometry = geo.clone(); m.geometry.boundingSphere = new THREE.Sphere(new THREE.Vector3(c.cx, c.l[0][1], c.cz), CH * 0.75 + 30); m.receiveShadow = true; m.userData.chunk = 1; this.scene.add(m); (this.grass ||= []).push({ m, cx: c.cx, cz: c.cz }); } }
   // däckspår (anropas från loppet)
   mark(x0, z0, x1, z1, w, rgb) { if (this.marks) this.marks.add(x0, z0, x1, z1, this.hAt((x0 + x1) / 2, (z0 + z1) / 2) + 0.03, w, rgb); }
   buildProps() { const THREE = T(), trk = this.trk, S = this.scene, n = trk.n, w = this.winter, rnd = mulberry(hash(trk.id + 'props'));
     const lam = c => new THREE.MeshLambertMaterial({ color: c }), box = (x, y, z, sx, sy, sz, mat, ry = 0) => { const m = new THREE.Mesh(new THREE.BoxGeometry(sx, sy, sz), mat); m.position.set(x, y + sy / 2, z); m.rotation.y = ry; m.castShadow = true; m.receiveShadow = true; S.add(m); return m; };
-    const edge = (i, sd, extra) => { i = trk.w(i); const l = trk.limits(i), lat = (sd > 0 ? l[1] : l[0]) + sd * extra, x = trk.X[i] + trk.NX[i] * lat, z = trk.Z[i] + trk.NZ[i] * lat; return [x, this.hAt(x, z), z, -Math.atan2(trk.TZ[i], trk.TX[i])]; };
+    const edge = (i, sd, extra) => { i = trk.w(i); const l = trk.limits(i), lat = (sd > 0 ? l[1] : l[0]) + sd * extra, x = trk.X[i] + trk.NX[i] * lat, z = trk.Z[i] + trk.NZ[i] * lat; return [x, this.meshH(x, z), z, -Math.atan2(trk.TZ[i], trk.TX[i])]; };
     // målportal: fackverkstorn och banderoll
     { const i = trk.finishIdx || 0, a = edge(i, -1, 1.6), b = edge(i, 1, 1.6), steel = new THREE.MeshStandardMaterial({ color: 0x8a9096, metalness: 0.7, roughness: 0.4 }), top = Math.max(a[1], b[1]) + 6.2;
       for (const p of [a, b]) for (const [ox, oz] of [[-0.35, -0.35], [0.35, -0.35], [-0.35, 0.35], [0.35, 0.35]]) box(p[0] + ox, p[1], p[2] + oz, 0.1, top - p[1], 0.1, steel);
@@ -244,7 +256,7 @@ export class View3 {
       for (const dy of [0, 0.9]) box(mid[0], top - 1 + dy, mid[1], L + 1, 0.1, 0.8, steel, ry);
       const ban = new THREE.Mesh(new THREE.PlaneGeometry(L * 0.86, 1.1), new THREE.MeshBasicMaterial({ map: bannerTex('LÄHTÖ · MAALI', '#12151a', '#ffd400'), side: THREE.DoubleSide })); ban.position.set(mid[0], top - 0.05, mid[1]); ban.rotation.y = ry; S.add(ban); }
     // byggnader ur bandata (torn, kansli, kiosk) med sadeltak
-    for (const bd of trk.buildings || []) { const y = this.hAt(bd.x, bd.z), c = new THREE.Color(bd.col[0], bd.col[1], bd.col[2]); box(bd.x, y - 0.3, bd.z, bd.sx, bd.sy + 0.3, bd.sz, lam(c));
+    for (const bd of trk.buildings || []) { const y = this.meshH(bd.x, bd.z), c = new THREE.Color(bd.col[0], bd.col[1], bd.col[2]); box(bd.x, y - 0.3, bd.z, bd.sx, bd.sy + 0.3, bd.sz, lam(c));
       const roof = new THREE.Mesh(new THREE.CylinderGeometry(0.01, Math.max(bd.sx, bd.sz) * 0.74, 1.5, 4, 1), lam(w ? 0xe9eef4 : 0x3a3d42)); roof.position.set(bd.x, y + bd.sy + 0.75, bd.z); roof.rotation.y = Math.PI / 4; roof.scale.set(bd.sx >= bd.sz ? 1 : bd.sx / bd.sz, 1, bd.sz > bd.sx ? 1 : bd.sz / bd.sx); roof.castShadow = true; S.add(roof);
       for (let k = 0; k < Math.floor(bd.sx / 3); k++) box(bd.x - bd.sx / 2 + 1.5 + k * 3, y + bd.sy * 0.45, bd.z + bd.sz / 2 + 0.02, 1.3, 1.0, 0.05, new THREE.MeshStandardMaterial({ color: 0x24303c, roughness: 0.2, metalness: 0.6 })); }
     // reklamskyltar längs rakorna
@@ -256,27 +268,27 @@ export class View3 {
       const g = new THREE.CylinderGeometry(0.33, 0.33, 0.24, 12), m1 = new THREE.InstancedMesh(g, new THREE.MeshLambertMaterial({ color: 0x18181a }), list.length * 3), d = new THREE.Object3D(), col = new THREE.Color();
       list.forEach((p, i) => { for (let s = 0; s < 3; s++) { d.position.set(p[0], p[1] + 0.12 + s * 0.25, p[2]); d.updateMatrix(); m1.setMatrixAt(i * 3 + s, d.matrix); m1.setColorAt(i * 3 + s, col.set(s === 2 && i % 2 ? 0xd8d8d8 : s === 2 ? 0xc2261d : 0x18181a)); } }); m1.castShadow = true; S.add(m1); }
     // koner på ön vid lisälenkkin
-    { const j = trk.joker, list = []; for (let i = j.i1 + 2; i < j.i2 - 1; i += 3) { const b = trk.bulge(i), hw = trk.hwAt(i); if (Math.abs(b) < hw + j.w / 2 + 1.5) continue; const lat = (Math.sign(b) * hw + b - Math.sign(b) * j.w / 2) / 2, ii = trk.w(i); list.push([trk.X[ii] + trk.NX[ii] * lat, trk.Y[ii], trk.Z[ii] + trk.NZ[ii] * lat]); }
+    { const j = trk.joker, list = []; for (let i = j.i1 + 2; i < j.i2 - 1; i += 3) { const b = trk.bulge(i), hw = trk.hwAt(i); if (Math.abs(b) < hw + j.w / 2 + 1.5) continue; const lat = (Math.sign(b) * hw + b - Math.sign(b) * j.w / 2) / 2, ii = trk.w(i), kx = trk.X[ii] + trk.NX[ii] * lat, kz = trk.Z[ii] + trk.NZ[ii] * lat; list.push([kx, this.meshH(kx, kz), kz]); }
       const m = new THREE.InstancedMesh(new THREE.ConeGeometry(0.26, 0.75, 10).translate(0, 0.375, 0), new THREE.MeshLambertMaterial({ color: 0xff6a12 }), Math.max(1, list.length)), d = new THREE.Object3D(); list.forEach((p, i) => { d.position.set(p[0], p[1], p[2]); d.updateMatrix(); m.setMatrixAt(i, d.matrix); }); m.count = list.length; m.castShadow = true; S.add(m); }
     // flaggposter
     const posts = (trk.posts && trk.posts.length ? trk.posts.map(p => [p.x, p.z]) : [...Array(7)].map((_, q) => { const p = edge(Math.round((q + 0.5) * n / 7), 1, trk.verge + 4); return [p[0], p[2]]; }));
     // gul flagga som lippumiehen viftar med vid incident (dold tills race.js säger till via setYellow)
     this.yFlags = []; const yMat = new THREE.MeshLambertMaterial({ color: 0xffd400, side: THREE.DoubleSide, emissive: 0x3a3000 });
-    for (const [q, [x, z]] of posts.entries()) { const o = {}; trk.heightAt(x, z, o); if (o.d < 1.5) continue;
+    for (const [q, [x, z]] of posts.entries()) { const o = {}; trk.heightAt(x, z, o); if (o.d < 1.5) continue; const yh = this.meshH(x, z);
       { const fg = new THREE.Group(), pole = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 1.8, 5).translate(0, 0.9, 0), lam(0x222222)), cl = new THREE.Mesh(new THREE.PlaneGeometry(1.1, 0.8).translate(0.55, 0, 0), yMat);
-        cl.position.y = 1.45; fg.add(pole, cl); fg.position.set(x - 1.2, o.h + 1.35, z); fg.visible = false; S.add(fg); this.yFlags[q] = { g: fg, cl }; }
-      box(x, o.h, z, 1.8, 0.25, 1.8, lam(0x6b5a45)); box(x, o.h + 0.25, z, 1.6, 1.0, 1.6, lam(0xf0b415)); box(x + 0.7, o.h + 1.25, z + 0.7, 0.06, 1.9, 0.06, lam(0x333333)); box(x + 1.0, o.h + 2.6, z + 0.7, 0.6, 0.45, 0.03, lam(0xffe100)); }
+        cl.position.y = 1.45; fg.add(pole, cl); fg.position.set(x - 1.2, this.meshH(x - 1.2, z) + 1.35, z); fg.visible = false; S.add(fg); this.yFlags[q] = { g: fg, cl }; }
+      box(x, yh, z, 1.8, 0.25, 1.8, lam(0x6b5a45)); box(x, yh + 0.25, z, 1.6, 1.0, 1.6, lam(0xf0b415)); box(x + 0.7, yh + 1.25, z + 0.7, 0.06, 1.9, 0.06, lam(0x333333)); box(x + 1.0, yh + 2.6, z + 0.7, 0.6, 0.45, 0.03, lam(0xffe100)); }
     // depå: tält, släp och servicebilar utanför startområdet
     { const i0 = trk.finishIdx || 0, sd = -trk.outSign || 1, tent = [0xd92b20, 0x1f5fb8, 0xf4f1e8, 0xffd400, 0x1e8a4a], o = {};
-      for (let k = 0; k < (this.q ? 16 : 7); k++) { const p = edge(i0 - 40 + k * 7, sd, trk.verge + 16 + (k % 3) * 9 + rnd() * 4); trk.heightAt(p[0], p[2], o); if (o.d < trk.verge + 8) continue;
-        if (k % 3 === 0) { box(p[0], o.h, p[2], 4.6, 1.9, 2.0, new THREE.MeshStandardMaterial({ color: [0xe9e9e6, 0x2b3038, 0x9a1f1a][k % 3 === 0 ? (k / 3 | 0) % 3 : 0], metalness: 0.4, roughness: 0.5 }), p[3]); box(p[0], o.h + 1.2, p[2], 4.62, 0.55, 1.7, new THREE.MeshStandardMaterial({ color: 0x1a222b, roughness: 0.15, metalness: 0.7 }), p[3]); }
-        else { for (const [ox, oz] of [[-1.4, -1.4], [1.4, -1.4], [-1.4, 1.4], [1.4, 1.4]]) box(p[0] + ox, o.h, p[2] + oz, 0.07, 2.2, 0.07, lam(0xcccccc)); const r = new THREE.Mesh(new THREE.ConeGeometry(2.4, 1.1, 4), lam(tent[k % 5])); r.position.set(p[0], o.h + 2.75, p[2]); r.rotation.y = Math.PI / 4; r.castShadow = true; S.add(r); } } }
+      for (let k = 0; k < (this.q ? 16 : 7); k++) { const p = edge(i0 - 40 + k * 7, sd, trk.verge + 16 + (k % 3) * 9 + rnd() * 4); trk.heightAt(p[0], p[2], o); if (o.d < trk.verge + 8) continue; const yh = this.meshH(p[0], p[2]);
+        if (k % 3 === 0) { box(p[0], yh, p[2], 4.6, 1.9, 2.0, new THREE.MeshStandardMaterial({ color: [0xe9e9e6, 0x2b3038, 0x9a1f1a][k % 3 === 0 ? (k / 3 | 0) % 3 : 0], metalness: 0.4, roughness: 0.5 }), p[3]); box(p[0], yh + 1.2, p[2], 4.62, 0.55, 1.7, new THREE.MeshStandardMaterial({ color: 0x1a222b, roughness: 0.15, metalness: 0.7 }), p[3]); }
+        else { for (const [ox, oz] of [[-1.4, -1.4], [1.4, -1.4], [-1.4, 1.4], [1.4, 1.4]]) box(p[0] + ox, yh, p[2] + oz, 0.07, 2.2, 0.07, lam(0xcccccc)); const r = new THREE.Mesh(new THREE.ConeGeometry(2.4, 1.1, 4), lam(tent[k % 5])); r.position.set(p[0], yh + 2.75, p[2]); r.rotation.y = Math.PI / 4; r.castShadow = true; S.add(r); } } }
     // STOP-skylt efter mål
     { const p = edge((trk.finishIdx || 0) + 70, 1, 1.2); box(p[0], p[1], p[2], 0.08, 2.1, 0.08, lam(0x555555)); const s = new THREE.Mesh(new THREE.CircleGeometry(0.5, 8), new THREE.MeshBasicMaterial({ map: canvasTex(128, 128, (g) => { g.fillStyle = '#c8201a'; g.fillRect(0, 0, 128, 128); g.fillStyle = '#fff'; g.font = '900 44px Arial'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('STOP', 64, 66); }), side: THREE.DoubleSide })); s.position.set(p[0], p[1] + 2.3, p[2]); s.rotation.y = p[3] + Math.PI / 2; S.add(s); }
   }
   // Fler detaljer längs banan: kantstolpar, stenar, buskar/tuvor, publik bakom avspärrningsband, funktionärer, strålkastarmaster, parkerade bilar
   buildDetails() { const THREE = T(), trk = this.trk, S = this.scene, n = trk.n, w = this.winter, q = this.q, rnd = mulberry(hash(trk.id + 'details')), o = {}, d = new THREE.Object3D(), col = new THREE.Color();
-    const at = (i, sd, extra) => { i = trk.w(i); const l = trk.limits(i), lat = (sd > 0 ? l[1] : l[0]) + sd * extra, x = trk.X[i] + trk.NX[i] * lat, z = trk.Z[i] + trk.NZ[i] * lat; trk.heightAt(x, z, o); return [x, o.h, z, -Math.atan2(trk.TZ[i], trk.TX[i]), o.d]; };
+    const at = (i, sd, extra) => { i = trk.w(i); const l = trk.limits(i), lat = (sd > 0 ? l[1] : l[0]) + sd * extra, x = trk.X[i] + trk.NX[i] * lat, z = trk.Z[i] + trk.NZ[i] * lat; trk.heightAt(x, z, o); return [x, this.meshH(x, z), z, -Math.atan2(trk.TZ[i], trk.TX[i]), o.d]; };
     const inst = (geo, mat, list, shadow = false) => { if (!list.length) return; const m = new THREE.InstancedMesh(geo, mat, list.length);
       list.forEach((e, k) => { d.position.set(e.x, e.y, e.z); d.rotation.set(e.rx || 0, e.ry || 0, 0); d.scale.set(e.sx ?? e.s ?? 1, e.sy ?? e.s ?? 1, e.s ?? 1); d.updateMatrix(); m.setMatrixAt(k, d.matrix); if (e.c !== undefined) m.setColorAt(k, col.set(e.c)); });
       m.castShadow = shadow; m.receiveShadow = true; m.frustumCulled = false; S.add(m); return m; };
@@ -304,7 +316,7 @@ export class View3 {
       inst(new THREE.CylinderGeometry(0.17, 0.2, 1.55, 7).translate(0, 0.78, 0), new THREE.MeshLambertMaterial({ color: 0xffffff }), bodies, true);
       inst(new THREE.SphereGeometry(0.13, 8, 6), new THREE.MeshLambertMaterial({ color: 0xffffff }), heads); }
     // funktionärer i orange västar vid flaggposterna
-    { const list = [], hd = []; for (const pst of trk.posts && trk.posts.length ? trk.posts : []) { trk.heightAt(pst.x - 1.2, pst.z, o); if (o.d < 1.5) continue; list.push({ x: pst.x - 1.2, y: o.h, z: pst.z, sy: 1.05, s: 1, c: 0xff6a12 }); hd.push({ x: pst.x - 1.2, y: o.h + 1.75, z: pst.z, s: 1, c: 0xf0c8a0 }); }
+    { const list = [], hd = []; for (const pst of trk.posts && trk.posts.length ? trk.posts : []) { trk.heightAt(pst.x - 1.2, pst.z, o); if (o.d < 1.5) continue; const yh = this.meshH(pst.x - 1.2, pst.z); list.push({ x: pst.x - 1.2, y: yh, z: pst.z, sy: 1.05, s: 1, c: 0xff6a12 }); hd.push({ x: pst.x - 1.2, y: yh + 1.75, z: pst.z, s: 1, c: 0xf0c8a0 }); }
       inst(new THREE.CylinderGeometry(0.18, 0.2, 1.55, 7).translate(0, 0.78, 0), new THREE.MeshLambertMaterial({ color: 0xffffff }), list, true); inst(new THREE.SphereGeometry(0.13, 8, 6), new THREE.MeshLambertMaterial({ color: 0xffffff }), hd); }
     // strålkastarmaster vid start/mål
     { const i0 = trk.finishIdx || 0, pole = new THREE.MeshLambertMaterial({ color: 0x7c8288 }), lampM = new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0x8a8a70 });
@@ -329,7 +341,7 @@ export class View3 {
       for (const [di, sd] of [[-14, -1], [-6, -1], [2, -1], [40, 1], [140, 1]]) { const p = at(i0 + di, sd, V + 9); if (p[4] < V + 4) continue; const pl = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.07, 8, 6), poleM); pl.position.set(p[0], p[1] + 4, p[2]); S.add(pl);
         const f = new THREE.Mesh(new THREE.PlaneGeometry(1.8, 1.1, 6, 1), flagM); const pa = f.geometry.attributes.position; for (let v = 0; v < pa.count; v++) pa.setZ(v, Math.sin(pa.getX(v) * 2.4) * 0.12); f.geometry.computeVertexNormals(); f.position.set(p[0] + Math.cos(p[3]) * 0.9, p[1] + 7.3, p[2] - Math.sin(p[3]) * 0.9); f.rotation.y = p[3]; S.add(f); }
       const toilets = [], troofs = [], umb = [], ustick = []; const spotsI = []; for (let i = 0; i < n; i += 6) { const k = trk.K[i]; if (Math.abs(k) < 0.02 || trk.bulge(i)) continue; if (spotsI.length && i - spotsI[spotsI.length - 1][0] < 60) continue; spotsI.push([i, k > 0 ? -1 : 1]); }
-      for (const [i, sd] of spotsI.slice(0, q ? 8 : 4)) { const t = at(i + 18, sd, V + 10); if (t[4] > V + 5) for (let r = 0; r < 2; r++) { const x = t[0] + Math.cos(t[3]) * r * 1.4, z = t[2] - Math.sin(t[3]) * r * 1.4, y = this.hAt(x, z); toilets.push({ x, y, z, ry: t[3], s: 1, c: 0x2a6fd6 }); troofs.push({ x, y: y + 2.25, z, ry: t[3], s: 1, c: 0xe8e8e8 }); }
+      for (const [i, sd] of spotsI.slice(0, q ? 8 : 4)) { const t = at(i + 18, sd, V + 10); if (t[4] > V + 5) for (let r = 0; r < 2; r++) { const x = t[0] + Math.cos(t[3]) * r * 1.4, z = t[2] - Math.sin(t[3]) * r * 1.4, y = this.meshH(x, z); toilets.push({ x, y, z, ry: t[3], s: 1, c: 0x2a6fd6 }); troofs.push({ x, y: y + 2.25, z, ry: t[3], s: 1, c: 0xe8e8e8 }); }
         for (const di of [-8, 6]) { const u = at(i + di, sd, V + 9.5 + rnd() * 2); if (u[4] < V + 4) continue; umb.push({ x: u[0], y: u[1] + 2.1, z: u[2], s: 1, c: [0xd92b20, 0xffd400, 0x1f5fb8, 0x1e8a4a][Math.floor(rnd() * 4)] }); ustick.push({ x: u[0], y: u[1], z: u[2], s: 1 }); } }
       inst(new THREE.BoxGeometry(1.2, 2.2, 1.2).translate(0, 1.1, 0), new THREE.MeshLambertMaterial({ color: 0xffffff }), toilets, true); inst(new THREE.BoxGeometry(1.3, 0.1, 1.3), new THREE.MeshLambertMaterial({ color: 0xffffff }), troofs);
       inst(new THREE.ConeGeometry(1.3, 0.5, 10, 1, true), new THREE.MeshLambertMaterial({ color: 0xffffff, side: THREE.DoubleSide }), umb, true); inst(new THREE.CylinderGeometry(0.025, 0.025, 2.2, 5).translate(0, 1.1, 0), new THREE.MeshLambertMaterial({ color: 0xdddddd }), ustick);
