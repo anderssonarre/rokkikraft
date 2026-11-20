@@ -70,6 +70,7 @@ export function buildSpec(carId, cs, tune) {
   // specialkod: Stage 3 (dubbel effekt) och 300 kW kylare – sitter på just den bilen
   if (cs?.perks?.stage3) s.tqS *= 2;
   if (cs?.perks?.cool300) s.cool = Math.max(s.cool, 300);
+  if (cs?.perks?.grip10) { s.gripX = 10; s.stabX = 10; } // specialkod: 10× grepp och extra stabilitet
   // tyngre/lättare motor flyttar vikt fram/bak (motorn sitter fram): mer grepp på framaxeln men mer understyrning
   if (eng && eng.w != null) { const dw = eng.w - (engById(c.defaultEng)?.w ?? 140); s.front = Math.min(0.72, Math.max(0.45, (s.front * (s.mass - dw) + dw * 0.95) / s.mass)); }
   // 2½-växel: femmans plats får ett drev mellan tvåan och trean (växlas 2 → 5 → 3 i utväxlingsordning)

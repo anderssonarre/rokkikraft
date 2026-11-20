@@ -1039,10 +1039,10 @@ const ACT = {
   async redeem() { const el = document.getElementById('redeemCode'), v = (el?.value || '').trim().toUpperCase(); if (!v) return;
     let h = ''; try { const b = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(v)); h = [...new Uint8Array(b)].map(x => x.toString(16).padStart(2, '0')).join(''); } catch (e) { }
     const amt = { '81afbefeea7f5c78f397572e3cbe5ae098074b53899f6610335cb547e92dfdfb': 20000, '96b73c55ac1fef46e5181e7cad3e7b45b64e61a848f66879f31572350fb6940d': 50000, '37fc61d348006100a72d0db722a1fa6bfdc1c4ad931bdd20a3e39cb6a5042c3d': 10000 }[h];
-    const PERK = { '483641c3e82bcc15d1fde47f16bbe507dd91ca85953194f017e0cc4fc6418740': ['stage3', 'cool300'] }[h];
+    const PERK = { '483641c3e82bcc15d1fde47f16bbe507dd91ca85953194f017e0cc4fc6418740': ['stage3', 'cool300'], '6ee5d99add2d762aadc676c93898a782c1611a39b01c3052ed7d3dd3489ee0a0': ['grip10'] }[h], PERKNAME = { stage3: 'Stage 3 (dubbel effekt)', cool300: '300 kW kylare', grip10: '10× grepp och stabilitet' };
     if (PERK) { const cs = activeCar(); if (!cs) { toast('Köp en bil först – koden läggs på den aktiva bilen.'); render(); return; }
       S.redeemed = S.redeemed || []; if (S.redeemed.includes(h)) { toast('Koden är redan inlöst.'); render(); return; }
-      S.redeemed.push(h); cs.perks = { ...(cs.perks || {}) }; for (const k of PERK) cs.perks[k] = 1; save(); toast(`Stage 3 (dubbel effekt) och 300 kW kylare monterade på ${carById(S.active).name}!`); render(); return; }
+      S.redeemed.push(h); cs.perks = { ...(cs.perks || {}) }; for (const k of PERK) cs.perks[k] = 1; save(); toast(`${PERK.map(k => PERKNAME[k]).join(' och ')} monterat på ${carById(S.active).name}!`); render(); return; }
     if (!amt) { toast('Ogiltig kod.'); render(); return; }
     S.redeemed = S.redeemed || []; if (S.redeemed.includes(h)) { toast('Koden är redan inlöst.'); render(); return; }
     S.redeemed.push(h); S.money += amt; save(); toast(`+${eur(amt)} insatt!`); render(); },

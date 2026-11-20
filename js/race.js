@@ -56,7 +56,7 @@ export function phys(c, dt, trk) {
   const L = s.wb, a = L * (1 - s.front), b = L * s.front, m = s.mass, fwd = s.drv === 'fwd', awd = s.drv === 'awd';
   const st = trk.surfTypeAt ? trk.surfTypeAt(c.i) : trk.surface;
   // lätta bilar har en liten fördel i kurvorna (lastkänslighet), skador försämrar väghållningen
-  const mu = surf.mu * s.mu * (c.gripF || 1) * (c.onSurf ? 1 : 0.72 + 0.12 * s.susp) * (s.surfK ? s.surfK[st] || 1 : 1) * Math.pow(1150 / m, 0.12) * (1 - Math.max(0, (c.dmg || 0) - 30) * 0.0025), crr = c.onSurf ? surf.crr : 0.09 - 0.03 * s.susp;
+  const mu = surf.mu * s.mu * (s.gripX || 1) * (c.gripF || 1) * (c.onSurf ? 1 : 0.72 + 0.12 * s.susp) * (s.surfK ? s.surfK[st] || 1 : 1) * Math.pow(1150 / m, 0.12) * (1 - Math.max(0, (c.dmg || 0) - 30) * 0.0025), crr = c.onSurf ? surf.crr : 0.09 - 0.03 * s.susp;
   const v = Math.hypot(c.vx, c.vy), delta = (c.steer + (c.tsq || 0)) * 0.52 * (s.steerK || 1) * (1 - Math.max(0, (c.dmg || 0) - 50) * 0.002) / (1 + v * 0.035);
   if (c.rev) {
     c.vx += (-4.5 - c.vx) * Math.min(1, 2.2 * dt); c.vy *= 1 - Math.min(1, 8 * dt); c.r = c.vx * Math.tan(delta) / L; c.rpm = s.idle + 1200; c.slip = 0;
@@ -129,9 +129,9 @@ export function phys(c, dt, trk) {
     { const vxa = Math.abs(c.vx); if (vxa > 3 && !c.rev) { const bs = Math.atan2(c.vy, vxa), beta = Math.abs(bs), slideW = clamp((beta - 0.06) / 0.25, 0, 1);
         // mål-girning: vad ratten ber om, plus en vridning som riktar bilen mot färdriktningen när den står snett
         const rt = c.vx * Math.tan(delta) / L + ASSIST.kb * slideW * bs * Math.sign(c.vx), ex = c.r - rt;
-        if (slideW > 0 ? ex * bs < 0 : ex * Math.sign(c.r || ex) > 0) { const thrO = fwd ? 0 : Math.min(1, c.thr * 1.6);
+        if (slideW > 0 ? ex * bs < 0 : ex * Math.sign(c.r || ex) > 0) { const thrO = fwd || s.stabX ? 0 : Math.min(1, c.thr * 1.6);
           const kd = ASSIST.base * (1 - slideW) + slideW * (ASSIST.slide * (1 - ASSIST.holdK * thrO) + ASSIST.center * (1 - thrO) * (1 - Math.min(1, Math.abs(c.steer) * 2)));
-          Mz -= ex * kd * m * L * L * 0.36; } } }
+          Mz -= ex * kd * (s.stabX || 1) * m * L * L * 0.36; } } }
     c.vx += (axn + c.vy * c.r) * dt; c.vy += (ayn - c.vx * c.r) * dt; c.r += Mz / (m * L * L * 0.36) * dt;
     c.ax += (axn - c.ax) * Math.min(1, 12 * dt);
     c.ay += (ayn - c.ay) * Math.min(1, 12 * dt);
