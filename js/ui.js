@@ -35,7 +35,8 @@ const topLevel = () => { let t = 0; CAREER.forEach((l, i) => { if (levelOpen(i))
 export function render() {
   const racing = U.view === 'race'; document.body.classList.toggle('racing', racing);
   if (racing) { MUSIC.stop(); return; } MUSIC.vol = (S.settings.music ?? 40) / 100; MUSIC.play(); // bakgrundsmusik i menyerna
-  const V = { menu, karriar, play: karriar, event: eventView, garage, trim, dyno, komp, settings, online, setup, result, name: nameView, top: topView }[U.view] || menu;
+  let V = { menu, karriar, play: karriar, event: eventView, garage, trim, dyno, komp, settings, online, setup, result, name: nameView, top: topView }[U.view] || menu;
+  if (!activeCar() && !['menu', 'komp', 'settings', 'name', 'top'].includes(U.view)) V = carShop; // ingen bil → bara bilhandeln
   app().innerHTML = `<header class="topbar">${U.view !== 'menu' && U.view !== 'event' ? '<button class="back" data-act="go" data-arg="menu">‹ Meny</button>' : '<span class="brand">ROKKI<b>KRAFT</b></span>'}
     <span class="top-title">${{ karriar: 'Karriär & Banor', event: 'Tävlingsdag', garage: 'Garage & Besiktning', trim: 'Trimning', dyno: 'Räknebänken', komp: 'Kompendium & Sääntökirja', settings: 'Inställningar', setup: 'Bilinställningar', result: 'Resultat', play: 'Spela', name: 'Byt namn', top: 'Global topplista', karriar: 'Karriär', online: 'Online – rumskod' }[U.view] || ''}</span>
     <span class="wallet">${S.warnings > 0 ? `<i style="color:#ff6a3d">⚠ ${S.warnings}/3 varningar</i>` : ''}${S.vouchers > 0 ? `<i style="color:#5ce080">🎟 ${S.vouchers} hyvityskuitti</i>` : ''}<b>${eur(S.money)}</b><i>${CAREER[topLevel()].name}</i></span></header>
@@ -56,6 +57,8 @@ let SR = null;
 
 // ---------- meny ----------
 function menu() {
+  if (!activeCar()) return `<section class="hero"><div class="hero-l"><span class="kick">INGEN BIL I GARAGET</span><h1>Rokki<em>kraft</em></h1><p>Din bil har sålts på myyntitilaisuus. Köp en ny bil för att fortsätta tävla – du har <b>${eur(S.money)}</b>.</p>
+    <div class="row"><button class="btn" data-act="go" data-arg="garage">🚗 Till bilhandeln</button><button class="btn ghost" data-act="go" data-arg="settings">⚙ Inställningar</button><button class="btn ghost" data-act="go" data-arg="komp">📖 Kompendium</button></div></div></section>`;
   const insp = currentInsp(), s = insp.spec, k = curve(s), car = carById(S.active), cs = activeCar();
   const solved = S.dyno.reduce((a, b) => a + b, 0), owned = Object.keys(S.cars).length, parts = Object.values(S.cars).reduce((a, c) => a + Object.values(c.upg).reduce((x, y) => x + y, 0), 0);
   const numStr = formatCarNum(cs.num, insp.cls);
@@ -638,6 +641,20 @@ function statRows(s, k, k0) {
     <tr><td>Drivning · diff · grepp</td><td>${s.drv === 'fwd' ? 'Fram (Etuveto)' : 'Bak (Takaveto)'}${s.trac ? ' · Lukkoperä' : ' · Öppen diff'} · ×${fmt(s.mu, 2)}</td></tr></table>`;
 }
 
+// Bilhandeln: alla bilmodeller med köp/välj (används i garaget och när man saknar bil)
+function carList() {
+  return `<section class="panel"><h2>Bilmodeller (${CARS.length} dokumenterade Rokkirallibilar)</h2><p class="dim"><b>Vetari (etuveto)</b>: Volvo S40/V40, Mazda 3/6, Opel Astra/Vectra, VW Passat B5, Volvo 850/S70/V70 & Ford Mondeo. <b>Kardaani (takaveto)</b>: Opel Kadett/Ascona, Ford Sierra, Volvo 240/740/940, RWD-ombyggd Passat B5/Audi A4 2,8 V6 & BMW E36/E46. <b>Super</b>: Toyota Starlet, Opel Ascona (med Volvo-motor & BMW-låda), Ford Escort, BMW/Sierra Turbo & V8-Volvo!</p><div class="cards cars">${CARS.map(c => {
+    const own = S.cars[c.id], ss = own ? spec(c.id) : stockSpec(c.id), kk = curve(ss);
+    return `<div class="card car ${S.active === c.id ? 'sel' : ''} ${own ? 'own' : ''}"><div class="c-top"><span>${CLASSES[c.cls].toUpperCase()} · ${fmt(ss.Vd, 1)} L ${ss.cyl}-CYL</span><b>${own ? (S.active === c.id ? 'VALD' : 'ÄGD') : eur(c.price)}</b></div>
+      <strong>${c.name}</strong><em>”${c.nick}” – ${c.tag}</em><p>${c.desc}</p>
+      <ul><li><b>${ss.engName}</b></li><li>${fmt(kk.hp)} hk · ${fmt(kk.peakT.T)} Nm</li><li>${fmt(ss.mass)} kg (reg. ${c.regMass} kg) · ${fmt(kk.kgHp, 1)} kg/hk</li><li>Varvgräns ${fmt(ss.redline)} rpm${ss.boost ? ' · turbo ' + fmt(ss.boost, 2) + ' bar' : ' · sugmotor'}</li></ul>
+      ${own ? (S.active === c.id ? '' : `<button class="btn small" data-act="car-pick" data-arg="${c.id}">Välj bil</button>`) : `<button class="btn small" data-act="car-buy" data-arg="${c.id}" ${S.money >= c.price ? '' : 'disabled'}>Köp (${eur(c.price)})</button>`}</div>`;
+  }).join('')}</div></section>`;
+}
+// Ingen bil kvar (t.ex. såld på myyntitilaisuus): man måste köpa en ny innan man kan tävla eller trimma
+function carShop() {
+  const m = U.ev?.saleMsg; return `${m ? `<section class="panel"><div class="okbox">${m}</div></section>` : ''}<section class="panel"><span class="kick">BILHANDELN</span><h1>Du har ingen bil</h1><p>Din bil är såld. Köp en ny bil nedan för att kunna tävla, trimma och besiktiga igen. Du har <b>${eur(S.money)}</b>.</p></section>` + carList();
+}
 function garage() {
   const cs = activeCar(), car = carById(S.active), insp = currentInsp(), s = insp.spec, k = curve(s), ok = insp.ok;
   const numStr = formatCarNum(cs.num, insp.cls);
@@ -673,13 +690,7 @@ function garage() {
   }).join('')}</div></section>`;
 
   // Bilar
-  h += `<section class="panel"><h2>Bilmodeller (${CARS.length} dokumenterade Rokkirallibilar)</h2><p class="dim"><b>Vetari (etuveto)</b>: Volvo S40/V40, Mazda 3/6, Opel Astra/Vectra, VW Passat B5, Volvo 850/S70/V70 & Ford Mondeo. <b>Kardaani (takaveto)</b>: Opel Kadett/Ascona, Ford Sierra, Volvo 240/740/940, RWD-ombyggd Passat B5/Audi A4 2,8 V6 & BMW E36/E46. <b>Super</b>: Toyota Starlet, Opel Ascona (med Volvo-motor & BMW-låda), Ford Escort, BMW/Sierra Turbo & V8-Volvo!</p><div class="cards cars">${CARS.map(c => {
-    const own = S.cars[c.id], ss = own ? spec(c.id) : stockSpec(c.id), kk = curve(ss);
-    return `<div class="card car ${S.active === c.id ? 'sel' : ''} ${own ? 'own' : ''}"><div class="c-top"><span>${CLASSES[c.cls].toUpperCase()} · ${fmt(ss.Vd, 1)} L ${ss.cyl}-CYL</span><b>${own ? (S.active === c.id ? 'VALD' : 'ÄGD') : eur(c.price)}</b></div>
-      <strong>${c.name}</strong><em>”${c.nick}” – ${c.tag}</em><p>${c.desc}</p>
-      <ul><li><b>${ss.engName}</b></li><li>${fmt(kk.hp)} hk · ${fmt(kk.peakT.T)} Nm</li><li>${fmt(ss.mass)} kg (reg. ${c.regMass} kg) · ${fmt(kk.kgHp, 1)} kg/hk</li><li>Varvgräns ${fmt(ss.redline)} rpm${ss.boost ? ' · turbo ' + fmt(ss.boost, 2) + ' bar' : ' · sugmotor'}</li></ul>
-      ${own ? (S.active === c.id ? '' : `<button class="btn small" data-act="car-pick" data-arg="${c.id}">Välj bil</button>`) : `<button class="btn small" data-act="car-buy" data-arg="${c.id}" ${S.money >= c.price ? '' : 'disabled'}>Köp (${eur(c.price)})</button>`}</div>`;
-  }).join('')}</div></section>`;
+  h += carList();
 
   // Motoralternativ & Motorbyten (Tekniikanvaihto)
   {
@@ -989,13 +1000,9 @@ const ACT = {
       ev.saleMsg = `🔨 <b>Autojen myyntitilaisuus</b>: Din egen lott (arpa) drogs först! Du använde lotten till att <b>skydda din egen bil (suojata oman auton)</b> mot ${buyers} spekulanter!`;
     } else {
       S.money += 850;
-      // Enligt "MYYNTITILAISUUDESSA SAA POISTAA" behåller du stol, bälten, Nascar-verkko, batteri, spacers och däck (om standardhjul sätts på)
-      const cs = activeCar();
-      const keptTire = cs.upg.dack || 0, keptFjad = cs.upg.fjad || 0;
-      cs.upg = {};
-      if (keptTire) cs.upg.dack = keptTire;
-      if (keptFjad) cs.upg.fjad = keptFjad;
-      ev.saleMsg = `🔨 <b>Autojen myyntitilaisuus</b>: En annan förare vann lottningen och köpte din bil för <b>850 € kontant</b>! Du plockade ur kuppipenkki, bälten, Nascar-verkko, batteri, däck och spacers och satte in dem i en ny grundkaross i garaget.`;
+      // Bilen är såld och lämnar garaget – man måste köpa en ny (eller välja en annan man redan äger)
+      const soldName = carById(S.active).name; delete S.cars[S.active]; S.active = Object.keys(S.cars)[0] || null;
+      ev.saleMsg = `🔨 <b>Autojen myyntitilaisuus</b>: En annan förare vann lottningen och köpte din <b>${soldName}</b> för <b>850 € kontant</b>! Bilen är borta ur garaget – ${S.active ? `du kör vidare med din <b>${carById(S.active).name}</b>` : 'köp en ny bil för att kunna tävla igen'}.`;
     }
     save();
   },
