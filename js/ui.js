@@ -291,7 +291,7 @@ function aiNames(n) { const set = new Set(), out = shuffle(DRIVERS).slice(0, Mat
 // boostHp: om satt får ALLA AI exakt så många hk (karriär/online: starkaste riktiga spelarens hk + 100)
 function makeOpps(n, li, diff, cls, boostHp) {
   const names = aiNames(n), mine = activeCar().paint, full = { strip: 1, cage: 1, seat: 1, net: 1, switch: 1 };
-  const ps = spec(), php = curve(ps).hp, tune = { ...defaultTune(), ...activeCar().tune };
+  const ps = spec(), php = curve(ps).hp, tune = { ...defaultTune(), ...activeCar().tune, tyre: 'ccplus' }; // alla AI kör på bästa däcken (CrossClimate Plus)
   const poolKey = cls === 'super' || cls === 'supersenior' ? 'super' : cls === 'kardaani' ? 'kardaani' : 'vetari';
   const pool = [...AI_POOL[poolKey][Math.max(0, Math.min(3, li))], 'mazda626', 'passat_rx', 'mondeo_st'];
   return names.map(name => {
