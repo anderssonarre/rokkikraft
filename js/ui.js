@@ -512,9 +512,10 @@ function netRace(h, grid, cfg, lead, watch) {
     ? { name: g.name, paint: g.paint, bw: g.bw, diff: g.diff, powScale: g.powScale, spec: g.spec, nid: g.id, remote: watch || !amLead }
     : { name: g.name, paint: g.car.paint, bw: g.car.bw, num: g.car.num, skill: 1, spec: g.car.spec, nid: g.id, remote: true });
   const base = { trackId: cfg.track, laps: cfg.laps, gridRows: 2, useJoker: !!cfg.joker, sideContact: true, mode: 'heat', weather: cfg.weather, net: room, heatId: h, netLead: lead };
-  if (watch) { startRace({ ...base, opps: defs.slice(1), player: defs[0], spectate: true, grid: 0, title: '👁 Online', onDone: () => { room.backToLobby(); U.view = 'online'; render(); } }); return; }
+  if (watch) { const hum = defs.filter(d => grid.find(g => g.id === d.nid && !g.ai)), first = hum.find(d => d.nid !== room.id) || hum[0] || defs[0], rest = defs.filter(d => d !== first); // börja på en kompis, inte en AI
+    startRace({ ...base, opps: rest, player: first, spectate: true, grid: 0, title: '👁 Online', onDone: () => { room.backToLobby(); U.view = 'online'; render(); } }); return; }
   startRace({ ...base, opps: defs, grid: my, title: 'Online – ' + (ON.champ?.heats?.find(x => x.id === h)?.name || 'heat'),
-    onDone: r => { room.backToLobby(); ON.last = r; if (isFinite(r.bestLap)) record(cfg.track, r.bestLap); U.view = 'online'; render(); } });
+    onDone: r => { (ON.doneHeats ||= new Set()).add(h); room.backToLobby(); ON.last = r; if (isFinite(r.bestLap)) record(cfg.track, r.bestLap); U.view = 'online'; render(); } });
 }
 
 // ---- värdens mästerskapsmotor ----
@@ -611,8 +612,8 @@ function online() {
       const L = x.live && room.live[x.live], live = L && !L.done && !x.res;
       return `<div class="heat ${x.ids.includes(room.id) ? 'mine' : ''} ${x.res ? 'done' : ''}"><div class="hh"><b>${esc(x.name)}</b><span>${x.res ? 'Klart' : live ? '🔴 Pågår' : 'Simuleras'}</span></div>
         <ol>${(x.res || x.ids.map(id => ({ id, name: cs.names[id] }))).map(r => `<li class="${r.id === room.id ? 'me' : ''}">${esc(r.name)}${r.flag ? ` <i class="flag">${esc(r.flag)}</i>` : ''}</li>`).join('')}</ol>
-        ${live && !x.ids.includes(room.id) ? `<div class="row"><button class="btn small ghost" data-act="on-watch" data-arg="${x.live}">👁 Titta</button></div>` : ''}
-        ${live && x.ids.includes(room.id) ? `<div class="row"><button class="btn small" data-act="on-rejoin" data-arg="${x.live}">🏁 Till ditt heat</button></div>` : ''}</div>`; }).join('')}</div></section>`;
+        ${live && (!x.ids.includes(room.id) || ON.doneHeats?.has(x.live)) ? `<div class="row"><button class="btn small ghost" data-act="on-watch" data-arg="${x.live}">👁 Titta</button></div>` : ''}
+        ${live && x.ids.includes(room.id) && !ON.doneHeats?.has(x.live) ? `<div class="row"><button class="btn small" data-act="on-rejoin" data-arg="${x.live}">🏁 Till ditt heat</button></div>` : ''}</div>`; }).join('')}</div></section>`;
     for (const x of cs.heats.filter(x => x.res)) h += `<section class="panel"><h2>Resultat: ${esc(x.name)}</h2>${resTable(x.res.map(r => ({ ...r, isPlayer: r.id === room.id })), cs.single ? (r, i) => [r.flag ? 0 : NORMAL_PRIZE[i] || 0, 0] : x.name === 'A-final' ? (r, i) => A_TABLE[i] : null)}</section>`;
     if (cs.done && cs.overall && !cs.single) h += `<section class="panel"><h2>Slutresultat</h2><table class="res"><tr><th>#</th><th>Förare</th><th>Pris</th><th>Poäng</th></tr>${cs.overall.slice(0, 16).map(r => `<tr class="${r.id === room.id ? 'me' : ''}"><td>${r.pos}</td><td>${nm(r.id)}</td><td>${r.prize ? eur(r.prize) : '–'}</td><td>${r.pts || '–'}</td></tr>`).join('')}</table></section>`;
     if (cs.hist?.length) h += `<section class="panel"><h2>Tidigare omgångar</h2>${[...cs.hist].reverse().map(r => `<details><summary>${esc(r.name)}</summary>${r.heats.map(x => `<h3>${esc(x.name)}</h3>${x.res ? resTable(x.res) : ''}`).join('')}</details>`).join('')}</section>`;

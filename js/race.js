@@ -550,7 +550,9 @@ export class Race {
   }
 
   togglePause() { if (this.done) return; this.paused = !this.paused; this.$('hPauseBox').hidden = !this.paused; this.last = performance.now(); if (this.gain) this.gain.gain.value = 0; }
-  shift(d) { if (this.spectate) { const i = (this.cars.indexOf(this.player) + d + this.cars.length) % this.cars.length; this.player = this.cars[i]; this.camH = this.player.h; this.msg('👁 ' + this.player.name, 1.4); return; } const c = this.player; if (this.state !== 'run' || c.shiftT > 0) return; const g = c.gear + d; if (g >= 1 && g <= c.spec.gears.length) { c.gear = g; c.shiftT = (c.clutch || 0) > 0.5 ? 0.06 : c.spec.shift; } }
+  shift(d) { if (!this.spectate && (this.player.finished || this.player.retired) && this.cars.length > 1) { // i mål/utgått: E/Q byter vilken bil kameran följer
+      const cur = this.camCar || this.player, i = (this.cars.indexOf(cur) + d + this.cars.length) % this.cars.length; this.camCar = this.cars[i]; this.camH = this.camCar.h; this.msg('👁 ' + this.camCar.name + (this.camCar === this.player ? ' (du)' : ''), 1.4); return; }
+    if (this.spectate) { const i = (this.cars.indexOf(this.player) + d + this.cars.length) % this.cars.length; this.player = this.cars[i]; this.camH = this.player.h; this.msg('👁 ' + this.player.name, 1.4); return; } const c = this.player; if (this.state !== 'run' || c.shiftT > 0) return; const g = c.gear + d; if (g >= 1 && g <= c.spec.gears.length) { c.gear = g; c.shiftT = (c.clutch || 0) > 0.5 ? 0.06 : c.spec.shift; } }
   resize() { if (this.R) this.view.resize(); }
   resetCar(c) { const trk = this.trk, hwi = trk.hwAt ? trk.hwAt(c.i) : trk.hw, [x, z, h] = trk.point(c.i, clamp(c.lat, -hwi + 2, hwi - 2) * 0.3); c.x = x; c.z = z; c.h = h; c.vx = c.vy = c.r = 0; c.rev = false; c.gear = 1; }
   msg(html, dur = 2.4, cls = '') { const e = this.$('hMsg'); e.innerHTML = html; e.className = 'hud-msg show ' + cls; this.msgT = dur; }
@@ -974,7 +976,8 @@ export class Race {
   livePos() { const cs = [...this.cars].sort((a, b) => b.prog - a.prog); return cs; }
 
   // ---------- online ----------
-  endLocal() { if (!this.net) return this.finish(); if (!this.done) this.msg('Väntar på att övriga går i mål…<br><small>Resultatet visas när alla är klara</small>', 600); }
+  endLocal() { if (!this.net) return this.finish(); if (!this.done) { this.msg('Väntar på att övriga går i mål…<br><small>E/Q byter bil att titta på · Resultatet visas när alla är klara</small>', 600);
+    if (!this.camCar) { const fr = this.cars.find(c => c !== this.player && c.remote && c.diff == null && !c.finished && !c.retired) || this.cars.find(c => c !== this.player && !c.finished && !c.retired); if (fr) { this.camCar = fr; this.camH = fr.h; } } } } // följ en kompis som fortfarande kör
   netPack(c) {
     const r2 = v => Math.round(v * 100) / 100;
     const bits = (c.finished ? 1 : 0) | (c.retired ? 2 : 0) | (c.jokerDone ? 4 : 0) | (c.coneDown ? 8 : 0) | (c.jump ? 16 : 0) | (c.kaato ? 32 : 0) | (c.brk > 0.2 ? 64 : 0);
@@ -1088,7 +1091,7 @@ export class Race {
   }
 
   render(dt) {
-    const R = this.R; if (!R) return; const p = this.player, cv = this.cv;
+    const R = this.R; if (!R) return; const p = this.camCar && (this.player.finished || this.player.retired) ? this.camCar : this.player, cv = this.cv;
     {
       const v = Math.hypot(p.vx, p.vy); let tgt = p.h;
       if (v > 4 && p.vx > 0) tgt = p.h + 0.55 * wrapA(Math.atan2(p.vx * Math.sin(p.h) + p.vy * Math.cos(p.h), p.vx * Math.cos(p.h) - p.vy * Math.sin(p.h)) - p.h);
