@@ -79,6 +79,10 @@ export function buildSpec(carId, cs, tune) {
     s.gears = [rest[0], rest[1], half, ...rest.slice(2)]; s.gearLabels = ['1', '2', '5', ...rest.slice(2).map((_, i) => String(i < 2 ? i + 3 : i + 4))];
   }
   applySetup(s, tune);
+  // specialkod-bil: exakt 3000 hk, 250 kW kylare, dubbelt grepp
+  if (cs?.perks?.cool250) s.cool = Math.max(s.cool, 250);
+  if (cs?.perks?.grip2) s.gripX = Math.max(s.gripX || 1, 2);
+  if (cs?.perks?.hp3000) { const h0 = curve(s).hp; if (h0 > 0) s.tqS *= 3000 / h0; }
   return s;
 }
 
