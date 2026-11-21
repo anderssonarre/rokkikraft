@@ -322,6 +322,12 @@ export class View3 {
     // koner på ön vid lisälenkkin
     { const j = trk.joker, list = []; for (let i = j.i1 + 2; i < j.i2 - 1; i += 3) { const b = trk.bulge(i), hw = trk.hwAt(i); if (Math.abs(b) < hw + j.w / 2 + 1.5) continue; const lat = (Math.sign(b) * hw + b - Math.sign(b) * j.w / 2) / 2, ii = trk.w(i), kx = trk.X[ii] + trk.NX[ii] * lat, kz = trk.Z[ii] + trk.NZ[ii] * lat; list.push([kx, this.meshH(kx, kz), kz]); }
       const m = new THREE.InstancedMesh(new THREE.ConeGeometry(0.26, 0.75, 10).translate(0, 0.375, 0), new THREE.MeshLambertMaterial({ color: 0xff6a12 }), Math.max(1, list.length)), d = new THREE.Object3D(); list.forEach((p, i) => { d.position.set(p[0], p[1], p[2]); d.updateMatrix(); m.setMatrixAt(i, d.matrix); }); m.count = list.length; m.castShadow = true; S.add(m); }
+    // portkoner i början och slutet av lisälenkkin: två stora koner per port, med vit reflexrand
+    if (trk.joker.gates) { const pts = trk.joker.gates.flatMap(g => g.cones), body = new THREE.InstancedMesh(new THREE.ConeGeometry(0.34, 0.95, 14).translate(0, 0.475, 0), new THREE.MeshLambertMaterial({ color: 0xff5a0a }), pts.length),
+        band = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.155, 0.215, 0.16, 14).translate(0, 0.56, 0), new THREE.MeshLambertMaterial({ color: 0xf4f4f4 }), pts.length),
+        base = new THREE.InstancedMesh(new THREE.BoxGeometry(0.62, 0.05, 0.62).translate(0, 0.025, 0), new THREE.MeshLambertMaterial({ color: 0x1a1a1a }), pts.length), d = new THREE.Object3D();
+      pts.forEach(([x, z], i) => { d.position.set(x, this.meshH(x, z), z); d.updateMatrix(); for (const m of [body, band, base]) m.setMatrixAt(i, d.matrix); });
+      for (const m of [body, band, base]) { m.castShadow = true; S.add(m); } }
     // flaggposter
     const posts = (trk.posts && trk.posts.length ? trk.posts.map(p => [p.x, p.z]) : [...Array(7)].map((_, q) => { const p = edge(Math.round((q + 0.5) * n / 7), 1, trk.verge + 4); return [p[0], p[2]]; }));
     // gul flagga som lippumiehen viftar med vid incident (dold tills race.js säger till via setYellow)

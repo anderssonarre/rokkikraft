@@ -158,16 +158,16 @@ export function trackStep(c, trk, t, useJoker = true) {
   if (useJoker && !c.jokerDone && prevIdx < j.mid && loc.i >= j.mid && loc.i - prevIdx < 12 && Math.abs(loc.lat - trk.bulge(j.mid)) < j.w / 2 + 1.4) {
     c.jokerDone = true; c.jokerT = t;
   }
-  if (useJoker && c.isPlayer && !c.coneDown && loc.i >= j.i1 - 1 && loc.i <= j.i2 + 1) {
-    for (const ci of [j.i1 + 1, j.i1 + 3, j.i2 - 3, j.i2 - 1]) {
-      const hwi = trk.hwAt ? trk.hwAt(ci) : trk.hw;
-      const cx = trk.X[ci] + trk.NX[ci] * (j.side * (hwi + 0.4));
-      const cz = trk.Z[ci] + trk.NZ[ci] * (j.side * (hwi + 0.4));
-      if (Math.hypot(c.x - cx, c.z - cz) < 0.95) {
-        const v = Math.hypot(c.vx, c.vy);
-        if (v > 4.0) { c.coneDown = true; c.coneEvent = 'down'; }
-        else if (!c.coneTouchShown) { c.coneTouchShown = true; c.coneEvent = 'touch'; }
-      }
+  if (useJoker && c.isPlayer && !c.coneDown && j.gates) {
+    const [gIn, gOut] = j.gates, crossed = g => prevIdx < g.i && loc.i >= g.i && loc.i - prevIdx < 12, inside = g => Math.abs(loc.lat - g.b) < j.half - 0.15;
+    // kört på en av portens koner?
+    for (const g of j.gates) for (const [cx, cz] of g.cones) if (Math.hypot(c.x - cx, c.z - cz) < 0.85 && Math.hypot(c.vx, c.vy) > 1.5) { c.coneDown = true; c.coneEvent = 'down'; }
+    // ingångsporten: kommer man in i lisälenkkin utan att ha passerat mellan konerna (genvägen över ön eller utanför) = Li
+    if (!c.coneDown && !c.jokerDone && crossed(gIn)) c.gateIn = inside(gIn);
+    if (!c.coneDown && c.jokerDone && !c.gateChecked) {
+      if (!c.gateIn) { c.coneDown = true; c.coneEvent = 'outside'; }
+      // utgångsporten: ut ur lisälenkkin mellan konerna
+      else if (crossed(gOut)) { c.gateChecked = true; if (!inside(gOut)) { c.coneDown = true; c.coneEvent = 'outside'; } }
     }
   }
   const [l, r] = trk.limits(loc.i), lo = l - trk.verge + 0.9, hi = r + trk.verge - 0.9;
@@ -821,10 +821,10 @@ export class Race {
 
       if (c.coneEvent === 'down') {
         c.coneEvent = '';
-        this.msg('Li – KEILA KAATUI LISÄLENKILLÄ!<br><small>Konen välte i lisälenkki → flyttas sist av målgångna</small>', 3.2, 'warn');
-      } else if (c.coneEvent === 'touch') {
+        this.msg('Li – KÖRDE PÅ KONEN I LISÄLENKKI!<br><small>Kör mellan konerna → flyttas sist av målgångna</small>', 3.2, 'warn');
+      } else if (c.coneEvent === 'outside') {
         c.coneEvent = '';
-        this.msg('SNUDDADE KON I LISÄLENKKI<br><small>"Hipaista saa, mutta keila ei saa kaatua" – ingen sanktion!</small>', 2.2);
+        this.msg('Li – KÖRDE UTANFÖR KONEN!<br><small>Lisälenkkin ska köras mellan konerna i början och slutet → flyttas sist av målgångna</small>', 3.2, 'warn');
       }
 
       if (hit > 2.5 && c.isPlayer) {

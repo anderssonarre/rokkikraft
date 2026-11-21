@@ -247,6 +247,18 @@ function build(def) {
     L[i] = Math.max(-maxLat, Math.min(maxLat, k * 190));
   }
   trk.line = L;
+  // Portar med två koner i början och slutet av lisälenkkin (i hörnen där den skiljer sig från huvudvägen).
+  // Bilen ska passera MELLAN konerna: kör man på en kon eller utanför den blir det Li.
+  {
+    const J = joker, half = J.w / 2 - 0.25, sep = i => Math.abs(bulge(i)) - J.w / 2 - hwAt(i);
+    let g1 = -1, g2 = -1;
+    for (let i = J.i1 + 1; i < J.mid; i++) if (sep(i) > 0.9) { g1 = i; break; }
+    for (let i = J.i2 - 1; i > J.mid; i--) if (sep(i) > 0.9) { g2 = i; break; }
+    if (g1 < 0) g1 = J.i1 + Math.round(J.JL * 0.3); if (g2 < 0) g2 = J.i2 - Math.round(J.JL * 0.3);
+    J.half = half;
+    J.gates = [g1, g2].map(gi => { const ii = w(gi), b = bulge(gi);
+      return { i: ii, b, cones: [b - half, b + half].map(lat => [X[ii] + NX[ii] * lat, Z[ii] + NZ[ii] * lat]) }; });
+  }
   return trk;
 }
 
