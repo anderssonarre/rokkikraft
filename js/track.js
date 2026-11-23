@@ -247,6 +247,29 @@ function build(def) {
     L[i] = Math.max(-maxLat, Math.min(maxLat, k * 190));
   }
   trk.line = L;
+  // Riktig racinglinje (ytter–inner–ytter) för toppnivå-AI: "gummiband" som sträcks till minsta krökning inom vägbredden
+  const RL = {};
+  trk.raceLine = (margin = 1.3) => {
+    if (RL[margin]) return RL[margin];
+    const l = Float32Array.from(L), px = new Float32Array(n), pz = new Float32Array(n), lo = new Float32Array(n), hi = new Float32Array(n);
+    for (let i = 0; i < n; i++) { const h = Math.max(0, hwAt(i) - margin); lo[i] = -h; hi[i] = h; }
+    for (const st of [8, 4, 2, 1]) for (let it = 0; it < 300; it++) {
+      for (let i = 0; i < n; i++) { px[i] = X[i] + NX[i] * l[i]; pz[i] = Z[i] + NZ[i] * l[i]; }
+      for (let i = 0; i < n; i++) { const a = w(i - st), b = w(i + st), a2 = w(i - 2 * st), b2 = w(i + 2 * st); // minsta krökning (biharmonisk utjämning)
+        const mx = (4 * (px[a] + px[b]) - px[a2] - px[b2]) / 6 - X[i], mz = (4 * (pz[a] + pz[b]) - pz[a2] - pz[b2]) / 6 - Z[i];
+        const t = mx * NX[i] + mz * NZ[i]; l[i] = Math.min(hi[i], Math.max(lo[i], l[i] + 0.4 * (t - l[i]))); }
+    }
+    for (let i = 0; i < n; i++) { px[i] = X[i] + NX[i] * l[i]; pz[i] = Z[i] + NZ[i] * l[i]; }
+    return RL[margin] = { lat: l, K: curv(px, pz) };
+  };
+  // Fartprofil längs en given linje (krökningen på själva linjen, inte vägens mittlinje)
+  trk.profileOn = (RLn, aLat, aBrake, vMax) => {
+    const V = new Float32Array(n), baseMu = surf.mu, KL = RLn.K;
+    for (let i = 0; i < n; i++) { let k = 0; for (let q = -2; q <= 2; q++) k += Math.abs(KL[w(i + q)]); k /= 5;
+      V[i] = Math.min(vMax, Math.sqrt(aLat * (surfAt(i).mu / baseMu) / Math.max(k, 1e-4))); }
+    for (let pass = 0; pass < 2; pass++) for (let i = n - 1; i >= 0; i--) { const nx = V[w(i + 1)]; V[i] = Math.min(V[i], Math.sqrt(nx * nx + 2 * aBrake * (surfAt(i).mu / baseMu) * ds)); }
+    return V;
+  };
   // Portar med två koner i början och slutet av lisälenkkin (i hörnen där den skiljer sig från huvudvägen).
   // Bilen ska passera MELLAN konerna: kör man på en kon eller utanför den blir det Li.
   {

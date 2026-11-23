@@ -213,7 +213,10 @@ export function aiSetup(c, trk) {
   const d = c.diff, mu = trk.surf.mu * c.spec.mu * Math.min(c.spec.muF || 1, c.spec.muR || 1), k = d != null ? 0.55 + 0.44 * Math.pow(d, 1.2) : c.skill, top = d != null ? 2.2 + 47.8 * Math.pow(d, 1.3) : 50;
   const e = d != null ? clamp((d - 0.85) / 0.15, 0, 1) : 0; c.ai.e = e;
   c.ai.thrMax = d != null ? 0.3 + 0.7 * Math.pow(d, 1.5) : 1; c.ai.noise = d != null ? 0.9 * (1 - d) ** 2 : 0; c.ai.agg = d != null ? d : 0.8; c.ai.wob = 0;
-  c.ai.prof = trk.profile(mu * G * 0.90 * k * k, mu * G * (0.85 + 0.15 * e) * k, d != null && d < 0.99 ? top : 90); c.ai.vJ = Math.sqrt(mu * G * 0.85 * k * k * 21); c.ai.aB = mu * G * (0.6 + 0.2 * e) * k;
+  c.ai.prof = trk.profile(mu * G * 0.90 * k * k, mu * G * (0.85 + 0.15 * e) * k, d != null && d < 0.99 ? top : 90);
+  // toppnivån kör en riktig racinglinje (ytter–inner–ytter) med fartprofil efter linjens egen krökning
+  if (e > 0 && trk.raceLine) { c.ai.rl = trk.raceLine(1.3); const pL = trk.profileOn(c.ai.rl, mu * G * 0.95 * k * k, mu * G * 1.0 * k, 90);
+    for (let i = 0; i < pL.length; i++) c.ai.prof[i] += (pL[i] - c.ai.prof[i]) * e; } c.ai.vJ = Math.sqrt(mu * G * 0.85 * k * k * 21); c.ai.aB = mu * G * (0.6 + 0.2 * e) * k;
 }
 
 export function aiDrive(c, race, dt) {
@@ -228,7 +231,7 @@ export function aiDrive(c, race, dt) {
     if (race.useJoker && qq > j.i1 - 12 && qq < j.i2 + 6) {
       return wantJ ? j.side * (hwi - 2.5) * (qq <= j.i1 ? 1 : 0.4) : trk.line[qq] * 0.4 - j.side * 1.2;
     }
-    return trk.line[qq];
+    return ai.rl ? trk.line[qq] + (ai.rl.lat[qq] - trk.line[qq]) * ai.e : trk.line[qq];
   };
   let target = 0, cap = 1e9;
   for (const o of race.cars) {
@@ -242,7 +245,7 @@ export function aiDrive(c, race, dt) {
   ai.off += (target - ai.off) * Math.min(1, 2.5 * dt);
   if (ai.noise) { ai.wob += ((Math.random() - 0.5) * 2 * ai.noise - ai.wob * 0.6) * dt * 3; }
   let off = lineAt(la) + ai.off;
-  const lims = trk.limits(trk.w(la)); off = clamp(off, lims[0] + 1.6, lims[1] - 1.6);
+  const lims = trk.limits(trk.w(la)); off = clamp(off, lims[0] + 1.6 - 0.4 * (ai.e || 0), lims[1] - 1.6 + 0.4 * (ai.e || 0));
   const [tx, tz] = trk.point(la, off);
   const err = wrapA(Math.atan2(tz - c.z, tx - c.x) - c.h);
   if (Math.abs(err) > 1.9 && v < 7) ai.back = 1; else if (Math.abs(err) < 0.9) ai.back = 0;
@@ -263,8 +266,9 @@ export function aiDrive(c, race, dt) {
   ai.pwr ??= c.tq(c.upRpm) * c.upRpm / 9549 / c.spec.mass;
   const e = ai.e || 0, eT = e, thrK = clamp(1 - Math.abs(c.steer) * (0.45 + Math.min(0.4, ai.pwr * 1.1)) * (1 - 0.45 * eT), 0.2 + 0.25 * eT, 1) * clamp(1 - (Math.abs(Math.atan2(c.vy, Math.max(3, c.vx))) - (c.spec.drv === 'awd' ? 0.35 : 0.28) - 0.06 * eT) * 3, 0.35 + 0.15 * eT, 1);
   const thr0 = c.thr, brk0 = c.brk;
-  if (v < vt - 0.4) { c.thr = thrK * (ai.thrMax || 1); c.brk = 0; }
-  else if (v > vt + 0.5) { c.thr = 0; c.brk = clamp((v - vt) / (2 + 2.5 * e), 0.2, 1); } // toppnivån: mjukare bromstryck
+  const eF = e * 0.5;
+  if (v < vt - 0.4 + 0.9 * eF) { c.thr = thrK * (ai.thrMax || 1); c.brk = 0; } // toppnivån: full gas ända tills det behövs broms
+  else if (v > vt + 0.5) { c.brk = clamp((v - vt) / (2 + 2.5 * e), 0.2, 1); c.thr = c.spec.drv === 'rwd' ? 0 : 0.3 * e * thrK; } // vänsterfotsbroms (fram-/fyrhjulsdrift): gasen kvar medan den bromsar
   else { c.thr = clamp(0.035 * (1 + 1.5 * eT) / ai.pwr, 0.08 + 0.12 * eT, 0.35 + 0.3 * eT) * thrK; c.brk = 0; } // håll farten: mindre gas ju starkare bil
   c.thr = thr0 + clamp(c.thr - thr0, -4 * dt, 5 * dt); c.brk = brk0 + clamp(c.brk - brk0, -6 * dt, 4 * dt); // mjuka pedalrörelser (som en förare)
   if (v < 1.2 && race.t > 2) { ai.stuck += dt; if (ai.stuck > 2.5) { race.resetCar(c); ai.stuck = 0; } } else ai.stuck = 0;
