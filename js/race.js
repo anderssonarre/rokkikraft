@@ -207,6 +207,15 @@ export function collide(A, B) {
   return hit;
 }
 
+// AI-parametrar efter svårighet 1–100 %: 1 % kör ca 4–5 km/h-krypfart med vingliga linjer, 100 % pressar däcken till gränsen.
+// e (0→1 mellan 85 % och 100 %): toppnivån bromsar senare/mjukare, tar mer fart genom kurvorna och ger mer gas.
+export function aiSetup(c, trk) {
+  const d = c.diff, mu = trk.surf.mu * c.spec.mu * Math.min(c.spec.muF || 1, c.spec.muR || 1), k = d != null ? 0.55 + 0.44 * Math.pow(d, 1.2) : c.skill, top = d != null ? 2.2 + 47.8 * Math.pow(d, 1.3) : 50;
+  const e = d != null ? clamp((d - 0.85) / 0.15, 0, 1) : 0; c.ai.e = e;
+  c.ai.thrMax = d != null ? 0.3 + 0.7 * Math.pow(d, 1.5) : 1; c.ai.noise = d != null ? 0.9 * (1 - d) ** 2 : 0; c.ai.agg = d != null ? d : 0.8; c.ai.wob = 0;
+  c.ai.prof = trk.profile(mu * G * 0.90 * k * k, mu * G * (0.85 + 0.15 * e) * k, d != null && d < 0.99 ? top : 90); c.ai.vJ = Math.sqrt(mu * G * 0.85 * k * k * 21); c.ai.aB = mu * G * (0.6 + 0.2 * e) * k;
+}
+
 export function aiDrive(c, race, dt) {
   const trk = race.trk, n = trk.n, ai = c.ai, j = trk.joker, v = Math.hypot(c.vx, c.vy);
   const lap = Math.floor(Math.max(0, c.prog) / n), idx = c.i;
@@ -227,7 +236,7 @@ export function aiDrive(c, race, dt) {
     let dp = o.prog - c.prog; dp -= Math.round(dp / n) * n;
     if (dp > 0 && dp < 7) {
       const dl = o.lat - c.lat;
-      if (Math.abs(dl) < 2.4) { target = dl > 0 ? -2.8 : 2.8; if (dp < 3.2 && Math.abs(dl) < 1.7) cap = Math.hypot(o.vx, o.vy) + 0.5 + (ai.agg || 0.8) * 1.2; }
+      if (Math.abs(dl) < 2.4) { target = dl > 0 ? -2.8 : 2.8; const eP = ai.e || 0; if (dp < 3.2 - 0.8 * eP && Math.abs(dl) < 1.7 - 0.3 * eP) cap = Math.hypot(o.vx, o.vy) + 0.5 + (ai.agg || 0.8) * 1.2 + 2.5 * eP; }
     }
   }
   ai.off += (target - ai.off) * Math.min(1, 2.5 * dt);
@@ -241,7 +250,7 @@ export function aiDrive(c, race, dt) {
   c.rev = false;
   const st = clamp(err * 2.4 + (ai.wob || 0), -1, 1);
   c.steer += clamp(st - c.steer, -7 * dt, 7 * dt);
-  let vt = ai.prof[trk.w(idx + 2)];
+  let vt = ai.prof[trk.w(idx + 2 + Math.round((ai.e || 0) * v * 0.24))]; // toppnivån: siktar på farten längre fram → bromsar senare och kortare
   if (wantJ && idx < j.i2 - 4 && idx > j.i1 - 60) {
     const dist = Math.max(0, (j.i1 + 3 - idx) * trk.ds);
     const jFactor = j.uShape ? 0.58 : 0.85;
@@ -252,11 +261,11 @@ export function aiDrive(c, race, dt) {
   if (c.yCap != null) vt = Math.min(vt, c.yCap); // gul flagg: max 45 km/h och ingen omkörning
   // starka bilar: AI:n doserar gasen i kurvor och när bilen glider (annars spinner/understyr den av banan)
   ai.pwr ??= c.tq(c.upRpm) * c.upRpm / 9549 / c.spec.mass;
-  const thrK = clamp(1 - Math.abs(c.steer) * (0.45 + Math.min(0.4, ai.pwr * 1.1)), 0.2, 1) * clamp(1 - (Math.abs(Math.atan2(c.vy, Math.max(3, c.vx))) - (c.spec.drv === 'awd' ? 0.35 : 0.28)) * 3, 0.35, 1);
+  const e = ai.e || 0, eT = e, thrK = clamp(1 - Math.abs(c.steer) * (0.45 + Math.min(0.4, ai.pwr * 1.1)) * (1 - 0.45 * eT), 0.2 + 0.25 * eT, 1) * clamp(1 - (Math.abs(Math.atan2(c.vy, Math.max(3, c.vx))) - (c.spec.drv === 'awd' ? 0.35 : 0.28) - 0.06 * eT) * 3, 0.35 + 0.15 * eT, 1);
   const thr0 = c.thr, brk0 = c.brk;
   if (v < vt - 0.4) { c.thr = thrK * (ai.thrMax || 1); c.brk = 0; }
-  else if (v > vt + 0.5) { c.thr = 0; c.brk = clamp((v - vt) / 2, 0.2, 1); }
-  else { c.thr = clamp(0.035 / ai.pwr, 0.08, 0.35) * thrK; c.brk = 0; } // håll farten: mindre gas ju starkare bil
+  else if (v > vt + 0.5) { c.thr = 0; c.brk = clamp((v - vt) / (2 + 2.5 * e), 0.2, 1); } // toppnivån: mjukare bromstryck
+  else { c.thr = clamp(0.035 * (1 + 1.5 * eT) / ai.pwr, 0.08 + 0.12 * eT, 0.35 + 0.3 * eT) * thrK; c.brk = 0; } // håll farten: mindre gas ju starkare bil
   c.thr = thr0 + clamp(c.thr - thr0, -4 * dt, 5 * dt); c.brk = brk0 + clamp(c.brk - brk0, -6 * dt, 4 * dt); // mjuka pedalrörelser (som en förare)
   if (v < 1.2 && race.t > 2) { ai.stuck += dt; if (ai.stuck > 2.5) { race.resetCar(c); ai.stuck = 0; } } else ai.stuck = 0;
 }
@@ -484,9 +493,7 @@ export class Race {
       c.y = trk.heightAt(c.x, c.z); c.wspin = 0;
       if (c.ai) {
         // svårighet 1–100 %: 1 % kör ca 4–5 km/h-krypfart med vingliga linjer (≈5 min/varv), 100 % pressar däcken till gränsen
-        const d = c.diff, mu = trk.surf.mu * c.spec.mu * Math.min(c.spec.muF || 1, c.spec.muR || 1), k = d != null ? 0.55 + 0.44 * Math.pow(d, 1.2) : c.skill, top = d != null ? 2.2 + 47.8 * Math.pow(d, 1.3) : 50;
-        c.ai.thrMax = d != null ? 0.3 + 0.7 * Math.pow(d, 1.5) : 1; c.ai.noise = d != null ? 0.9 * (1 - d) ** 2 : 0; c.ai.agg = d != null ? d : 0.8; c.ai.wob = 0;
-        c.ai.prof = trk.profile(mu * G * 0.90 * k * k, mu * G * 0.85 * k, d != null && d < 0.99 ? top : 90); c.ai.vJ = Math.sqrt(mu * G * 0.85 * k * k * 21); c.ai.aB = mu * G * 0.6 * k;
+        aiSetup(c, trk);
         c.ai.jokerLap = Math.floor(Math.random() * cfg.laps);
       }
     }
