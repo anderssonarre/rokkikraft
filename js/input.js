@@ -1,5 +1,8 @@
-// Kontroller: tangentbord, handkontroll (t.ex. PS4) och ratt + pedaler via webbläsarens Gamepad API.
+// Kontroller: tangentbord, handkontroll (t.ex. PS4/PS5/Xbox) och ratt + pedaler via webbläsarens Gamepad API.
 // Alla funktioner kan bindas om i Inställningar. Bindningar sparas i S.settings.binds.
+
+const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
+const nowMs = () => (typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now());
 
 export const ACTIONS = [
   ['gas', 'Gas', 'analog'], ['brk', 'Broms', 'analog'], ['clutch', 'Koppling', 'analog'],
@@ -20,7 +23,7 @@ export const DEFAULT_BINDS = {
 };
 
 export function binds(settings) {
-  const b = settings.binds || {}, d = DEFAULT_BINDS;
+  const b = settings?.binds || {}, d = DEFAULT_BINDS;
   return { key: { ...d.key, ...(b.key || {}) }, pad: { ...d.pad, ...(b.pad || {}) }, wheel: { ...d.wheel, ...(b.wheel || {}) }, wheelInv: { ...d.wheelInv, ...(b.wheelInv || {}) }, dead: b.dead ?? d.dead };
 }
 
@@ -29,24 +32,81 @@ export const isWheel = gp => gp && (gp.mapping !== 'standard' || /wheel|racing|g
 export const padName = gp => !gp ? '' : isWheel(gp) ? 'Ratt & pedaler' : /054c|dualshock|wireless controller|dualsense/i.test(gp.id) ? 'PS4/PS5-handkontroll' : 'Handkontroll';
 
 export function getPad() {
-  const list = navigator.getGamepads ? [...navigator.getGamepads()].filter(Boolean) : [];
+  const list = typeof navigator !== 'undefined' && navigator.getGamepads ? [...navigator.getGamepads()].filter(Boolean) : [];
   return list.find(isWheel) || list[0] || null;
 }
 
-// Läser ett bindningsvärde (0..1) från handkontrollen
+// Ren deadzone med mjuk omskalning [inner..outer] → [0..1] utan hopp vid kanten
+function applyDeadzone(v, inner = 0.06, outer = 0.96) {
+  const dz = clamp(Number.isFinite(inner) ? inner : 0.06, 0, 0.45);
+  const hi = clamp(outer, dz + 0.1, 1);
+  const a = Math.abs(v);
+  if (a <= dz) return 0;
+  return Math.sign(v) * clamp((a - dz) / (hi - dz), 0, 1);
+}
+
+// Mjuk icke-linjär styrkurva för handkontroll: finkänslig precision runt mitten + full auktoritet vid snabb motstyrning.
+// Riktig ratt hålls helt linjär (1:1) med minimal dödzon.
+export function steerCurve(raw, dead = 0.06, wheel = false) {
+  if (!Number.isFinite(raw)) return 0;
+  if (wheel) return applyDeadzone(raw, Math.min(dead, 0.015), 0.99);
+  const u = applyDeadzone(raw, dead, 0.96);
+  if (u === 0) return 0;
+  const a = Math.abs(u);
+  // Blandning av linjär lutning nära noll (0.34 → aldrig död känsla) och kraftfull ytterkurva (a^2.35 → rappt fullt utslag)
+  const shaped = 0.34 * a + 0.66 * Math.pow(a, 2.35);
+  return Math.sign(u) * clamp(shaped, 0, 1);
+}
+
+// Läser ett bindningsvärde (0..1) från handkontrollen med ren dödzonshantering
 function val(gp, code, inv, dead) {
   if (!gp || !code) return 0;
   const m = /^(a|b)(\d+)([+-]?)$/.exec(code); if (!m) return 0;
-  if (m[1] === 'b') { const bt = gp.buttons[+m[2]]; return bt ? (bt.value || (bt.pressed ? 1 : 0)) : 0; }
+  if (m[1] === 'b') {
+    const bt = gp.buttons[+m[2]];
+    if (!bt) return 0;
+    const raw = typeof bt.value === 'number' ? bt.value : (bt.pressed ? 1 : 0);
+    if (raw >= 0.99) return 1;
+    // Liten trigger-dödzon (2 %) så slitna L2/R2-knappar inte ligger och släpar
+    return applyDeadzone(raw, 0.02, 0.97);
+  }
   let v = gp.axes[+m[2]] ?? 0;
   if (inv === 2) v = (v + 1) / 2; // pedal: −1 släppt → 0, +1 nedtryckt → 1
   else if (inv) v = (1 - v) / 2; // pedal: +1 släppt → 0, −1 nedtryckt → 1
   else v = m[3] === '-' ? -v : v;
-  return v > dead ? Math.min(1, (v - dead) / (1 - dead)) : 0;
+  const dz = inv ? Math.min(dead, 0.03) : dead;
+  return v > 0 ? applyDeadzone(v, dz, 0.97) : 0;
 }
 
+// Läser samlad rå styrning (-1..+1) från handkontroll/ratt utan dubbel dödzonsklippning
+function readPadSteer(gp, m, inv, dz, wh) {
+  if (!gp) return 0;
+  const ml = /^(a)(\d+)([+-])$/.exec(m.left || '');
+  const mr = /^(a)(\d+)([+-])$/.exec(m.right || '');
+  // Standardfall: vänster/höger på samma spak-/rattaxel (t.ex. a0- och a0+)
+  if (ml && mr && ml[2] === mr[2] && ml[3] !== mr[3] && !inv.left && !inv.right) {
+    const raw = (gp.axes[+mr[2]] ?? 0) * (mr[3] === '+' ? 1 : -1);
+    return steerCurve(raw, dz, wh);
+  }
+  // Reservfall: ombunden till skilda axlar eller knappar
+  const raw = val(gp, m.right, inv.right, 0) - val(gp, m.left, inv.left, 0);
+  return steerCurve(raw, dz, wh);
+}
+
+const RUMBLE_RATE_MS = 40;
+
 export class Controls {
-  constructor(settings) { this.b = binds(settings); this.down = new Set(); this.prev = {}; this.state = { gas: 0, brk: 0, clutch: 0, steer: 0, hb: 0, analog: false }; this.events = []; this.padSeen = ''; }
+  constructor(settings) {
+    this.b = binds(settings);
+    this.down = new Set();
+    this.prev = {};
+    this.state = { gas: 0, brk: 0, clutch: 0, steer: 0, hb: 0, analog: false, wheel: false, analogPedals: false };
+    this.events = [];
+    this.padSeen = '';
+    this._usedWheel = false;
+    this._lastRumble = 0;
+    this._lastRumblePeak = 0;
+  }
   keyAction(code) { for (const [a, list] of Object.entries(this.b.key)) if (list.includes(code)) return a; return null; }
   keydown(code) { const a = this.keyAction(code); if (!a) return false; if (!this.down.has(a) && ['up', 'down', 'cam', 'reset', 'pause', 'tele'].includes(a)) this.events.push(a); this.down.add(a); return true; }
   keyup(code) { const a = this.keyAction(code); if (a) this.down.delete(a); }
@@ -57,11 +117,91 @@ export class Controls {
     const p = a => val(gp, m[a], inv[a], dz);
     const st = this.state;
     st.gas = Math.max(k('gas'), p('gas')); st.brk = Math.max(k('brk'), p('brk')); st.clutch = Math.max(k('clutch'), p('clutch')); st.hb = Math.max(k('hb'), p('hb')) > 0.5 ? 1 : 0;
-    const ps = p('right') - p('left'); const ks = k('right') - k('left'); st.analog = !ks && Math.abs(ps) > 0.02; st.wheel = wh && st.analog; st.steer = st.analog ? ps : ks; // tangenterna går alltid före (en ansluten ratt/spak som glider får inte ta över)
+    const ps = readPadSteer(gp, m, inv, dz, wh);
+    const ks = k('right') - k('left');
+    if (ks) this._usedWheel = false;
+    else if (wh && Math.abs(ps) > 0.04) this._usedWheel = true;
+    else if (!wh) this._usedWheel = false;
+    // tangenterna går alltid före (en ansluten ratt/spak som glider får inte ta över)
+    st.analog = !ks && Math.abs(ps) > 0.001;
+    st.wheel = wh && !ks && (st.analog || this._usedWheel);
+    st.steer = ks ? ks : (st.analog || st.wheel ? ps : 0);
     st.analogPedals = !!gp && (p('gas') > 0 || p('brk') > 0);
     // knappar → händelser vid nedtryckning
     if (gp) for (const a of ['up', 'down', 'cam', 'reset', 'pause', 'tele']) { const on = p(a) > 0.5; if (on && !this.prev[a]) this.events.push(a); this.prev[a] = on; }
     const ev = this.events; this.events = []; return ev;
+  }
+
+  /**
+   * Skickar dual-rumble till aktiv handkontroll (rate-limit ~40 ms, tyst fallback om ej stöds).
+   * @param {number} [low=0] - lågfrekvent tung motor 0..1 (smällar, landningar, grovt grus)
+   * @param {number} [high=0] - högfrekvent lätt motor 0..1 (grussmatter, hjulspinn, sladd)
+   * @param {number} [ms=60] - varaktighet i millisekunder (15..1000)
+   * @returns {boolean} true om en vibration skickades
+   */
+  rumble(low = 0, high = 0, ms = 60) {
+    const lo = clamp(Number.isFinite(low) ? low : 0, 0, 1);
+    const hi = clamp(Number.isFinite(high) ? high : 0, 0, 1);
+    const dur = clamp(Number.isFinite(ms) ? Math.round(ms) : 60, 15, 1000);
+    const peak = Math.max(lo, hi);
+    if (peak <= 0.01) return false;
+
+    const now = nowMs();
+    // Rate-limit ~40 ms för att inte spamma webbläsaren, men släpp alltid igenom en kraftig ny smäll
+    if (now - this._lastRumble < RUMBLE_RATE_MS && peak <= this._lastRumblePeak + 0.35) return false;
+
+    const gp = getPad();
+    if (!gp) return false;
+
+    const act = gp.vibrationActuator;
+    if (act && typeof act.playEffect === 'function') {
+      this._lastRumble = now;
+      this._lastRumblePeak = peak;
+      try {
+        const res = act.playEffect('dual-rumble', {
+          startDelay: 0,
+          duration: dur,
+          weakMagnitude: hi,
+          strongMagnitude: lo,
+        });
+        if (res && typeof res.catch === 'function') res.catch(() => {});
+        return true;
+      } catch {
+        return false;
+      }
+    }
+
+    // Tyst fallback för äldre Gamepad Haptics API (t.ex. äldre Firefox)
+    const hap = gp.hapticActuators && gp.hapticActuators[0];
+    if (hap && typeof hap.pulse === 'function') {
+      this._lastRumble = now;
+      this._lastRumblePeak = peak;
+      try {
+        const res = hap.pulse(clamp(lo * 0.7 + hi * 0.5, 0, 1), dur);
+        if (res && typeof res.catch === 'function') res.catch(() => {});
+        return true;
+      } catch {
+        return false;
+      }
+    }
+    return false;
+  }
+
+  /** Stoppar eventuell pågående handkontrollsvibration tyst (t.ex. vid paus eller målgång). */
+  stopRumble() {
+    this._lastRumblePeak = 0;
+    const gp = getPad();
+    const act = gp && gp.vibrationActuator;
+    if (!act) return;
+    try {
+      if (typeof act.reset === 'function') {
+        const res = act.reset();
+        if (res && typeof res.catch === 'function') res.catch(() => {});
+      } else if (typeof act.playEffect === 'function') {
+        const res = act.playEffect('dual-rumble', { startDelay: 0, duration: 0, weakMagnitude: 0, strongMagnitude: 0 });
+        if (res && typeof res.catch === 'function') res.catch(() => {});
+      }
+    } catch {}
   }
 }
 

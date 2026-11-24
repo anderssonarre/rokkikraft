@@ -7,7 +7,7 @@ import { View3 } from './view3.js';
 import { ensureTerrain } from './terrain.js';
 import { Controls } from './input.js';
 import { torqueTable, engineAt, fmt } from './engine.js';
-import { soundKey, soundProfile, engineWave } from './enginesound.js';
+import { soundKey, soundProfile, engineWave, RallyAudioFX } from './enginesound.js';
 
 const G = 9.81, DT = 1 / 240;
 const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
@@ -44,6 +44,11 @@ export function makeCar(def, trk, slot, isPlayer, gridRows = 2, totalCars = 6) {
     pow: isPlayer ? 1 : Math.max(0.7, Math.min(1.04, 0.4 + 0.6 * (def.skill || 1))),
     shiftT: 0, rev: false, slip: 0, radLeak: false, aids: isPlayer ? def.aids : { abs: 1, tc: 1, auto: 1 }, skill: def.skill || 1, slot,
     ai: isPlayer ? null : { jokerLap: 0, off: 0, stuck: 0, prof: null }, lastLapT: 0, bestLap: Infinity, laps: [],
+    bodyPitch: 0, bodyRoll: 0, pitchVel: 0, rollVel: 0, bPitch: 0, bRoll: 0,
+    airY: 0, airVy: 0, suspY: 0, suspVy: 0, landImpact: 0, landAudio: 0, gVert: 1,
+    steerVis: 0, prevSteer: 0, steerVel: 0, wheelSpin: 0, wspin: 0,
+    brakeGlow: 0, backfire: 0, backfireEv: 0, prevThr: 0, prevGear: 1, shiftEv: 0,
+    fz: [s.mass * G * s.front * 0.5, s.mass * G * s.front * 0.5, s.mass * G * (1 - s.front) * 0.5, s.mass * G * (1 - s.front) * 0.5],
   };
 }
 
@@ -55,20 +60,104 @@ export function phys(c, dt, trk) {
   const s = c.spec, surf = trk.surfAt ? trk.surfAt(c.i) : trk.surf;
   const L = s.wb, a = L * (1 - s.front), b = L * s.front, m = s.mass, fwd = s.drv === 'fwd', awd = s.drv === 'awd';
   const st = trk.surfTypeAt ? trk.surfTypeAt(c.i) : trk.surface;
+  const soft = s.roll || 1;
+  // 3D-vertikalfysik över backkrön & svackor utifrån banans höjdprofil (trk.Y / trk.SL)
+  let slope = 0, aRoadV = 0;
+  if (trk.SL && trk.w && trk.ds) {
+    const ii = trk.w(c.i || 0);
+    const fi = c.pf ?? ii, i0 = Math.floor(fi), tt = fi - i0;
+    const iA = trk.w(i0), iB = trk.w(i0 + 1);
+    const slNow = trk.SL[iA] * (1 - tt) + trk.SL[iB] * tt;
+    const kvA = (trk.SL[trk.w(iA + 2)] - trk.SL[trk.w(iA - 2)]) / (4 * trk.ds);
+    const kvB = (trk.SL[trk.w(iB + 2)] - trk.SL[trk.w(iB - 2)]) / (4 * trk.ds);
+    const kv = kvA * (1 - tt) + kvB * tt; // < 0 över krön, > 0 i svacka
+    const ch0 = Math.cos(c.h), sh0 = Math.sin(c.h);
+    const dirDot = trk.TX ? (ch0 * trk.TX[ii] + sh0 * trk.TZ[ii]) : 1;
+    const wvx0 = c.vx * ch0 - c.vy * sh0, wvz0 = c.vx * sh0 + c.vy * ch0;
+    const vTrack = trk.TX ? (wvx0 * trk.TX[ii] + wvz0 * trk.TZ[ii]) : c.vx;
+    slope = slNow * dirDot;
+    aRoadV = clamp(vTrack * vTrack * kv * 1.25, -18, 16);
+  }
+  c.slope = slope;
+  const gRoad = G / Math.sqrt(1 + slope * slope) + aRoadV;
+  let airY = c.airY || 0, airVy = c.airVy || 0;
+  let suspY = c.suspY || 0, suspVy = c.suspVy || 0;
+  if (airY > 0 || gRoad < 0.85) {
+    // Över skarpa krön lättar bilen mjukt tills krönet passerats och faller sedan paraboliskt under tyngdkraften
+    const aRel = (gRoad < 0.85 && airY < 0.45)
+      ? Math.max(1.2, (0.85 - gRoad) * 0.95)
+      : -G - clamp(aRoadV * 0.25, -2.5, 8);
+    airVy = clamp(airVy + aRel * dt, -10, 3.2);
+    airY += airVy * dt;
+    if (airY <= 0) {
+      const impactV = Math.max(0, -airVy);
+      airY = 0; airVy = 0;
+      if (impactV > 0.35) {
+        suspVy = clamp(suspVy - impactV * 0.72, -3.5, 2.5);
+        c.landImpact = Math.max(c.landImpact || 0, clamp(impactV / 4.2, 0, 1));
+        c.landAudio = Math.max(c.landAudio || 0, clamp(impactV / 4.0, 0, 1));
+        c.pitchVel = (c.pitchVel || 0) - impactV * 0.14;
+      }
+    } else if (airY > 1.6) {
+      airY = 1.6; if (airVy > 0) airVy = 0;
+    }
+  }
+  const suspTgt = airY > 0.02 ? 0.055 : clamp(-(gRoad - G) * 0.0052 * soft, -0.075, 0.06);
+  const wS = 13.5, zS = 0.56;
+  suspVy += (wS * wS * (suspTgt - suspY) - 2 * zS * wS * suspVy) * dt;
+  suspY = clamp(suspY + suspVy * dt, -0.095, 0.085);
+  c.airY = airY; c.airVy = airVy; c.suspY = suspY; c.suspVy = suspVy;
+  const groundContact = airY <= 0.01 ? 1 : clamp(1 - (airY - 0.01) / 0.09, 0, 1);
+  const fzFactor = groundContact * clamp((gRoad / G) - suspY * 2.1, 0.12, 1.85);
+  c.gVert = fzFactor;
+
   // lätta bilar har en liten fördel i kurvorna (lastkänslighet), skador försämrar väghållningen
   const mu = surf.mu * s.mu * (s.gripX || 1) * (c.gripF || 1) * (c.onSurf ? 1 : 0.72 + 0.12 * s.susp) * (s.surfK ? s.surfK[st] || 1 : 1) * Math.pow(1150 / m, 0.12) * (1 - Math.max(0, (c.dmg || 0) - 30) * 0.0025), crr = c.onSurf ? surf.crr : 0.09 - 0.03 * s.susp;
   const v = Math.hypot(c.vx, c.vy), delta = (c.steer + (c.tsq || 0)) * 0.52 * (s.steerK || 1) * (1 - Math.max(0, (c.dmg || 0) - 50) * 0.002) / (1 + v * 0.035) * (s.steerX ? s.steerX / (1 + v * 0.03) : 1); // greppkoden: lugnare styrning, mer ju fortare
+  c.steerVis = delta;
+  const steerRate = (c.steer - (c.prevSteer ?? c.steer)) / Math.max(dt, 1e-4);
+  c.steerVel = (c.steerVel || 0) + (clamp(steerRate, -12, 12) - (c.steerVel || 0)) * Math.min(1, 18 * dt);
+  c.prevSteer = c.steer;
   if (c.rev) {
-    c.vx += (-4.5 - c.vx) * Math.min(1, 2.2 * dt); c.vy *= 1 - Math.min(1, 8 * dt); c.r = c.vx * Math.tan(delta) / L; c.rpm = s.idle + 1200; c.slip = 0;
+    c.vx += (-4.5 - c.vx) * Math.min(1, 2.2 * dt); c.vy *= 1 - Math.min(1, 8 * dt); c.r = c.vx * Math.tan(delta) / L; c.rpm = s.idle + 1200; c.slip = 0; c.lock = false;
+    c.ax *= 1 - Math.min(1, 8 * dt); c.ay *= 1 - Math.min(1, 8 * dt);
   } else {
-    let Fzf = m * G * s.front - m * c.ax * 0.5 / L, Fzr = m * G * (1 - s.front) + m * c.ax * 0.5 / L;
-    Fzf = Math.max(Fzf, m * G * 0.15); Fzr = Math.max(Fzr, m * G * 0.15);
+    // 4-hjulig lastförflyttning (längsgående + sidledes) inkl. 3D-krön/kompression och vänsterfotsbroms
+    const FzTot = m * G * fzFactor;
+    const lfb = (c.brk > 0.06 && c.thr > 0.10) ? Math.min(c.brk, c.thr) : 0;
+    const cgH = 0.52, TW = 1.50;
+    const dFzLong = m * c.ax * cgH / L - lfb * m * G * 0.11 * groundContact;
+    let Fzf = FzTot * s.front - dFzLong, Fzr = FzTot * (1 - s.front) + dFzLong;
+    if (FzTot > 1) {
+      Fzf = clamp(Fzf, FzTot * 0.14, FzTot * 0.86);
+      Fzr = clamp(Fzr, FzTot * 0.14, FzTot * 0.86);
+    } else {
+      Fzf = 0; Fzr = 0;
+    }
+    const dFzLatTot = m * c.ay * cgH / TW;
+    const kRollF = fwd ? 0.58 : awd ? 0.54 : 0.50;
+    const dFzLatF = dFzLatTot * kRollF, dFzLatR = dFzLatTot * (1 - kRollF);
+    const FzFL = Math.max(0, Fzf * 0.5 - dFzLatF), FzFR = Math.max(0, Fzf * 0.5 + dFzLatF);
+    const FzRL = Math.max(0, Fzr * 0.5 - dFzLatR), FzRR = Math.max(0, Fzr * 0.5 + dFzLatR);
+    c.fz = [FzFL, FzFR, FzRL, FzRR];
+    const loadSens = (fzL, fzR, nom) => {
+      if (fzL + fzR <= 1) return 0;
+      const ref = Math.max(500, nom), norm = Math.pow(0.5, -0.075);
+      const eff = fz => fz <= 0 ? 0 : fz * Math.pow(fz / ref, -0.075);
+      return (eff(fzL) + eff(fzR)) / norm;
+    };
+    const FzfEff = loadSens(FzFL, FzFR, m * G * s.front);
+    const FzrEff = loadSens(FzRL, FzRR, m * G * (1 - s.front));
+
     const vxs = Math.max(Math.abs(c.vx), 2.5);
     const af = Math.atan2(c.vy + a * c.r, vxs) - delta, ar = Math.atan2(c.vy - b * c.r, vxs);
     const shape = al => Math.sin(surf.C * Math.atan(surf.B * al));
+    // Äkta grusfysik ("gravel digging / plogeffekt"): vid 10°–24° (0.175–0.42 rad) gräver däcksidan ner sig i löst grus och bygger en grusvall
+    const gravelDig = al => { if (st !== 'grus') return 1; const d = (Math.abs(al) - 0.30) / 0.13; return 1 + 0.17 * Math.exp(-d * d); };
     const gr = s.gears[c.gear - 1] * s.final, wheelRpm = Math.max(0, c.vx) / s.rw * 9.5493 * gr;
     let rpm = Math.max(wheelRpm, s.idle);
     if (c.gear === 1 && wheelRpm < 3000) rpm = Math.max(rpm, s.idle + c.thr * (Math.min(s.peakRpm * 0.85, 3800) - s.idle));
+    if (groundContact < 0.25) rpm = Math.max(rpm, s.idle + c.thr * (s.redline - 350 - s.idle));
     let Fd = 0;
     const cl = c.clutch || 0;
     if (cl > 0.05) rpm = Math.max(rpm * (1 - cl), s.idle + c.thr * (s.redline - 400 - s.idle) * cl);
@@ -76,7 +165,7 @@ export function phys(c, dt, trk) {
     else if (rpm < s.redline) Fd = c.tq(rpm) * c.thr * c.pow * gr * s.eff / s.rw * (1 - cl);
     if (c.thr < 0.05 && c.vx > 1) Fd -= (0.97 + 0.15 * rpm / 1000) * 1e5 * s.Vd * 1e-3 / 12.566 * gr / s.rw * (1 - cl);
     const wk = trk.wetK ? (st === 'asfalt' ? trk.wetK[0] : trk.wetK[1]) : 1;
-    const capF = mu * wk * Fzf * (s.muF || 1), capR = mu * wk * Fzr * (s.muR || 1), muE = mu * wk;
+    const capF = mu * wk * FzfEff * (s.muF || 1), capR = mu * wk * FzrEff * (s.muR || 1), muE = mu * wk;
     // Differential. Öppen diff: i kurva avlastas innerhjulet och det spinner först → mindre drivkraft ut ur kurvan.
     // Svetsad diff (lukkoperä): båda hjulen drar alltid fullt, men axeln vill gå rakt och släpper plötsligt.
     const welded = !!s.trac, latUse = Math.min(1, Math.abs(c.vx * c.r) / (muE * G + 0.1));
@@ -86,52 +175,93 @@ export function phys(c, dt, trk) {
     const LX = 1 + 0.18 * (1 - latUse); // bara rakt fram – i kurvor är allt som förut
     const capD = LX * (awd ? (capF + capR) * (welded ? 1 : 1 - 0.2 * latUse) : (fwd ? capF : capR) * (welded ? 1 : 1 - 0.4 * latUse)) * (1 + 0.08 * fl);
     let slip = 0, latD = 1;
-    // antispinn: lämnar sidogrepp kvar på bakaxeln så bilen inte blir instabil på raksträckor
-    if (c.aids.tc) { const nf = Math.abs(shape(af)), nr = Math.abs(shape(ar)), need = Math.abs(shape(fwd ? af : ar)), lim = awd ? 0.95 * capF * Math.sqrt(Math.max(0.08, 1 - 0.92 * nf * nf)) + 0.86 * capR * Math.sqrt(Math.max(0.05, 1 - 0.95 * nr * nr)) : capD * (fwd ? 0.97 : 0.94) * Math.sqrt(Math.max(0.08, 1 - 0.92 * need * need)); if (Fd > lim) Fd = lim; }
-    // hjulspinn: på löst grus gräver däcket och tappar lite drivkraft, på asfalt/is mer; sidogreppet försvinner
-    else if (Fd > capD) { slip = Math.min(2, Fd / capD - 1); Fd = capD * (st === 'grus' ? 0.97 - 0.03 * Math.min(1, slip) : 0.92 - 0.1 * Math.min(1, slip)); latD = 1 / (1 + (fwd ? 1.4 : awd ? 2.6 : RW.sp) * slip); } // hjulspinn: glidfriktion < statisk, sidogreppet försvinner
+    if (capD <= 1) {
+      slip = c.thr > 0.1 ? Math.min(2, c.thr * 1.4) : 0;
+      Fd = 0;
+    } else if (c.aids.tc) {
+      // antispinn: lämnar sidogrepp kvar på bakaxeln så bilen inte blir instabil på raksträckor
+      const nf = Math.abs(shape(af)), nr = Math.abs(shape(ar)), need = Math.abs(shape(fwd ? af : ar)), lim = awd ? 0.95 * capF * Math.sqrt(Math.max(0.08, 1 - 0.92 * nf * nf)) + 0.86 * capR * Math.sqrt(Math.max(0.05, 1 - 0.95 * nr * nr)) : capD * (fwd ? 0.97 : 0.94) * Math.sqrt(Math.max(0.08, 1 - 0.92 * need * need));
+      if (Fd > lim) Fd = lim;
+    } else if (Fd > capD) {
+      // hjulspinn: på löst grus gräver däcket och tappar lite drivkraft, på asfalt/is mer; sidogreppet försvinner
+      slip = Math.min(2, Fd / capD - 1);
+      Fd = capD * (st === 'grus' ? 0.97 - 0.03 * Math.min(1, slip) : 0.92 - 0.1 * Math.min(1, slip));
+      latD = 1 / (1 + (fwd ? 1.4 : awd ? 2.6 : RW.sp) * slip);
+    }
     if (Fd < -capD) Fd = -capD;
     c.slip = slip;
     let Fbf = 0, Fbr = 0, lockF = false, lockR = false; const sg = c.vx >= 0 ? 1 : -1;
-    if (c.brk > 0) { const Fb = c.brk * 1.12 * m * G * s.brake; Fbf = Fb * s.bias; Fbr = Fb * (1 - s.bias);
+    if (c.brk > 0 && FzTot > 1) { const Fb = c.brk * 1.12 * m * G * s.brake; Fbf = Fb * s.bias; Fbr = Fb * (1 - s.bias);
       if (Fbf > capF) { if (c.aids.abs) Fbf = capF * 0.96; else { lockF = true; Fbf = capF * 0.82; } }
       const prop = capR * (fwd ? 0.55 : 0.85); // lastkännande bromskraftsfördelare: framhjulsdrivna bilar är extra bakbromsade-snåla → drar rakt
       if (Fbr > prop && !c.aids.abs) Fbr = prop;
       const ebd = capR * (fwd ? 0.45 : 0.6); if (c.aids.abs && Fbr > ebd) Fbr = ebd; // ABS/EBD håller bakhjulen under låsgränsen så bilen är styrbar
       if (Fbr > capR) { if (c.aids.abs) Fbr = capR * 0.8; else { lockR = true; Fbr = capR * 0.82; } } }
-    if (c.hb) { lockR = true; Fbr = capR * 0.85; }
+    if (c.hb && FzTot > 1) { lockR = true; Fbr = capR * 0.85; }
     c.lock = lockF || lockR;
     let dF = fwd ? Fd : 0, dR = fwd ? 0 : Fd;
     // aktiv mittdiff: mer kraft till axeln som har greppmarginal kvar
     if (awd) { const sF = capF * (1 - 0.9 * Math.abs(shape(af))) + 1, sR = capR * (1 - 0.9 * Math.abs(shape(ar))) + 1, kF = Fd < 0 ? 0.7 : Math.min(0.75, 0.45 * 2 * sF / (sF + sR)); dF = Fd * kF; dR = Fd * (1 - kF); const rMax = capR * 0.8; if (Math.abs(dR) > rMax) { dF += dR - Math.sign(dR) * rMax; dR = Math.sign(dR) * rMax; } if (Math.abs(dF) > capF) { dR += dF - Math.sign(dF) * capF; dF = Math.sign(dF) * capF; } }
     const Fxf = dF - sg * Fbf, Fxr = dR - sg * Fbr;
-    const latF = (al, cap, Fx, sc, kB = 1, fl0 = 0.12) => -cap * Math.sqrt(Math.max(fl0, 1 - (Fx / cap) ** 2)) * sc * Math.sin(surf.C * Math.atan(surf.B * kB * al));
+    const latF = (al, cap, Fx, sc, kB = 1, fl0 = 0.12) => {
+      if (cap <= 1) return 0;
+      const ratio = Fx / cap;
+      return -cap * Math.sqrt(Math.max(fl0, 1 - ratio * ratio)) * sc * Math.sin(surf.C * Math.atan(surf.B * kB * al)) * gravelDig(al);
+    };
+    // Scandinavian flick (pendelrörelse): snabb motrattning mot nuvarande chassikrängning ger tydlig instyrning & bakvagnsrotation
+    const flickRoll = (c.steer * (c.bodyRoll || 0)) * 28;
+    const flickSnap = (c.steerVel || 0) * c.r < -0.6 ? clamp(-(c.steerVel * c.r) * 0.12, 0, 0.5) : 0;
+    const flickEnergy = (st !== 'asfalt' && v > 7 && groundContact > 0.5) ? clamp(flickRoll + flickSnap, 0, 1) : 0;
+    const frontFlick = (1 + 0.15 * flickEnergy) * (1 + 0.07 * lfb);
+    const rearFlick = (1 - 0.14 * flickEnergy) * (1 - 0.09 * lfb * (Math.abs(c.steer) > 0.15 ? 1 : 0));
     // Framhjulsdrift: odrivna bakhjul med toe-in och styv bakaxel bygger sidokraft snabbt och greppar mer -> bilen understyr
     // och "plogar" när man överdriver, bakvagnen följer med. Bakhjulsdrift: bakaxeln är mjukare och släpper lättare.
     const rearB = (fwd ? 1.3 : awd ? 1.15 : 1) * (s.fourlink && !fwd ? 1.12 : 1), rearG = (fwd ? 1.1 : awd ? 1.08 : 1.05) * (s.fourlink && !fwd ? 1.05 : 1), frontG = fwd ? 0.97 : 1;
     // Svetsad diff på drivaxeln: gas eller motorbroms mitt i kurvan gör att båda hjulen tappar sidogrepp samtidigt
     let wl = 1; if (welded && !awd && Math.abs(c.vx) > 4) { const u = Math.abs(fwd ? Fxf : Fxr) / Math.max(1, fwd ? capF : capR); wl = 1 / (1 + (s.fourlink ? 0.9 : 1) * RW.wd * u * u * (0.25 + latUse)); }
-    // momentstyrning: en stark framhjulsdriven bil drar lite åt ena hållet vid fullt gaspådrag
     c.tsq = 0; // ingen momentstyrning – bilen ska gå rakt på fullgas
-    const Fyf = latF(af, capF, Fxf, (fwd || awd ? latD : 1) * (fwd ? wl : 1) * (lockF ? 0.3 : 1) * frontG);
-    const Fyr = latF(ar, capR, Fxr, (fwd ? 1 : latD * wl) * (lockR ? 0.35 : 1) * rearG, rearB, fwd || awd ? 0.12 : RW.fl);
-    const drag = 0.6 * s.CdA * c.vx * Math.abs(c.vx) + (Math.abs(c.vx) > 0.2 ? crr * m * G * sg : 0);
+    const Fyf = latF(af, capF, Fxf, (fwd || awd ? latD : 1) * (fwd ? wl : 1) * (lockF ? 0.3 : 1) * frontG * frontFlick);
+    const Fyr = latF(ar, capR, Fxr, (fwd ? 1 : latD * wl) * (lockR ? 0.35 : 1) * rearG * rearFlick, rearB, fwd || awd ? 0.12 : RW.fl);
+    // Plogmotstånd på grus vid sladd: grusvallen framför däcken bromsar mjukt i sidled
+    const betaNow = Math.abs(Math.atan2(c.vy, Math.max(2.5, Math.abs(c.vx))));
+    const plowDrag = (st === 'grus' && groundContact > 0.4 && Math.abs(c.vx) > 2.5)
+      ? 0.20 * FzTot * Math.sin(Math.min(1.2, betaNow)) ** 2 * sg : 0;
+    const drag = 0.6 * s.CdA * c.vx * Math.abs(c.vx) + (Math.abs(c.vx) > 0.2 ? crr * FzTot * sg : 0) + plowDrag;
     const cd = Math.cos(delta), sd = Math.sin(delta);
     const axn = (Fxf * cd - Fyf * sd + Fxr - drag) / m, ayn = (Fyf * cd + Fxf * sd + Fyr) / m;
     let Mz = a * (Fyf * cd + Fxf * sd) - b * Fyr;
-    if (welded && !fwd && !awd) { // låst axel motverkar girning så länge hjulen greppar (understyr in i kurvan) – sedan släpper det
+    if (welded && !fwd && !awd && groundContact > 0.3) { // låst axel motverkar girning så länge hjulen greppar (understyr in i kurvan) – sedan släpper det
       const tw = 0.74, need = Math.abs(c.r) * tw / Math.max(3, Math.abs(c.vx)), grip = Math.max(0, capR - Math.abs(Fxr)) * 0.5;
       Mz -= Math.sign(c.r) * Math.min(1, need / 0.05) * grip * tw * 0.6;
     }
-    if (fwd && Fbf > 0 && !c.hb) Mz -= c.r * m * 0.9 * Math.min(1, Fbf / (m * G * 0.4)); // inbromsning med framhjulsdrift: bilen vill gå rakt
+    if (fwd && Fbf > 0 && !c.hb) {
+      // Rak inbromsning stabiliseras, men vänsterfotsbroms + styrutslag tillåter kontrollerad rallyrotation
+      const lfbFree = (1 - lfb * 0.85) * (1 - clamp(Math.abs(c.steer) * 1.5, 0, 0.72));
+      Mz -= c.r * m * 0.9 * Math.min(1, Fbf / (m * G * 0.4)) * lfbFree;
+    }
+    if (flickEnergy > 0.05) {
+      Mz += Math.sign(c.steer) * flickEnergy * (st === 'grus' ? 0.30 : 0.16) * m * L * G * 0.45 * groundContact;
+    }
+    if (lfb > 0.05 && Math.abs(c.steer) > 0.15 && c.vx > 6 && groundContact > 0.5) {
+      const lfbK = st === 'grus' ? 0.24 : st === 'is' ? 0.20 : 0.12;
+      Mz += Math.sign(c.steer) * lfb * Math.min(1, Math.abs(c.steer)) * lfbK * m * L * G * 0.38;
+    }
     // Stabilitet: dämpar bara ÖVERSKOTTSROTATION (mer girning än ratten ber om) – lägger aldrig till rotation, så vanlig kurvtagning är som förut.
-    // Under en sladd: med gasen kvar går det att hålla bilen bred; släpper man gasen och rätar upp ratten stabiliseras den snabbt till rakt.
-    { const vxa = Math.abs(c.vx); if (vxa > 3 && !c.rev) { const bs = Math.atan2(c.vy, vxa), beta = Math.abs(bs), slideW = clamp((beta - 0.06) / 0.25, 0, 1);
-        // mål-girning: vad ratten ber om, plus en vridning som riktar bilen mot färdriktningen när den står snett
+    // Under en sladd: med gasen kvar (eller vänsterfotsbroms på grus) går det att hålla bilen bred; släpper man gasen och rätar upp ratten stabiliseras den snabbt.
+    if (groundContact > 0.2) {
+      const vxa = Math.abs(c.vx);
+      if (vxa > 3 && !c.rev) {
+        const bs = Math.atan2(c.vy, vxa), beta = Math.abs(bs), slideW = clamp((beta - 0.06) / 0.25, 0, 1);
         const rt = c.vx * Math.tan(delta) / L + ASSIST.kb * slideW * bs * Math.sign(c.vx), ex = c.r - rt;
-        if (slideW > 0 ? ex * bs < 0 : ex * Math.sign(c.r || ex) > 0) { const thrO = fwd || s.stabX ? 0 : Math.min(1, c.thr * 1.6);
+        if (slideW > 0 ? ex * bs < 0 : ex * Math.sign(c.r || ex) > 0) {
+          const thrO = fwd || s.stabX ? (st === 'grus' && lfb > 0.1 ? Math.min(0.65, lfb * 1.2) : 0) : Math.min(1, c.thr * 1.6 + lfb * 0.8);
           const kd = ASSIST.base * (1 - slideW) + slideW * (ASSIST.slide * (1 - ASSIST.holdK * thrO) + ASSIST.center * (1 - thrO) * (1 - Math.min(1, Math.abs(c.steer) * 2)));
-          Mz -= ex * kd * (s.stabX || 1) * m * L * L * 0.36; } } }
+          Mz -= ex * kd * (s.stabX || 1) * m * L * L * 0.36 * groundContact;
+        }
+      }
+    } else {
+      Mz -= c.r * m * L * L * 0.08;
+    }
     c.vx += (axn + c.vy * c.r) * dt; c.vy += (ayn - c.vx * c.r) * dt; c.r += Mz / (m * L * L * 0.36) * dt;
     c.ax += (axn - c.ax) * Math.min(1, 12 * dt);
     c.ay += (ayn - c.ay) * Math.min(1, 12 * dt);
@@ -140,10 +270,40 @@ export function phys(c, dt, trk) {
     c.rpm = Math.min(s.redline + 60, rpm * (1 + Math.min(slip, 0.6) * 0.45));
     // växling
     if (c.aids.auto && c.shiftT <= 0) {
-      if (c.gear < s.gears.length && wheelRpm > c.upRpm && slip < 0.3) { c.gear++; c.shiftT = s.shift; }
-      else if (c.gear > 1 && (wheelRpm < s.idle * 1.5 || (c.thr > 0.6 && Math.abs(c.vy) < 0.15 * Math.abs(c.vx) || c.brk > 0.2) && wheelRpm * s.gears[c.gear - 2] / s.gears[c.gear - 1] < c.upRpm * (0.55 + 0.25 * c.thr))) { c.gear--; c.shiftT = s.shift * 0.6; } // växlar bara ner vid gaspådrag, inbromsning eller för låga varv
+      if (c.gear < s.gears.length && wheelRpm > c.upRpm && slip < 0.3 && groundContact > 0.5) {
+        c.gear++; c.shiftT = s.shift; c.shiftEv = 1;
+        if (c.rpm > 4400) { c.backfire = Math.max(c.backfire || 0, 0.72); c.backfireEv = Math.max(c.backfireEv || 0, 0.72); }
+      } else if (c.gear > 1 && (wheelRpm < s.idle * 1.5 || (c.thr > 0.6 && Math.abs(c.vy) < 0.15 * Math.abs(c.vx) || c.brk > 0.2) && wheelRpm * s.gears[c.gear - 2] / s.gears[c.gear - 1] < c.upRpm * (0.55 + 0.25 * c.thr))) {
+        c.gear--; c.shiftT = s.shift * 0.6; c.shiftEv = 1;
+        if (c.rpm > 3800) { c.backfire = Math.max(c.backfire || 0, 0.65); c.backfireEv = Math.max(c.backfireEv || 0, 0.65); }
+      }
     }
   }
+  // 4-hjulig chassirörelse (fjäder-dämpare): bromsdyk, gassquat & krängning i kurvor
+  const tgtPitch = clamp(c.ax * 0.0068 * soft - c.brk * 0.020 * soft * groundContact + c.thr * (fwd ? 0.004 : 0.011) * soft * groundContact, -0.085, 0.085);
+  const tgtRoll = clamp(-c.ay * 0.0052 * soft, -0.075, 0.075);
+  const wP = 11.5, zP = 0.62, wR = 10.5, zR = 0.56;
+  c.pitchVel = (c.pitchVel || 0) + (wP * wP * (tgtPitch - (c.bodyPitch || 0)) - 2 * zP * wP * (c.pitchVel || 0)) * dt;
+  c.bodyPitch = clamp((c.bodyPitch || 0) + c.pitchVel * dt, -0.09, 0.09);
+  c.rollVel = (c.rollVel || 0) + (wR * wR * (tgtRoll - (c.bodyRoll || 0)) - 2 * zR * wR * (c.rollVel || 0)) * dt;
+  c.bodyRoll = clamp((c.bodyRoll || 0) + c.rollVel * dt, -0.08, 0.08);
+  c.bPitch = c.bodyPitch; c.bRoll = c.bodyRoll;
+  // Hjulrotation (speglar även c.wspin), bromsglöd (0..1) och avgassmäll (backfire)
+  const wheelSpd = (c.lock && groundContact > 0.3) ? c.vx * 0.15 : c.vx * (1 + (c.slip || 0) * 0.35);
+  c.wheelSpin = (c.wheelSpin || 0) + (wheelSpd / (s.rw || 0.31)) * dt;
+  c.wspin = c.wheelSpin;
+  const brkPow = c.brk * Math.min(1, v / 25) * (0.2 + 0.8 * groundContact);
+  const glowTgt = clamp((brkPow - 0.16) * 1.45, 0, 1);
+  const glowRate = glowTgt > (c.brakeGlow || 0) ? 2.8 : 0.72;
+  c.brakeGlow = clamp((c.brakeGlow || 0) + (glowTgt - (c.brakeGlow || 0)) * Math.min(1, glowRate * dt), 0, 1);
+  c.backfire = Math.max(0, (c.backfire || 0) - dt * 7.5);
+  const prevThr = c.prevThr ?? c.thr;
+  if (prevThr > 0.42 && c.thr < 0.14 && c.rpm > 3600 && (c.backfire || 0) < 0.25) {
+    c.backfire = 0.85 + Math.random() * 0.15;
+    c.backfireEv = Math.max(c.backfireEv || 0, c.backfire);
+  }
+  c.prevThr = c.thr;
+
   const ch = Math.cos(c.h), sh = Math.sin(c.h);
   c.x += (c.vx * ch - c.vy * sh) * dt; c.z += (c.vx * sh + c.vy * ch) * dt; c.h += c.r * dt;
 }
@@ -251,7 +411,9 @@ export function aiDrive(c, race, dt) {
   if (Math.abs(err) > 1.9 && v < 7) ai.back = 1; else if (Math.abs(err) < 0.9) ai.back = 0;
   if (ai.back) { c.rev = true; c.thr = 0; c.brk = 0; c.steer = err > 0 ? -1 : 1; return; }
   c.rev = false;
-  const st = clamp(err * 2.4 + (ai.wob || 0), -1, 1);
+  const stRaw = clamp(err * 2.4 + (ai.wob || 0), -1, 1);
+  // I luften över ett krön: håll hjulen mjuka/raka inför landning så AI aldrig hamnar i spinn-loop
+  const st = (c.airY || 0) > 0.03 ? clamp(err * 0.7, -0.35, 0.35) : stRaw;
   c.steer += clamp(st - c.steer, -7 * dt, 7 * dt);
   let vt = ai.prof[trk.w(idx + 2 + Math.round((ai.e || 0) * v * 0.24))]; // toppnivån: siktar på farten längre fram → bromsar senare och kortare
   if (wantJ && idx < j.i2 - 4 && idx > j.i1 - 60) {
@@ -567,12 +729,12 @@ export class Race {
     };
   }
 
-  togglePause() { if (this.done) return; this.paused = !this.paused; this.$('hPauseBox').hidden = !this.paused; this.last = performance.now(); if (this.gain) this.gain.gain.value = 0; }
+  togglePause() { if (this.done) return; this.paused = !this.paused; this.$('hPauseBox').hidden = !this.paused; this.last = performance.now(); if (this.gain) this.gain.gain.value = 0; if (this.fxGain) this.fxGain.gain.value = this.paused ? 0 : (this.vol || 0); if (this.paused) this.ctl?.stopRumble?.(); }
   shift(d) { if (!this.spectate && (this.player.finished || this.player.retired) && this.cars.length > 1) { // i mål/utgått: E/Q byter vilken bil kameran följer
       const cur = this.camCar || this.player, i = (this.cars.indexOf(cur) + d + this.cars.length) % this.cars.length; this.camCar = this.cars[i]; this.camH = this.camCar.h; this.watchCam(); return; }
-    if (this.spectate) { const i = (this.cars.indexOf(this.player) + d + this.cars.length) % this.cars.length; this.player = this.cars[i]; this.camH = this.player.h; this.watchCam(); return; } const c = this.player; if (this.state !== 'run' || c.shiftT > 0) return; const g = c.gear + d; if (g >= 1 && g <= c.spec.gears.length) { c.gear = g; c.shiftT = (c.clutch || 0) > 0.5 ? 0.06 : c.spec.shift; } }
+    if (this.spectate) { const i = (this.cars.indexOf(this.player) + d + this.cars.length) % this.cars.length; this.player = this.cars[i]; this.camH = this.player.h; this.watchCam(); return; } const c = this.player; if (this.state !== 'run' || c.shiftT > 0) return; const g = c.gear + d; if (g >= 1 && g <= c.spec.gears.length) { c.gear = g; c.shiftT = (c.clutch || 0) > 0.5 ? 0.06 : c.spec.shift; c.shiftEv = 1; if (c.rpm > 4000) { c.backfire = Math.max(c.backfire || 0, 0.72); c.backfireEv = Math.max(c.backfireEv || 0, 0.72); } } }
   resize() { if (this.R) this.view.resize(); }
-  resetCar(c) { const trk = this.trk, hwi = trk.hwAt ? trk.hwAt(c.i) : trk.hw, [x, z, h] = trk.point(c.i, clamp(c.lat, -hwi + 2, hwi - 2) * 0.3); c.x = x; c.z = z; c.h = h; c.vx = c.vy = c.r = 0; c.rev = false; c.gear = 1; }
+  resetCar(c) { const trk = this.trk, hwi = trk.hwAt ? trk.hwAt(c.i) : trk.hw, [x, z, h] = trk.point(c.i, clamp(c.lat, -hwi + 2, hwi - 2) * 0.3); c.x = x; c.z = z; c.h = h; c.vx = c.vy = c.r = 0; c.rev = false; c.gear = 1; c.airY = c.airVy = c.suspY = c.suspVy = c.landImpact = c.landAudio = 0; c.bodyPitch = c.bPitch = c.bodyRoll = c.bRoll = c.pitchVel = c.rollVel = 0; c.brakeGlow = c.backfire = 0; }
   msg(html, dur = 2.4, cls = '') { const e = this.$('hMsg'); e.innerHTML = html; e.className = 'hud-msg show ' + cls; this.msgT = dur; }
 
   buildMap() {
@@ -682,27 +844,56 @@ export class Race {
       this.o1 = o1; this.o2 = o2; this.gain = g; this.lp = lp; this.vol = vol;
       // närmaste motståndaren hörs med sin egen motortyp (vågformen byts när en annan bil kommer närmast)
       { const oo = ac.createOscillator(), og = ac.createGain(), of = ac.createBiquadFilter(); oo.setPeriodicWave(wave); of.type = 'lowpass'; of.frequency.value = 700; og.gain.value = 0; oo.connect(of); of.connect(og); og.connect(ac.destination); oo.start(); this.oo = oo; this.og = og; this.of = of; this.ooKey = sk; }
-      // däck- och underlagsljud (brus genom filter) + skrammel från skadad motor
-      const nb = ac.createBuffer(1, ac.sampleRate * 2, ac.sampleRate), nd = nb.getChannelData(0); for (let i = 0; i < nd.length; i++) nd[i] = Math.random() * 2 - 1;
-      const ns = ac.createBufferSource(); ns.buffer = nb; ns.loop = true; const tf = ac.createBiquadFilter(), tg = ac.createGain(); tf.type = 'bandpass'; tf.Q.value = 1.2; tg.gain.value = 0; ns.connect(tf); tf.connect(tg); tg.connect(ac.destination); ns.start();
+      // RallyAudioFX: grussmatter, däckljud per underlag, växellåds-vinande, växlingsklonk, avgassmällar, landning & kollisioner
+      const fxGain = ac.createGain(); fxGain.gain.value = vol; fxGain.connect(ac.destination);
+      this.fxGain = fxGain;
+      this.fx = new RallyAudioFX(ac, fxGain, { gain: 1, profileKey: sk });
+      // skrammel från skadad motor
       const o3 = ac.createOscillator(), rg = ac.createGain(); o3.type = 'square'; rg.gain.value = 0; o3.connect(rg); rg.connect(lp); o3.start();
-      this.tf = tf; this.tg = tg; this.o3 = o3; this.rg = rg; } catch (e) { } }
-  pop(k) { const ac = this.ac; if (!ac) return; const n = ac.createBuffer(1, ac.sampleRate * 0.05 | 0, ac.sampleRate), d = n.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * Math.exp(-i / (d.length * 0.18));
+      this.o3 = o3; this.rg = rg; } catch (e) { } }
+  pop(k) { const ac = this.ac; if (!ac) return; if (this.fx?.ok) { this.fx.backfire(k, !!this.player?.exhaustLoose); return; }
+    const n = ac.createBuffer(1, ac.sampleRate * 0.05 | 0, ac.sampleRate), d = n.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * Math.exp(-i / (d.length * 0.18));
     const s = ac.createBufferSource(), bp = ac.createBiquadFilter(), g = ac.createGain(); s.buffer = n; bp.type = 'bandpass'; bp.frequency.value = 500 + Math.random() * 900; bp.Q.value = 0.9; g.gain.value = this.vol * 0.35 * k; s.connect(bp); bp.connect(g); g.connect(ac.destination); s.start(); }
-  audio() { if (!this.gain) return; const c = this.player, f = c.rpm / 60 * c.spec.cyl / 2, t = this.ac.currentTime, fc = c.rpm / 120; // fc = ett helt motorvarv-par (720°)
+  audio(dt = 1 / 60) {
+    const c = this.player;
+    const st = this.trk.surfTypeAt ? this.trk.surfTypeAt(c.i) : this.trk.surface;
+    const v = Math.hypot(c.vx, c.vy);
+    const slipAngle = v > 1.5 ? Math.abs(Math.atan2(c.vy, Math.max(1.5, Math.abs(c.vx)))) : 0;
+    const slide = Math.min(1.5, Math.abs(c.vy) * 0.16 + (c.slip || 0) * 0.75 + (c.lock ? 0.55 : 0));
+    const roll = Math.min(1, v / 30);
+    // Gamepad-rumble: grus, sladd, hjulspinn, bromslåsning, växlingsstöt & landning efter krön
+    if (this.ctl?.rumble && !this.paused && this.state === 'run' && !c.finished && !c.retired && !c.auto) {
+      if ((c.landAudio || 0) > 0.12) {
+        this.ctl.rumble(clamp(0.45 + c.landAudio * 0.55, 0.45, 1), clamp(0.2 + c.landAudio * 0.35, 0.2, 0.65), 140);
+      } else if ((c.airY || 0) <= 0.03 && v > 2.2) {
+        const low = clamp((st === 'grus' ? 0.09 * roll : st === 'is' ? 0.05 * roll : 0.02 * roll) + (c.onSurf ? 0 : 0.24 * roll) + (c.lock ? 0.26 : 0) + (c.shiftEv ? 0.28 : 0), 0, 1);
+        const high = clamp((st === 'grus' ? 0.18 : 0.12) * Math.min(1, slide) * roll + Math.min(0.28, (c.slip || 0) * 0.22) + (c.rpm > c.spec.redline * 0.92 ? 0.10 : 0), 0, 1);
+        if (low > 0.04 || high > 0.04) this.ctl.rumble(low, high, 65);
+      }
+    }
+    if (!this.gain) { c.landAudio = 0; c.shiftEv = 0; c.backfireEv = 0; return; }
+    const f = c.rpm / 60 * c.spec.cyl / 2, t = this.ac.currentTime, fc = c.rpm / 120; // fc = ett helt motorvarv-par (720°)
     this.o1.frequency.setTargetAtTime(fc, t, 0.025); this.o2.frequency.setTargetAtTime(fc, t, 0.025); const SP = this.snd; this.lp.frequency.setTargetAtTime(SP.lp + c.rpm * SP.lpRpm + c.thr * SP.lpThr, t, 0.05);
-    this.gain.gain.setTargetAtTime(this.vol * SP.gain * (0.05 + 0.11 * c.thr), t, 0.05);
-    // knatter/smällar i avgasröret när man släpper gasen på höga varv
-    if (c.thr < 0.08 && c.rpm > 3200 && Math.random() < SP.pops) this.pop(0.5 + Math.random() * 0.5);
+    this.gain.gain.setTargetAtTime(this.vol * SP.gain * (0.05 + 0.11 * c.thr) * (c.exhaustLoose ? 1.25 : 1), t, 0.05);
     if (this.oo) { let best = null, bd = 1e9; for (const o of this.cars) { if (o === c || o.retired) continue; const d = Math.hypot(o.x - c.x, o.z - c.z); if (d < bd) { bd = d; best = o; } }
       const ga = best ? this.vol * 0.07 * (0.3 + 0.7 * (best.thr || 0)) / (1 + bd * 0.12) : 0; this.og.gain.setTargetAtTime(ga, t, 0.1); if (best) { const bk = soundKey(best.spec); if (bk !== this.ooKey) { this.ooKey = bk; this.oo.setPeriodicWave(engineWave(this.ac, bk)); } this.oo.frequency.setTargetAtTime(Math.max(6, best.rpm / 120), t, 0.05); this.of.frequency.setTargetAtTime(400 + best.rpm * 0.15, t, 0.1); } }
-    if (this.tg) {
-      const st = this.trk.surfTypeAt ? this.trk.surfTypeAt(c.i) : this.trk.surface, v = Math.hypot(c.vx, c.vy), slide = Math.min(1, Math.abs(c.vy) * 0.15 + c.slip * 0.8 + (c.lock ? 0.6 : 0));
-      const roll = Math.min(1, v / 30), asph = st === 'asfalt';
-      this.tf.frequency.setTargetAtTime(asph ? 900 + slide * 1400 : st === 'is' ? 2500 : 260 + v * 8, t, 0.08); this.tf.Q.setTargetAtTime(asph && slide > 0.3 ? 6 : 1.2, t, 0.1);
-      this.tg.gain.setTargetAtTime(this.vol * ((asph ? 0.015 : 0.05) * roll + (asph ? 0.12 : 0.07) * slide * roll) * (c.onSurf ? 1 : 1.6), t, 0.06);
+    if (this.fx?.ok) {
+      this.fx.update({
+        speed: v, vx: c.vx, vy: c.vy, rpm: c.rpm, redline: c.spec.redline,
+        throttle: c.thr, gear: c.rev ? 0 : c.gear, surface: st, onSurf: c.onSurf,
+        slide, slipAngle, wheelSpin: c.slip || 0, lock: !!c.lock,
+        airY: c.airY || 0, exhaustLoose: !!c.exhaustLoose,
+        backfire: c.backfire || 0, autoBackfire: true, paused: this.paused,
+      }, dt);
+      if ((c.landAudio || 0) > 0.15) this.fx.landing(c.landAudio, st === 'grus');
+    } else if (c.thr < 0.08 && c.rpm > 3200 && Math.random() < SP.pops) {
+      this.pop(0.5 + Math.random() * 0.5);
+    }
+    if (this.o3 && this.rg) {
       const dm = Math.max(0, (c.dmg || 0) - 35) / 65; this.o3.frequency.setTargetAtTime(f * 0.5 + Math.random() * 30, t, 0.02); this.rg.gain.setTargetAtTime(this.vol * 0.05 * dm, t, 0.05);
-    } }
+    }
+    c.landAudio = 0; c.shiftEv = 0; c.backfireEv = 0;
+  }
   // Kör kontrollhändelser (tangenter / handkontroll / ratt) en gång per bildruta
   controlEvents() {
     for (const a of this.ctl.poll(this.touch)) {
@@ -824,8 +1015,8 @@ export class Race {
       else { c.thr = 0; c.brk = 0.45; }
 
       phys(c, dt, trk);
-      { const ii = trk.w(c.i), fi = c.pf ?? ii, i0 = Math.floor(fi), tt = fi - i0, slI = trk.SL[trk.w(i0)] * (1 - tt) + trk.SL[trk.w(i0 + 1)] * tt, sl = slI * (Math.cos(c.h) * trk.TX[ii] + Math.sin(c.h) * trk.TZ[ii]); c.vx -= G * sl * dt; c.slope = sl; c.wspin += c.vx / 0.31 * dt;
-        c.gripF = 1 - (c.tireWearF + c.tireWearR) * 0.0011; }
+      c.vx -= G * (c.slope || 0) * dt;
+      c.gripF = 1 - (c.tireWearF + c.tireWearR) * 0.0011;
       const lapBefore = Math.floor(c.prog / n);
       const vIn = Math.hypot(c.vx, c.vy); // farten precis innan en eventuell träff i vallen
       const hit = trackStep(c, trk, this.t, this.useJoker);
@@ -840,6 +1031,7 @@ export class Race {
 
       if (hit > 2.5 && c.isPlayer) {
         this.damage(hit * hit * 0.11, true);
+        this.crash(hit * 0.85);
         // Kaato bara om man kör in i vallen i över 150 km/h (inte vid lätt snuddning)
         if (vIn > 150 / 3.6 && hit > 4 && !c.kaato && this.state === 'run') {
           c.kaato = true; c.retired = true; this.state = 'flag';
@@ -901,6 +1093,11 @@ export class Race {
       }
       const hit = collide(A, B);
       if (rm) [rm.x, rm.z, rm.h, rm.vx, rm.vy, rm.r] = sv; // den andres bil flyttas bara av sin egen dator
+      if (hit > 1.0 && this.view?.emitSparks) {
+        const mx = (A.x + B.x) * 0.5, mz = (A.z + B.z) * 0.5, my = Math.max(A.y || 0, B.y || 0) + 0.55;
+        const chA = Math.cos(A.h), shA = Math.sin(A.h), mvx = (A.vx * chA - A.vy * shA) * 0.5, mvz = (A.vx * shA + A.vy * chA) * 0.5;
+        this.view.emitSparks(mx, my, mz, Math.min(1.5, hit / 5.5), mvx, mvz);
+      }
       if (hit > 1.2 && (A.isPlayer || B.isPlayer)) {
         this.damage(hit * hit * 0.09, true); this.crash(hit);
       }
@@ -929,9 +1126,13 @@ export class Race {
     if (this.t > 600) this.finish();
   }
 
-  // Kollisionsljud: kort brusstöt genom ett bandpassfilter, starkare ju hårdare smällen är
+  // Kollisionsljud + gamepad-rumble + kameraskak: starkare ju hårdare smällen är
   crash(hit) {
-    this.shake = Math.min(1, (this.shake || 0) + hit * 0.08);
+    this.shake = Math.min(1, (this.shake || 0) + hit * 0.09);
+    if (this.ctl?.rumble && !this.paused) {
+      this.ctl.rumble(clamp(0.35 + hit * 0.09, 0.35, 1), clamp(0.25 + hit * 0.07, 0.25, 0.9), Math.round(clamp(90 + hit * 22, 90, 320)));
+    }
+    if (this.fx?.ok) { this.fx.impact(clamp(hit / 12, 0.12, 1)); return; }
     const ac = this.ac; if (!ac || !this.vol || (this.lastCrash && ac.currentTime - this.lastCrash < 0.12)) return; this.lastCrash = ac.currentTime;
     const len = 0.35, buf = ac.createBuffer(1, ac.sampleRate * len, ac.sampleRate), d = buf.getChannelData(0);
     for (let i = 0; i < d.length; i++) { const t = i / d.length; d[i] = (Math.random() * 2 - 1) * Math.pow(1 - t, 3) * (t < 0.02 ? t / 0.02 : 1); }
@@ -1038,7 +1239,7 @@ export class Race {
     if (Math.abs(tx - c.x) + Math.abs(tz - c.z) > 18) { c.x = tx; c.z = tz; c.h = th; }
     else { c.x += wx * dt + (tx - c.x) * k; c.z += wz * dt + (tz - c.z) * k; c.h += s.r * dt + wrapA(th - c.h) * k; }
     c.vx = s.vx; c.vy = s.vy; c.r = s.r; c.steer = s.steer; c.lat = s.lat; c.i = s.i; c.prog = s.prog + s.vx * age / this.trk.ds; c.slip = 0; c.lock = 0; c.thr = 0.5;
-    c.wspin += c.vx / 0.31 * dt;
+    c.wspin += c.vx / 0.31 * dt; c.wheelSpin = c.wspin; c.steerVis = c.steer * 0.45; c.brakeGlow = c.brk > 0.1 ? 0.5 : 0; c.airY = 0; c.bodyPitch = c.bPitch = 0; c.bodyRoll = c.bRoll = 0;
   }
   netEnd(order) { this.finish(order); }
   netGone(id) { const c = this.cars.find(x => x.remote && x.nid === id); if (c && !c.finished) c.retired = true; }
@@ -1063,6 +1264,7 @@ export class Race {
   destroy() {
     cancelAnimationFrame(this.raf); window.removeEventListener('keydown', this.kd); window.removeEventListener('keyup', this.ku); window.removeEventListener('resize', this.rs);
     try { const V = this.view; if (this.QL?.auto && V?.fN > 300) { if (V.dyn < 0.72 && this.QL.level > 0) rememberAuto(this.QL.level - 1); else if (V.dyn >= 1 && V.fAvg < 12 && this.QL.level < 3) rememberAuto(this.QL.level + 1); else rememberAuto(this.QL.level); } } catch (e) { } // Auto lär sig enhetens nivå
+    try { this.fx?.stop(); } catch (e) { } try { this.ctl?.stopRumble?.(); } catch (e) { }
     try { if (this.ac) this.ac.close(); } catch (e) { } this.dead = true; if (this.net && this.net.race === this) this.net.race = null; if (this.view) this.view.dispose();
   }
 
@@ -1074,7 +1276,7 @@ export class Race {
     if (this.ctl) this.controlEvents();
     if (this.net) this.netTick();
     { const tn = performance.now(), sdt = this.steerT ? Math.min(0.5, (tn - this.steerT) / 1000) : 0; this.steerT = tn; if (!this.paused || this.net) this.steerRamp(sdt); } // ratten följer riktiga klockan
-    if (!this.paused || this.net) { this.acc += dt; let k = 0; while (this.acc >= DT && k++ < 14 * sp) { this.step(DT); this.acc -= DT; if (this.done) return; } if (this.acc > DT * 4) this.acc = 0; this.particlesStep(dt); this.audio(); }
+    if (!this.paused || this.net) { this.acc += dt; let k = 0; while (this.acc >= DT && k++ < 14 * sp) { this.step(DT); this.acc -= DT; if (this.done) return; } if (this.acc > DT * 4) this.acc = 0; this.particlesStep(dt); this.audio(dt); }
     this.render(dt); this.hud(dt);
   }
 
@@ -1084,27 +1286,48 @@ export class Race {
       const v = Math.hypot(c.vx, c.vy), slide = Math.abs(c.vy) + c.slip * 6 + (c.lock ? 5 : 0);
       const st = this.trk.surfTypeAt ? this.trk.surfTypeAt(c.i) : this.trk.surface;
       const surf = this.trk.surfAt ? this.trk.surfAt(c.i) : this.trk.surf;
-      const rate = st === 'asfalt' ? (slide > 3 ? slide * 2 : 0) : (v > 2.2 ? v * 0.65 : 0) + slide * 3.8, cap = this.view?.pMax || 255, ch = Math.cos(c.h), sh = Math.sin(c.h);
+      const airborne = (c.airY || 0) > 0.03;
+      const cap = this.view?.pMax || 255, ch = Math.cos(c.h), sh = Math.sin(c.h);
       const wvx = c.vx * ch - c.vy * sh, wvz = c.vx * sh + c.vy * ch, near = Math.hypot(c.x - this.player.x, c.z - this.player.z) < 220;
-      c.pe = (c.pe || 0) + rate * dt * (this.q ? 1 : 0.5) * (this.view?.level >= 2 ? 1.5 : 1);
-      while (c.pe > 1 && pl.length < cap) {
-        c.pe -= 1; const side = Math.random() < 0.5 ? 1 : -1;
-        const bx = c.x - ch * 1.45 - sh * 0.75 * side + (Math.random() - 0.5) * 0.6, bz = c.z - sh * 1.45 + ch * 0.75 * side + (Math.random() - 0.5) * 0.6;
-        pl.push({ x: bx, y: (c.y || 0) + 0.22, z: bz, vx: wvx * 0.3 + (Math.random() - 0.5) * 1.8, vy: 0.7 + Math.random() * 1.3, vz: wvz * 0.3 + (Math.random() - 0.5) * 1.8, life: 0, max: 0.9 + Math.random() * 1.1, s: 0.45 + Math.random() * 0.40, d: surf.dust });
+      if (!airborne) {
+        const rate = st === 'asfalt' ? (slide > 3 ? slide * 2 : 0) : (v > 2.2 ? v * 0.65 : 0) + slide * 3.8;
+        c.pe = (c.pe || 0) + rate * dt * (this.q ? 1 : 0.5) * (this.view?.level >= 2 ? 1.5 : 1);
+        while (c.pe > 1 && pl.length < cap) {
+          c.pe -= 1; const side = Math.random() < 0.5 ? 1 : -1;
+          const bx = c.x - ch * 1.45 - sh * 0.75 * side + (Math.random() - 0.5) * 0.6, bz = c.z - sh * 1.45 + ch * 0.75 * side + (Math.random() - 0.5) * 0.6;
+          pl.push({ x: bx, y: (c.y || 0) + 0.22, z: bz, vx: wvx * 0.3 + (Math.random() - 0.5) * 1.8, vy: 0.7 + Math.random() * 1.3, vz: wvz * 0.3 + (Math.random() - 0.5) * 1.8, life: 0, max: 0.9 + Math.random() * 1.1, s: 0.45 + Math.random() * 0.40, d: surf.dust });
+        }
+        // Dammoln vid landning efter krön/hopp
+        if ((c.landImpact || 0) > 0.16 && st !== 'asfalt' && near) {
+          const nPuff = Math.min(8, Math.round(3 + c.landImpact * 5));
+          for (let k = 0; k < nPuff && pl.length < cap; k++) {
+            const ang = Math.random() * 6.283, rad = 0.6 + Math.random() * 1.0;
+            pl.push({ x: c.x + Math.cos(ang) * rad, y: (c.y || 0) + 0.18, z: c.z + Math.sin(ang) * rad, vx: wvx * 0.35 + Math.cos(ang) * (1.8 + c.landImpact * 2.4), vy: 0.5 + Math.random() * 1.1, vz: wvz * 0.35 + Math.sin(ang) * (1.8 + c.landImpact * 2.4), life: 0, max: 1.0 + Math.random() * 0.9, s: 0.55 + Math.random() * 0.45, d: surf.dust });
+          }
+        }
+        // grusstänk: små stenar som kastas bakåt av både bak- och framhjul och faller med tyngdkraften
+        if (st !== 'asfalt' && near) {
+          const drvFront = c.spec.drv === 'fwd' || c.spec.drv === 'awd';
+          c.ge = (c.ge || 0) + (c.slip * 28 + Math.abs(c.vy) * 3.4 + (c.thr || 0) * Math.min(v, 22) * 0.55) * dt * (this.view?.level >= 2 ? 1.5 : 0.75);
+          while (c.ge > 1 && pl.length < cap + (this.view?.sMax || 0)) {
+            c.ge -= 1; const side = Math.random() < 0.5 ? 1 : -1, kick = 3 + c.slip * 7.5 + Math.random() * 3.2;
+            const fromFront = Math.random() < (drvFront ? 0.5 : 0.25);
+            const wxOff = fromFront ? 1.15 : -1.55;
+            pl.push({ stone: 1, x: c.x + ch * wxOff - sh * 0.75 * side, y: (c.y || 0) + 0.15, z: c.z + sh * wxOff + ch * 0.75 * side, vx: wvx * 0.6 - ch * kick + (Math.random() - 0.5) * 2.6, vy: 1.5 + Math.random() * 3.1, vz: wvz * 0.6 - sh * kick + (Math.random() - 0.5) * 2.6, life: 0, max: 0.5 + Math.random() * 0.6, s: 0 });
+          }
+        }
+        // däckspår bakom bakhjulen
+        if (near && this.view?.mark && v > 1) { const mk = c.mk || (c.mk = []), skid = slide > 3, rgb = st === 'asfalt' ? (skid ? [0.1, 0.1, 0.1] : null) : st === 'is' ? [0.78, 0.84, 0.92] : skid ? [0.36, 0.29, 0.21] : [0.48, 0.4, 0.31];
+          for (let k = 0; k < 2; k++) { const sd = k ? 1 : -1, wx = c.x - ch * 1.35 - sh * 0.74 * sd, wz = c.z - sh * 1.35 + ch * 0.74 * sd, prev = mk[k];
+            if (!prev) { mk[k] = [wx, wz]; continue; } const d = Math.hypot(wx - prev[0], wz - prev[1]); if (d < 0.6) continue;
+            if (rgb && d < 3) this.view.mark(prev[0], prev[1], wx, wz, skid ? 0.34 : 0.28, rgb); mk[k] = [wx, wz]; } }
+      } else if (c.mk) {
+        c.mk[0] = null; c.mk[1] = null; // bryt däckspår medan bilen är i luften
       }
-      // grusstänk: små stenar som kastas bakåt av hjulen och faller med tyngdkraften
-      if (st !== 'asfalt' && near) { c.ge = (c.ge || 0) + (c.slip * 26 + Math.abs(c.vy) * 3 + (c.thr || 0) * Math.min(v, 20) * 0.5) * dt * (this.view?.level >= 2 ? 1.4 : 0.7);
-        while (c.ge > 1 && pl.length < cap + (this.view?.sMax || 0)) { c.ge -= 1; const side = Math.random() < 0.5 ? 1 : -1, kick = 3 + c.slip * 7 + Math.random() * 3;
-          pl.push({ stone: 1, x: c.x - ch * 1.6 - sh * 0.75 * side, y: (c.y || 0) + 0.15, z: c.z - sh * 1.6 + ch * 0.75 * side, vx: wvx * 0.6 - ch * kick + (Math.random() - 0.5) * 2.5, vy: 1.5 + Math.random() * 3, vz: wvz * 0.6 - sh * kick + (Math.random() - 0.5) * 2.5, life: 0, max: 0.5 + Math.random() * 0.6, s: 0 }); } }
-      // däckspår bakom bakhjulen
-      if (near && this.view?.mark && v > 1) { const mk = c.mk || (c.mk = []), skid = slide > 3, rgb = st === 'asfalt' ? (skid ? [0.1, 0.1, 0.1] : null) : st === 'is' ? [0.78, 0.84, 0.92] : skid ? [0.36, 0.29, 0.21] : [0.48, 0.4, 0.31];
-        for (let k = 0; k < 2; k++) { const sd = k ? 1 : -1, wx = c.x - ch * 1.35 - sh * 0.74 * sd, wz = c.z - sh * 1.35 + ch * 0.74 * sd, prev = mk[k];
-          if (!prev) { mk[k] = [wx, wz]; continue; } const d = Math.hypot(wx - prev[0], wz - prev[1]); if (d < 0.6) continue;
-          if (rgb && d < 3) this.view.mark(prev[0], prev[1], wx, wz, skid ? 0.34 : 0.28, rgb); mk[k] = [wx, wz]; } }
       if (c.pe > 1) c.pe = 0;
       const dm = Math.max(0, (c.dmg || 0) - 45) + (c.isPlayer && c.temp > 112 ? 30 : 0);
       if (dm > 0) { c.se = (c.se || 0) + dm * 0.09 * dt * (this.q ? 1 : 0.5); while (c.se > 1 && pl.length < 255) { c.se -= 1; const g = 0.18 + Math.random() * 0.12 + (c.temp > 112 ? 0.4 : 0);
-        pl.push({ x: c.x + Math.cos(c.h) * 1.6, y: (c.y || 0) + 1.0, z: c.z + Math.sin(c.h) * 1.6, vx: (Math.random() - 0.5) * 0.6 - c.vx * Math.cos(c.h) * 0.2, vy: 1.2 + Math.random(), vz: (Math.random() - 0.5) * 0.6 - c.vx * Math.sin(c.h) * 0.2, life: 0, max: 1.4 + Math.random(), s: 0.5 + Math.random() * 0.4, d: [g, g, g] }); } }
+        pl.push({ x: c.x + Math.cos(c.h) * 1.6, y: (c.y || 0) + (c.airY || 0) + 1.0, z: c.z + Math.sin(c.h) * 1.6, vx: (Math.random() - 0.5) * 0.6 - c.vx * Math.cos(c.h) * 0.2, vy: 1.2 + Math.random(), vz: (Math.random() - 0.5) * 0.6 - c.vx * Math.sin(c.h) * 0.2, life: 0, max: 1.4 + Math.random(), s: 0.5 + Math.random() * 0.4, d: [g, g, g] }); } }
     }
     for (let i = pl.length - 1; i >= 0; i--) { const p = pl[i]; p.life += dt; if (p.life > p.max) { pl[i] = pl[pl.length - 1]; pl.pop(); continue; } p.x += p.vx * dt; p.y += p.vy * dt; p.z += p.vz * dt;
       if (p.stone) { p.vy -= 9.8 * dt; if (p.vy < 0 && p.y < this.trk.heightAt(p.x, p.z) + 0.02) p.life = p.max + 1; } else { p.s += dt * 1.65; p.vx *= 1 - dt * 0.9; p.vz *= 1 - dt * 0.9; p.vy *= 1 - dt * 0.6; } }
@@ -1124,55 +1347,73 @@ export class Race {
       const hF = (T.heightAt(c.x + ch * L - sh * W, c.z + sh * L + ch * W) + T.heightAt(c.x + ch * L + sh * W, c.z + sh * L - ch * W)) / 2;
       const hR = (T.heightAt(c.x - ch * L - sh * W, c.z - sh * L + ch * W) + T.heightAt(c.x - ch * L + sh * W, c.z - sh * L - ch * W)) / 2;
       const hL = (T.heightAt(c.x - sh * W, c.z + ch * W) + T.heightAt(c.x - sh * W + ch * L * 0.5, c.z + ch * W + sh * L * 0.5)) / 2, hRt = (T.heightAt(c.x + sh * W, c.z - ch * W) + T.heightAt(c.x + sh * W + ch * L * 0.5, c.z - ch * W + sh * L * 0.5)) / 2;
-      // hjulen ska alltid stå på marken: höjd och lutning sätts direkt (ingen eftersläpning som gör att bilen sjunker/svävar)
       c.y = (hF + hR) / 2; c.tPitch = Math.atan2(hF - hR, 2 * L); c.tRoll = Math.atan2(hL - hRt, 2 * W);
-      // Fjädring: nickning av längsacceleration (gas = fronten upp, broms = fronten ner) – starkare bil ger större acceleration och mer nickning.
-      // Krängning av sidoacceleration utåt i kurvan (mjukare fjädring = mer krängning). Dämpad med fjäder-dämparsvar.
-      const s = c.spec, soft = s.roll || 1, ay = c.vx * c.r, k = Math.min(1, 7 * dt);
-      const tgtP = clamp(c.ax * 0.0075 * soft, -0.075, 0.075), tgtR = clamp(-ay * 0.0035 * soft, -0.035, 0.035);
-      c.bPitch = (c.bPitch || 0) + (tgtP - (c.bPitch || 0)) * k; c.bRoll = (c.bRoll || 0) + (tgtR - (c.bRoll || 0)) * k;
-      // Vibrationer: växer med farten och beror på underlaget (grus mest, asfalt minst) + motorvibration vid höga varv
-      const v = Math.hypot(c.vx, c.vy), st = T.surfTypeAt ? T.surfTypeAt(c.i) : T.surface, rough = (st === 'grus' ? 1 : st === 'is' ? 0.55 : 0.3) * (c.onSurf ? 1 : 2.2) * (1.6 - (s.setup?.damper || 5) * 0.09);
-      c.odo = (c.odo || 0) + v * dt; const a = Math.pow(Math.min(1, v / 33), 1.6) * rough, o = c.odo, sd = c.slot * 1.7;
-      const nz = Math.sin(o * 1.9 + sd) * 0.7 + Math.sin(o * 4.3 + sd * 2) * 0.3, er = Math.sin(this.t * (c.rpm / 60) * 6.283) * Math.max(0, c.rpm - 4500) / 30000;
-      c.bY = a * nz * 0.005 + er * 0.0008; c.vR = a * Math.sin(o * 5.3 + sd * 1.3) * 0.0012; c.vP = a * Math.sin(o * 4.1 + sd * 0.7) * 0.001;
+      // Behåll 4-hjulig fysik-nickning & krängning från phys() (bodyPitch / bodyRoll)
+      c.bPitch = c.bodyPitch || 0; c.bRoll = c.bodyRoll || 0;
+      // Vägojämnhets-vibrationer: växer med farten, starkast på grus och utanför vägen, tystnar i luften över krön
+      const s = c.spec, gc = (c.airY || 0) <= 0.01 ? 1 : clamp(1 - (c.airY - 0.01) / 0.09, 0, 1);
+      const v = Math.hypot(c.vx, c.vy), st = T.surfTypeAt ? T.surfTypeAt(c.i) : T.surface, rough = (st === 'grus' ? 1.15 : st === 'is' ? 0.6 : 0.28) * (c.onSurf ? 1 : 2.2) * (1.6 - (s.setup?.damper || 5) * 0.09);
+      c.odo = (c.odo || 0) + v * dt; const a = Math.pow(Math.min(1, v / 32), 1.5) * rough * gc, o = c.odo, sd = c.slot * 1.7;
+      const nz = Math.sin(o * 1.9 + sd) * 0.65 + Math.sin(o * 4.7 + sd * 2) * 0.35, er = Math.sin(this.t * (c.rpm / 60) * 6.283) * Math.max(0, c.rpm - 4200) / 28000;
+      c.bY = a * nz * 0.0055 + er * 0.0009; c.vR = a * Math.sin(o * 5.3 + sd * 1.3) * 0.0014; c.vP = a * Math.sin(o * 4.1 + sd * 0.7) * 0.0012;
+      if (c !== p) c.landImpact = 0;
     }
-    const pY = p.y, pSl = Math.atan(p.slope || 0);
-    // kupén och förarkameran följer karossen (markens lutning + krängning, nickning och vibration)
-    const pMat = M4.car(p.x, pY + (p.bY || 0), p.z, p.h, (p.tRoll || 0) - (p.bRoll || 0) - (p.vR || 0), (p.tPitch || 0) + (p.bPitch || 0) + (p.vP || 0));
+    // Levande GoPro & förarkamera: G-kraftsrörelser, vägojämnhets-vibrationer på grus, landningsimpuls & krockskak
+    const gK = Math.min(1, 9 * dt);
+    this.camGx = (this.camGx || 0) + ((p.ax || 0) - (this.camGx || 0)) * gK;
+    this.camGy = (this.camGy || 0) + ((p.ay || 0) - (this.camGy || 0)) * gK;
+    if ((p.landImpact || 0) > 0.01) {
+      this.camLandVy = clamp((this.camLandVy || 0) - p.landImpact * 1.45, -2.2, 1.5);
+      p.landImpact = 0;
+    }
+    const wCam = 18.0, zCam = 0.56;
+    this.camLandVy = (this.camLandVy || 0) + (-wCam * wCam * (this.camLandY || 0) - 2 * zCam * wCam * (this.camLandVy || 0)) * dt;
+    this.camLandY = clamp((this.camLandY || 0) + this.camLandVy * dt, -0.065, 0.038);
+    this.shake = Math.max(0, (this.shake || 0) - dt * 3.4);
+    const shk = (this.shake || 0) * (this.shake || 0);
+    const shkX = shk * Math.sin(this.t * 67) * 0.022, shkY = shk * Math.cos(this.t * 53) * 0.018;
+    const pV = Math.hypot(p.vx, p.vy);
+    const pSt = this.trk.surfTypeAt ? this.trk.surfTypeAt(p.i) : this.trk.surface;
+    const pGc = (p.airY || 0) <= 0.01 ? 1 : clamp(1 - (p.airY - 0.01) / 0.09, 0, 1);
+    const grvVib = (pSt === 'grus' ? 1 : pSt === 'is' ? 0.55 : 0.22) * (p.onSurf ? 1 : 1.9) * Math.min(1, pV / 28) * pGc;
+    const driftLook = pV > 6 && p.vx > 2 ? clamp(Math.atan2(p.vy, Math.max(6, p.vx)) * 0.24, -0.14, 0.14) : 0;
+
+    const pY = p.y + (p.airY || 0), pSl = Math.atan(p.slope || 0);
+    // kupén och förarkameran följer karossen (markens lutning + 3D-hopp + fjädringskompression + krängning, nickning och vibration)
+    const pMat = M4.car(p.x, pY + (p.bY || 0) + (p.suspY || 0) * 0.75, p.z, p.h, (p.tRoll || 0) - (p.bRoll || 0) - (p.vR || 0), (p.tPitch || 0) + (p.bPitch || 0) + (p.vP || 0));
 
     let eye, at, up = [0, 1, 0], fov = 1.05;
     if (this.cam === DEFAULT_CAM) {
-      // Förarens ögon bakom ratten, innanför taket och vindrutan.
-      // Samma stabila bilram för kamera och kupé: ingen extra skakning/krängning.
-      // Huvudet följer marken men bara delvis karossen (kroppen/nacken tar upp rörelsen), så man SER hur huven och
-      // instrumentbrädan reser sig vid gas, dyker vid broms och kränger i kurvor. I kurvor kastas huvudet åt sidan, utåt.
-      const ayL = p.vx * p.r, hs = clamp(-ayL * 0.004, -0.035, 0.035), hf = clamp(-p.ax * 0.006, -0.05, 0.05);
-      const m = M4.car(p.x, pY + (p.bY || 0) * 0.5, p.z, p.h, (p.tRoll || 0) - (p.bRoll || 0) * 0.25 - hs * 0.35, (p.tPitch || 0) + (p.bPitch || 0) * 0.2);
+      // Förarens ögon bakom ratten: subtila G-kraftsrörelser, grusvibrationer, blick in i sladden och landningsimpuls efter krön
+      const hs = clamp(-this.camGy * 0.0044, -0.042, 0.042);
+      const hf = clamp(-this.camGx * 0.0054, -0.046, 0.046);
+      const hy = clamp(this.camLandY + Math.sin(this.t * 39) * 0.0022 * grvVib + shkY, -0.065, 0.04);
+      const m = M4.car(p.x, pY + (p.bY || 0) * 0.65 + (p.suspY || 0) * 0.45, p.z, p.h, (p.tRoll || 0) - (p.bRoll || 0) * 0.28 - hs * 0.35 + shkX * 0.4, (p.tPitch || 0) + (p.bPitch || 0) * 0.22 + this.camLandY * 0.45);
       const point = (x, y, z) => [m[0]*x + m[4]*y + m[8]*z + m[12], m[1]*x + m[5]*y + m[9]*z + m[13], m[2]*x + m[6]*y + m[10]*z + m[14]];
-      eye = point(-0.30 + hf, 1.08, -0.31 + hs);
-      at = point(25, 0.95, -0.31 + hs);
+      eye = point(-0.30 + hf, 1.08 + hy, -0.31 + hs + shkX);
+      at = point(25, 0.95 + hy * 0.5, -0.31 + hs + driftLook * 25);
       up = [m[4], m[5], m[6]];
-      fov = 1.15;
+      fov = clamp(1.15 + this.camGx * 0.0024, 1.12, 1.19);
     } else if (this.cam === 0) {
-      // GOPRO ROLL-BAR IN-CAR KUPÉVY (Monterad vid B-stolpen [-0.62, 1.06, 0.02] med vidvinkel precis som i de 4 GoPro-referensbilderna!)
-      const vib = Math.sin(this.t * 45) * 0.0018 * (p.rpm / 6000);
+      // GOPRO ROLL-BAR IN-CAR KUPÉVY: levande B-stolpe-fäste med grusvibration, G-kraftsflex, landningsimpuls och sladdblick
+      const vibY = (Math.sin(this.t * 45) * 0.0018 * (p.rpm / 6000) + (Math.sin(this.t * 58) * 0.6 + Math.cos(this.t * 31) * 0.4) * 0.0038 * grvVib) + this.camLandY * 0.55 + shkY;
+      const vibZ = Math.sin(this.t * 43) * 0.0026 * grvVib + clamp(-this.camGy * 0.0016, -0.018, 0.018) + shkX;
+      const vibX = clamp(-this.camGx * 0.002, -0.02, 0.02);
       const transformPt = (lx, ly, lz) => [
         pMat[0] * lx + pMat[4] * ly + pMat[8] * lz + pMat[12],
         pMat[1] * lx + pMat[5] * ly + pMat[9] * lz + pMat[13],
         pMat[2] * lx + pMat[6] * ly + pMat[10] * lz + pMat[14],
       ];
-      eye = transformPt(-0.62, 1.06 + vib, 0.02);
-      // Titta snett nedåt-framåt så hela kupén (hjälm, overall-armar, mockaratt, aluminiumpanel, Eventtec-skylt, golvrör & dörrsträvor) syns!
-      at = transformPt(8.0, 0.25 + vib, -0.08 + p.steer * 0.85);
+      eye = transformPt(-0.62 + vibX, 1.06 + vibY, 0.02 + vibZ);
+      at = transformPt(8.0, 0.25 + vibY * 1.4, -0.08 + p.steer * 0.85 + driftLook * 5.0);
       up = [pMat[4], pMat[5], pMat[6]];
-      fov = 1.28;
+      fov = clamp(1.28 + this.camGx * 0.002, 1.25, 1.32);
     } else if (this.cam === 1) {
-      // HUVKAMERA (framme på motorhuven)
-      const c = Math.cos(p.h), s = Math.sin(p.h);
-      eye = [p.x + c * 0.55, pY + 1.18, p.z + s * 0.55];
-      at = [p.x + c * 14, pY + 0.85 + 14 * (p.slope || 0), p.z + s * 14];
-      fov = 1.15;
+      // HUVKAMERA (framme på motorhuven) med subtil grusvibration & landningsimpuls
+      const c = Math.cos(p.h), s = Math.sin(p.h), hy = this.camLandY * 0.65 + (p.suspY || 0) * 0.5 + Math.sin(this.t * 48) * 0.0025 * grvVib + shkY;
+      eye = [p.x + c * 0.55, pY + 1.18 + hy, p.z + s * 0.55];
+      at = [p.x + c * 14, pY + 0.85 + 14 * (p.slope || 0) + hy * 0.4, p.z + s * 14];
+      fov = clamp(1.15 + this.camGx * 0.002, 1.12, 1.19);
     } else if (this.cam === 2) {
       // BAKOM NÄRA
       eye = [p.x - ch * 6.8, 0, p.z - sh * 6.8]; eye[1] = Math.max(pY + 2.7, this.trk.heightAt(eye[0], eye[2]) + 1.6);
@@ -1184,7 +1425,7 @@ export class Race {
     }
 
     for (const c of this.cars) if (c.obj && (c.dmg || 0) > 4) this.view.damageCar(c.obj, c.dmg);
-    for (const c of this.cars) this.view.poseCar(c.obj, c.x, c.y, c.z, c.h, c.tRoll || 0, c.tPitch || 0, c.steer, c.wspin, c.brk > 0.1, !(c === p && (this.cam === 0 || this.cam === 1 || this.cam === DEFAULT_CAM)), (c.bRoll || 0) + (c.vR || 0), (c.bPitch || 0) + (c.vP || 0), c.bY || 0);
+    for (const c of this.cars) this.view.poseCar(c.obj, c.x, c.y, c.z, c.h, c.tRoll || 0, c.tPitch || 0, c.steer, c.wheelSpin ?? c.wspin, c.brk > 0.1, !(c === p && (this.cam === 0 || this.cam === 1 || this.cam === DEFAULT_CAM)), (c.bodyRoll || 0) + (c.vR || 0), (c.bodyPitch || 0) + (c.vP || 0), (c.bY || 0) + (c.suspY || 0), c);
     let cockpit = null;
     if (this.cam === 0) { const sway = clamp((p.ay || 0) * 0.045 + Math.sin(this.t * 6.0) * 0.03, -0.45, 0.45);
       cockpit = [pMat, M4.mul(pMat, M4.localRotX(0.16, 0.78, -0.31, 0.22, p.steer * 0.85)), M4.mul(pMat, M4.localRotX(0.30, 1.06, -0.02, 0.0, sway)), null]; }
@@ -1192,7 +1433,7 @@ export class Race {
       const m = pMat;
       cockpit = [null, M4.mul(m, M4.localRotX(0.16, 0.78, -0.31, 0.22, p.steer * 0.85)), null, m];
     }
-    this.view.frame({ eye, at, up, fov, focus: [p.x, pY, p.z], particles: this.pl, dust: this.trk.surf.dust, cockpit, gauges: { rpm: p.rpm || 0, max: (p.spec?.redline || 7000) + 500, kmh: Math.hypot(p.vx, p.vy) * 3.6, temp: p.temp || 80 } });
+    this.view.frame({ eye, at, up, fov, dt, t: this.t, focus: [p.x, pY, p.z], particles: this.pl, dust: this.trk.surf.dust, cockpit, gauges: { rpm: p.rpm || 0, max: (p.spec?.redline || 7000) + 500, kmh: Math.hypot(p.vx, p.vy) * 3.6, temp: p.temp || 80 } });
   }
 
   hud(dt) {
