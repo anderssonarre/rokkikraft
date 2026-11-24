@@ -82,6 +82,7 @@ export function buildSpec(carId, cs, tune) {
   // specialkod-bil: exakt 3000 hk, 250 kW kylare, dubbelt grepp
   if (cs?.perks?.cool250) s.cool = Math.max(s.cool, 250);
   if (cs?.perks?.grip2) s.gripX = Math.max(s.gripX || 1, 2);
+  if (cs?.perks?.hpT) { const h0 = curve(s).hp; if (h0 > 0) s.tqS *= cs.perks.hpT / h0; if (cs.perks.hpT > 200) s.cool = Math.max(s.cool, 40 + cs.perks.hpT * 0.12); } // spec-bil: exakt effekt + kylning som räcker
   if (cs?.perks?.hp3000) { const h0 = curve(s).hp; if (h0 > 0) s.tqS *= 3000 / h0; }
   return s;
 }
@@ -199,3 +200,18 @@ export function torqueTable(s) {
 }
 
 export const fmt = (v, d = 0) => v.toLocaleString('sv-SE', { minimumFractionDigits: d, maximumFractionDigits: d });
+
+// Spec-bilar 1–5 (alla kör samma bil): Mazda 626 med fast effekt och inställningar
+export const SPEC_CARS = [null,
+  { hp: 150, tune: {} },
+  { hp: 220, tune: { toeF: 0.40 } },
+  { hp: 473, tune: { toeF: -1.0, camber: -1.8 } },
+  { hp: 849, tune: { toeF: -1.2, rake: 7, camber: -1.8, width: 60, rim: 38, finalScale: 1.20, bias: 0.64 } },
+  { hp: 1478, tune: { toeF: -1.5, width: 70, rim: 30, bias: 0.67, rake: 7, finalScale: 1.80, gearSpread: 0.50, rideR: 14, rideF: 15 } },
+];
+const specCache = {};
+export function specCar(lvl) {
+  lvl = Math.max(1, Math.min(5, Math.round(lvl))); if (specCache[lvl]) return specCache[lvl];
+  const d = SPEC_CARS[lvl], sp = buildSpec('mazda626', { build: { strip: 1, cage: 1, seat: 1, net: 1, switch: 1 }, upg: {}, perks: { hpT: d.hp } }, { ...defaultTune(), ...d.tune });
+  sp.specLvl = lvl; return specCache[lvl] = sp;
+}

@@ -1,6 +1,6 @@
 // Alla menyvyer + tävlingsdagens logik enligt ROKKIRALLI RY SÄÄNTÖKIRJA (21.04.2026).
 import { TYRES, CARS, ENGINES, CLASSES, CLASS_RULES, BUILD, UPG, FUELS, PAINTS, TRACKS, SURF, CAREER, FINALS, calcPoints, PRIZE_SHARE, CODES, MARKS, DRIVERS, KOMP } from './data.js';
-import { buildSpec, engineAt, curve, carById, engById, fuelById, defaultTune, fmt, checkInspection, formatCarNum, SETUP_DEF } from './engine.js';
+import { buildSpec, engineAt, curve, carById, engById, fuelById, defaultTune, fmt, checkInspection, formatCarNum, SETUP_DEF, SPEC_CARS, specCar } from './engine.js';
 import { S, save, reset, activeCar } from './state.js';
 import { getTrack } from './track.js';
 import { Race, fmtTime, accel0100 } from './race.js';
@@ -101,7 +101,7 @@ const plate = (numStr, col, bw = 'wb') => {
 
 // ---------- karriär & banprofil ----------
 function karriar() {
-  const insp = currentInsp(), ok = insp.ok, car = carById(S.active), rules = insp.rules;
+  const insp = currentInsp(), ok = insp.ok || (U.view === 'play' ? !!U.quick.cm : !!champCfg().cm), car = carById(S.active), rules = insp.rules; // spec-läge: egen bil behöver inte vara besiktad
   const aid = (k, name, on, off) => `<button class="aid ${S.aids[k] ? 'on' : ''}" data-act="aid" data-arg="${k}"><b>${name}</b><i>${S.aids[k] ? 'PÅ' : 'AV'}</i><small>${S.aids[k] ? on : off}</small></button>`;
   const q = U.quick, trkObj = getTrack(q.track), trkDef = TRACKS.find(t => t.id === q.track) || TRACKS[0], rec = S.records[q.track];
   let h = '';
@@ -129,7 +129,8 @@ function karriar() {
   if (U.view !== 'play') { const cc = champCfg(), F = (a, v, cur) => `<button class="chip s ${cur === v ? 'on' : ''}" data-act="${a}" data-arg="${v}">${v}</button>`;
     h += `<section class="panel"><h2>Mästerskapsinställningar</h2><div class="row"><span class="lbl">Förare per start</span>${[4, 5, 6, 7, 8].map(n => F('cc-per', n, cc.perStart)).join('')}</div>
       <div class="row"><span class="lbl">Alkuerä-heat</span>${[2, 3, 4, 5, 6, 7, 8].map(n => F('cc-heats', n, cc.heats)).join('')}<span class="dim">= ${cc.perStart * cc.heats} startplatser</span></div>
-      <div class="row"><span class="lbl">AI-svårighet ${cc.diff} %</span><input type="range" min="1" max="100" step="1" value="${cc.diff}" data-in="cc-diff"></div></section>`; }
+      <div class="row"><span class="lbl">AI-svårighet ${cc.diff} %</span><input type="range" min="1" max="100" step="1" value="${cc.diff}" data-in="cc-diff"></div>
+      ${carModeRow('cc-cm', cc.cm)}</section>`; }
   h += `<section class="panel"><h2>Förarhjälpmedel</h2><div class="aids">
     ${aid('abs', 'ABS', 'Hjulen låser sig inte vid hård broms.', 'Full broms låser hjulen – bilen går rakt fram.')}
     ${aid('tc', 'Antispinn', 'Drivhjulen spinner inte loss.', 'Fullgas ger hjulspinn; bakhjulsdrivare sladdar på gasen.')}
@@ -157,6 +158,7 @@ function karriar() {
           <span class="lbl">Lisälenkki</span><button class="chip s ${q.joker ? 'on' : ''}" data-act="q-joker">${q.joker ? 'PÅ' : 'AV'}</button></div>
         <div class="row"><span class="lbl">Väder</span>${WEATHER.map(([k, n]) => `<button class="chip s ${(q.weather || 'sol') === k ? 'on' : ''}" data-act="q-weather" data-arg="${k}">${n}</button>`).join('')}</div>
         <div class="row"><span class="lbl">AI-svårighet ${q.ai} %</span><input type="range" min="1" max="100" step="1" value="${q.ai}" data-in="q-ai"></div>
+        ${carModeRow('q-cm', q.cm)}
         <div class="row"><button class="btn" data-act="quick-race" ${ok ? '' : 'disabled'}>🏁 Starta träningsheat</button><button class="btn ghost" data-act="quick-time" ${ok ? '' : 'disabled'}>⏱ Tidskörning</button></div>
       </div>
       <div class="g-curve" style="display:flex;flex-direction:column;align-items:center">
@@ -168,7 +170,7 @@ function karriar() {
   return h;
 }
 function careerLevels(insp, rules) {
-  const ok = insp.ok; let h = '';
+  const ok = insp.ok || !!champCfg().cm; let h = '';
   CAREER.forEach((L, li) => {
     const open = levelOpen(li), pts = levelPts(li), laps = Math.max(rules.minLaps, L.id === 'mestari' ? 3 : rules.minLaps);
     h += `<section class="panel level ${open ? '' : 'locked'}"><div class="lv-head"><h2><i>${li + 1}</i>${L.name}</h2><span>${L.sub} · ${pts} p</span></div>
@@ -289,7 +291,17 @@ const FIRST = ['Pena', 'Jorma', 'Late', 'Tuukka', 'Reiska', 'Vesa', 'Kake', 'Ilp
 const LAST = ['Rämäkkö', 'Kaasujalka', 'Sivuluisu', 'Soranen', 'Pultti', 'Vänkäri', 'Kardaani', 'Ilmanotto', 'Sytytys', 'Hiekkala', 'Akseli', 'Jousi', 'Pakosarja', 'Turbonen', 'Öljypohja', 'Rattinen', 'Vaihde', 'Etuveto', 'Takaveto', 'Jäärata', 'Kytkin', 'Mutkanen', 'Ruostela', 'Peltonen', 'Kolari', 'Lokasuoja', 'Nastarengas', 'Tunkki'];
 function aiNames(n) { const set = new Set(), out = shuffle(DRIVERS).slice(0, Math.min(n, 12)); out.forEach(x => set.add(x)); let g = 0; while (out.length < n && g++ < 5000) { const x = pick(FIRST) + ' ' + pick(LAST); if (!set.has(x)) { set.add(x); out.push(x); } } return shuffle(out); }
 // boostHp: ALLA AI får exakt så många hk – starkaste riktiga spelarens hk + 500 (snabblopp: dina hk + 500)
-function makeOpps(n, li, diff, cls, boostHp) {
+// Bilval för tävlingen: 0 = alla kör egen bil från garaget, 1–5 = alla kör samma spec-bil (AI:n en nivå högre, max 5)
+const aiSpec = lvl => Math.min(5, lvl + 1);
+function carModeRow(act, cur) {
+  cur = cur || 0; const B = (v, n, sm) => `<button class="chip s ${cur === v ? 'on' : ''}" data-act="${act}" data-arg="${v}">${n}${sm ? `<small>${sm}</small>` : ''}</button>`;
+  return `<div class="row"><span class="lbl">Bilar</span>${B(0, 'Egen bil')}${[1, 2, 3, 4, 5].map(l => B(l, `Spec ${l} · ${SPEC_CARS[l].hp} hk`)).join('')}</div>
+    ${cur ? `<p class="dim" style="margin:-4px 0 8px">Alla förare kör Mazda 626 Spec ${cur} (${SPEC_CARS[cur].hp} hk). AI:n kör Spec ${aiSpec(cur)} (${SPEC_CARS[aiSpec(cur)].hp} hk).</p>` : ''}`;
+}
+function makeOpps(n, li, diff, cls, boostHp, specLvl) {
+  if (specLvl) { const names = aiNames(n), mine = activeCar()?.paint, sp = specCar(aiSpec(specLvl)); // spec-läge: alla AI kör spec-bilen en nivå över spelarna
+    return names.map(name => { const d = Math.max(0.01, Math.min(1, diff + (Math.random() - 0.5) * 0.08));
+      return { name, paint: pick(PAINTS.filter(p => p.id !== mine)).rgb, bw: Math.random() < 0.35 ? 'bw' : 'wb', diff: d, skill: 0.6 + 0.4 * d, spec: sp, powScale: 1 }; }); }
   const names = aiNames(n), mine = activeCar().paint, full = { strip: 1, cage: 1, seat: 1, net: 1, switch: 1 };
   const ps = spec(), php = curve(ps).hp; boostHp ??= php + 500; const tune = { ...defaultTune(), ...activeCar().tune, tyre: 'ccplus' }; // alla AI kör på bästa däcken (CrossClimate Plus)
   const poolKey = cls === 'super' || cls === 'supersenior' ? 'super' : cls === 'kardaani' ? 'kardaani' : 'vetari';
@@ -308,7 +320,8 @@ const stageName = ev => ev.stage === 'final' ? FINALS[ev.fin] + '-finaali' : STA
 function evStart(arg) {
   const [li, id] = arg.split(':'), L = CAREER[+li], e = L.events.find(x => x.id === id);
   const insp = currentInsp(), rules = insp.rules;
-  if (!insp.ok || S.lippumies > 0) return;
+  const cm0 = champCfg().cm || 0;
+  if ((!insp.ok && !cm0) || S.lippumies > 0) return;
   let usedVoucher = false;
   if (S.vouchers > 0 && rules.fee > 0) { S.vouchers--; usedVoucher = true; }
   else if (S.money >= rules.fee) { S.money -= rules.fee; }
@@ -316,11 +329,11 @@ function evStart(arg) {
   save();
   const cc = champCfg(), laps = Math.max(rules.minLaps, L.id === 'mestari' ? 3 : rules.minLaps), trk = getTrack(e.track);
   const diff = Math.max(0.01, Math.min(1, cc.diff / 100 + [-0.08, 0, 0.05, 0.1][+li]));
-  const opps = makeOpps(cc.perStart * cc.heats - 1, +li, diff, insp.cls, curve(spec()).hp + 500), O = {}; // AI: 500 hk mer än du
-  const ents = [{ id: 'me', name: `${S.name || 'Du'}`, me: 1, kgHp: curve(spec()).kgHp, diff: 1 }];
+  const cm = cc.cm || 0, opps = makeOpps(cc.perStart * cc.heats - 1, +li, diff, insp.cls, curve(spec()).hp + 500, cm), O = {}; // AI: 500 hk mer än du (spec-läge: en spec-nivå högre)
+  const ents = [{ id: 'me', name: `${S.name || 'Du'}`, me: 1, kgHp: curve(cm ? specCar(cm) : spec()).kgHp, diff: 1 }];
   opps.forEach((o, i) => { const id = 'ai' + i; O[id] = { ...o, nid: id }; ents.push({ id, name: o.name, diff: o.diff, kgHp: curve(o.spec).kgHp / (o.powScale || 1) }); });
   U.ev = {
-    li: +li, e, L, cls: insp.cls, rules, laps, O, ch: newChamp({ perStart: cc.perStart, heats: cc.heats, laps, joker: rules.joker, trackLen: trk.len }, ents),
+    li: +li, e, L, cls: insp.cls, rules, laps, O, cm, ch: newChamp({ perStart: cc.perStart, heats: cc.heats, laps, joker: rules.joker, trackLen: trk.len }, ents),
     dmg: 0, radLeak: false, exhaustLoose: false, needKaatoInsp: false, hist: [],
     cleanDay: true, protestUsed: false, arvat: 0, saleEligible: false, saleDone: false, saleMsg: '', feePaid: rules.fee, usedVoucher, over: null, last: null,
   };
@@ -343,7 +356,7 @@ function evRun(heatId, watch) {
   if (watch) { if (!defs.length) return; startRace({ trackId: ev.e.track, laps: ev.laps, opps: defs.slice(1), player: defs[0], spectate: true, grid: 0, gridRows: ev.rules.gridRows, useJoker: ev.rules.joker, sideContact: true, title: '👁 ' + title, mode: 'heat', onDone: done }); return; }
   startRace({
     trackId: ev.e.track, laps: ev.laps, opps: defs, grid: h.ids.indexOf('me'), gridRows: ev.rules.gridRows, useJoker: ev.rules.joker, sideContact: ev.rules.sideContact,
-    title, dmg0: ev.dmg, radLeak0: ev.radLeak, wear0: ev.wear, mode: 'heat', onDone: done,
+    title, dmg0: ev.dmg, radLeak0: ev.radLeak, wear0: ev.wear, mode: 'heat', onDone: done, specLvl: ev.cm || 0,
   });
 }
 
@@ -449,7 +462,7 @@ function countRace(trackId, res) { const st = stats(), d = Math.max(0, res.dur |
 function record(track, lap) { if (!S.records[track] || lap < S.records[track]) { S.records[track] = lap; save(); } }
 
 function startRace(o) {
-  const cs = activeCar(), insp = currentInsp(), s = insp.spec;
+  const cs = activeCar(), insp = currentInsp(), s = o.specLvl ? specCar(o.specLvl) : insp.spec; // spec-läge: alla kör samma bil
   const numStr = formatCarNum(cs.num, insp.cls);
   U.view = 'race'; document.body.classList.add('racing'); app().innerHTML = ''; MUSIC.stop();
   const done = o.onDone;
@@ -513,8 +526,8 @@ function netRace(h, grid, cfg, lead, watch) {
   const amLead = lead === room.id;
   const defs = grid.filter(g => watch || g.id !== room.id).map(g => g.ai
     ? { name: g.name, paint: g.paint, bw: g.bw, diff: g.diff, powScale: g.powScale, spec: g.spec, nid: g.id, remote: watch || !amLead }
-    : { name: g.name, paint: g.car.paint, bw: g.car.bw, num: g.car.num, skill: 1, spec: g.car.spec, nid: g.id, remote: true });
-  const base = { trackId: cfg.track, laps: cfg.laps, gridRows: 2, useJoker: !!cfg.joker, sideContact: true, mode: 'heat', weather: cfg.weather, net: room, heatId: h, netLead: lead };
+    : { name: g.name, paint: g.car.paint, bw: g.car.bw, num: g.car.num, skill: 1, spec: cfg.cm ? specCar(cfg.cm) : g.car.spec, nid: g.id, remote: true });
+  const base = { trackId: cfg.track, laps: cfg.laps, gridRows: 2, useJoker: !!cfg.joker, sideContact: true, mode: 'heat', weather: cfg.weather, net: room, heatId: h, netLead: lead, specLvl: cfg.cm || 0 };
   if (watch) { const hum = defs.filter(d => grid.find(g => g.id === d.nid && !g.ai)), first = hum.find(d => d.nid !== room.id) || hum[0] || defs[0], rest = defs.filter(d => d !== first); // börja på en kompis, inte en AI
     startRace({ ...base, opps: rest, player: first, spectate: true, grid: 0, title: '👁 Online', onDone: () => { room.backToLobby(); U.view = 'online'; render(); } }); return; }
   startRace({ ...base, opps: defs, grid: my, title: 'Online – ' + (ON.champ?.heats?.find(x => x.id === h)?.name || 'heat'),
@@ -525,8 +538,8 @@ function netRace(h, grid, cfg, lead, watch) {
 function hostStart() {
   const room = ON.room, cfg = room.cfg; if (!room || !room.isHost) return;
   const humans = room.members.filter(m => m.car && m.car.spec);
-  const maxHp = Math.max(curve(spec()).hp, ...humans.map(m => m.car.hp || 0)), nAi = Math.max(0, Math.min(30, cfg.ai)), opps = makeOpps(nAi, 1, Math.max(0.01, cfg.diff / 100), currentInsp().cls, maxHp + 500); // AI: 500 hk mer än starkaste spelaren
-  ON.O = {}; const ents = humans.map(m => ({ id: m.id, name: m.name, human: 1, kgHp: m.car.kgHp || 7 }));
+  const maxHp = Math.max(curve(spec()).hp, ...humans.map(m => m.car.hp || 0)), nAi = Math.max(0, Math.min(30, cfg.ai)), opps = makeOpps(nAi, 1, Math.max(0.01, cfg.diff / 100), currentInsp().cls, maxHp + 500, cfg.cm || 0); // AI: 500 hk mer än starkaste spelaren (spec-läge: en nivå högre)
+  ON.O = {}; const ents = humans.map(m => ({ id: m.id, name: m.name, human: 1, kgHp: cfg.cm ? curve(specCar(cfg.cm)).kgHp : m.car.kgHp || 7 }));
   opps.forEach((o, i) => { const id = 'ai' + i; ON.O[id] = { id, ai: 1, ...o }; ents.push({ id, name: o.name, diff: o.diff, kgHp: curve(o.spec).kgHp / (o.powScale || 1) }); });
   const trkLen = getTrack(cfg.track).len;
   ON.ch = ents.length <= cfg.perStart
@@ -602,12 +615,13 @@ function online() {
       <div class="row"><span class="lbl">Varv ${cfg.laps}</span><input type="range" min="1" max="100" step="1" value="${cfg.laps}" data-in="on-laps"></div>
       <div class="row"><span class="lbl">AI-motståndare ${cfg.ai}</span><input type="range" min="0" max="30" step="1" value="${cfg.ai}" data-in="on-ai"></div>
       <div class="row"><span class="lbl">AI-svårighet ${cfg.diff} %</span><input type="range" min="1" max="100" step="1" value="${cfg.diff}" data-in="on-diff"></div>
+      ${carModeRow('on-cm', cfg.cm || 0)}
       <div class="row"><span class="lbl">Förare per start</span>${[4, 5, 6, 7, 8].map(n => C('perStart', n)).join('')}<span class="lbl">Jokerlap</span>${C('joker', cfg.joker ? 0 : 1, cfg.joker ? 'PÅ' : 'AV')}</div>
       <p class="dim">${room.members.length + cfg.ai} förare totalt → ${room.members.length + cfg.ai > cfg.perStart ? `mästerskap med ${Math.ceil((room.members.length + cfg.ai) / cfg.perStart)} alkuerä-heat` : 'ett heat'}.</p>`}
       ${cs && cs.all && !cs.done ? `<div class="row"><button class="btn" data-act="on-next">▶ Starta nästa omgång</button><button class="btn ghost danger" data-act="on-reset">Avbryt mästerskapet</button></div>`
         : `<div class="row"><button class="btn" data-act="on-start" ${room.connected ? '' : 'disabled'}>🏁 Starta ${room.members.length + cfg.ai > cfg.perStart ? 'mästerskapet' : 'heatet'}</button><button class="btn ghost danger" data-act="on-leave">Stäng rummet</button></div>`}</section>`;
   } else if (!H) {
-    h += `<section class="panel"><h2>Tävlingsinställningar</h2><table class="stats"><tr><td>Bana</td><td>${trk.name}</td></tr><tr><td>Väder</td><td>${(WEATHER.find(w => w[0] === cfg.weather) || WEATHER[0])[1]}</td></tr><tr><td>Varv</td><td>${cfg.laps}</td></tr><tr><td>AI</td><td>${cfg.ai} st · ${cfg.diff} %</td></tr><tr><td>Förare per start</td><td>${cfg.perStart}</td></tr></table>
+    h += `<section class="panel"><h2>Tävlingsinställningar</h2><table class="stats"><tr><td>Bana</td><td>${trk.name}</td></tr><tr><td>Väder</td><td>${(WEATHER.find(w => w[0] === cfg.weather) || WEATHER[0])[1]}</td></tr><tr><td>Varv</td><td>${cfg.laps}</td></tr><tr><td>AI</td><td>${cfg.ai} st · ${cfg.diff} %</td></tr><tr><td>Bilar</td><td>${cfg.cm ? `Alla: Mazda 626 Spec ${cfg.cm} (${SPEC_CARS[cfg.cm].hp} hk) · AI Spec ${aiSpec(cfg.cm)}` : 'Egen bil från garaget'}</td></tr><tr><td>Förare per start</td><td>${cfg.perStart}</td></tr></table>
       <p>${running ? '🏁 Omgången pågår.' : cs && cs.all && !cs.done ? '⏳ Väntar på att värden startar nästa omgång…' : '⏳ Väntar på att värden startar…'}</p>
       ${cs?.skip?.includes(room.id) ? `<div class="row"><button class="btn small" data-act="on-skip">KESKÖIDÄ – hoppa över ${cs.round === 'alku' ? 'Alkuerä' : 'Keräilyerä'}</button></div>` : ''}
       <div class="row"><button class="btn ghost danger" data-act="on-leave">Lämna rummet</button></div></section>`;
@@ -929,6 +943,7 @@ const ACT = {
   },
   'on-retry'() { openRoom(ON.room.code, false); },
   'on-leave'() { leaveRoom(); },
+  'on-cm'(a) { ON.room?.setCfg({ cm: +a }); return false; },
   'on-cfg'(a) { const [k, v] = a.split(':'); ON.room?.setCfg({ [k]: k === 'track' || k === 'weather' ? v : +v }); return false; },
   'on-copy'() { const l = roomLink(ON.room.code); try { navigator.clipboard.writeText(l); } catch (e) { } ON.copied = 1; setTimeout(() => { ON.copied = 0; if (U.view === 'online') render(); }, 1800); },
   'on-start'() { hostStart(); return false; },
@@ -942,12 +957,13 @@ const ACT = {
   'drv-cls'(a) { S.driverCls = a; save(); },
   'do-lippumies'() { S.lippumies = 0; S.warnings = 0; save(); toast('🚩 Du har stått flaggvakt en tävlingsdag (lippumiespesti) – du har nu tävlingsrätt igen!'); },
   'q-track'(a) { U.quick.track = a; }, 'q-laps'(a) { U.quick.laps = +a; }, 'q-opp'(a) { U.quick.opp = +a; },
-  'q-weather'(a) { U.quick.weather = a; },
+  'q-weather'(a) { U.quick.weather = a; }, 'q-cm'(a) { U.quick.cm = +a; },
+  'cc-cm'(a) { champCfg().cm = +a; save(); },
   'q-joker'() { U.quick.joker = U.quick.joker ? 0 : 1; },
   'quick-race'() {
     const q = U.quick, insp = currentInsp(), li = Math.min(3, Math.max(0, Math.round((q.ai - 75) / 10)));
     startRace({
-      trackId: q.track, laps: q.laps, opps: makeOpps(q.opp, li, q.ai / 100, insp.cls),
+      trackId: q.track, laps: q.laps, opps: makeOpps(q.opp, li, q.ai / 100, insp.cls, undefined, q.cm || 0), specLvl: q.cm || 0,
       grid: q.opp, gridRows: insp.rules.gridRows, useJoker: !!q.joker, sideContact: insp.rules.sideContact,
       title: `${insp.rules.name} – Träningsheat`, mode: 'heat', weather: q.weather, onDone: r => quickDone(r),
     });
@@ -955,7 +971,7 @@ const ACT = {
   },
   'quick-time'() {
     const q = U.quick;
-    startRace({ trackId: q.track, laps: q.laps, opps: [], grid: 0, gridRows: 1, useJoker: false, title: 'Tidskörning', mode: 'time', weather: q.weather, onDone: r => quickDone(r, true) });
+    startRace({ trackId: q.track, laps: q.laps, opps: [], specLvl: q.cm || 0, grid: 0, gridRows: 1, useJoker: false, title: 'Tidskörning', mode: 'time', weather: q.weather, onDone: r => quickDone(r, true) });
     return false;
   },
   'ev-start'(a) { evStart(a); window.scrollTo(0, 0); },
