@@ -940,6 +940,8 @@ function settings() {
   <section class="panel"><h2>Upplösning</h2><div class="row">${[['auto', 'Auto (skärmens)'], ['1440', '1440p'], ['1080', '1080p'], ['720', '720p'], ['540', '540p']].map(q => `<button class="chip s ${(st.res || 'auto') === q[0] ? 'on' : ''}" data-act="res" data-arg="${q[0]}">${q[1]}</button>`).join('')}</div><p class="dim">Hur många bildrader 3D-vyn renderas med. Lägre ger högre bildfrekvens, högre ger skarpare bild. HUD:en påverkas inte.</p></section>
   <section class="panel"><h2>Pekskärmskontroller</h2><div class="row">${[['auto', 'Auto'], ['on', 'På'], ['off', 'Av']].map(q => `<button class="chip s ${st.touch === q[0] ? 'on' : ''}" data-act="touch" data-arg="${q[0]}">${q[1]}</button>`).join('')}</div></section>
   <section class="panel"><h2>Realism</h2><div class="row"><span class="lbl">Mekaniska skador</span>${[[true, 'På'], [false, 'Av']].map(([v, n]) => `<button class="chip s ${(st.mechDmg !== false) === v ? 'on' : ''}" data-act="mechdmg" data-arg="${v ? 1 : 0}">${n}</button>`).join('')}</div>
+    <div class="row"><span class="lbl">Avancerad däckmodell</span>${[[true, 'På'], [false, 'Av']].map(([v, n]) => `<button class="chip s ${!!st.tyreModel === v ? 'on' : ''}" data-act="tyremodel" data-arg="${v ? 1 : 0}">${n}</button>`).join('')}</div>
+    <p class="dim">Avancerad däckmodell: kalla däck (under ca 58 °C, t.ex. första sekunderna) och överhettade däck (över ca 98 °C) greppar sämre, lågt däcktryck värmer däcken snabbare och heta bromsar bleknar. Se däcktemperaturerna i telemetrin [T]. Av = som förut.</p>
     <p class="dim">Hårda smällar kan skada styrningen (ett hjul blir snett och bilen drar åt ena hållet) och växellådan (högsta växeln försvinner, växlingarna blir långsammare). Lagas i depån. Oskadad bil kör exakt som vanligt.</p></section>
   ${controlsPanel()}
   <section class="panel"><h2>Sparning</h2><p class="dim">Pengar, bilar, delar, katsastuskortti, varningar och resultat sparas lokalt i webbläsaren.</p><div class="row"><button class="btn ghost danger" data-act="reset">Återställ sparning</button></div></section>`;
@@ -1157,6 +1159,7 @@ const ACT = {
     if (r.all) { const n = S.dyno[U.taskDiff - 1], pay = n < 6 ? t.reward : Math.round(t.reward * 0.25); S.money += pay; S.dyno[U.taskDiff - 1]++; save(); U.taskMsg = `✓ Rätt! +${eur(pay)}`; } else U.taskMsg = 'Inte helt rätt – rätta svaren visas vid fälten. Ta en ny uppgift.';
   },
   camera(a) { const camera = Number(a); if (Number.isInteger(camera) && CAM_NAMES[camera]) { S.settings.camera = camera; save(); } },
+  tyremodel(a) { S.settings.tyreModel = a === '1'; save(); },
   mechdmg(a) { S.settings.mechDmg = a === "1"; save(); },
   quality(a) { S.settings.quality = a; save(); }, res(a) { S.settings.res = a; save(); }, touch(a) { S.settings.touch = a; save(); },
   reset() { if (U.confirmReset) { reset(); U.confirmReset = false; toast('Sparningen är återställd.'); U.view = 'menu'; } else { U.confirmReset = true; toast('Tryck en gång till för att radera allt.'); setTimeout(() => U.confirmReset = false, 4000); } },

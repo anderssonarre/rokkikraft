@@ -172,7 +172,7 @@ export function phys(c, dt, trk) {
     else if (rpm < s.redline) Fd = c.tq(rpm) * c.thr * c.pow * gr * s.eff / s.rw * (1 - cl);
     if (c.thr < 0.05 && c.vx > 1) Fd -= (0.97 + 0.15 * rpm / 1000) * 1e5 * s.Vd * 1e-3 / 12.566 * gr / s.rw * (1 - cl);
     const wk = trk.wetK ? (st === 'asfalt' ? trk.wetK[0] : trk.wetK[1]) : 1;
-    const capF = mu * wk * FzfEff * (s.muF || 1), capR = mu * wk * FzrEff * (s.muR || 1), muE = mu * wk;
+    const capF = mu * wk * FzfEff * (s.muF || 1) * (c.tgF || 1), capR = mu * wk * FzrEff * (s.muR || 1) * (c.tgR || 1), muE = mu * wk; // tgF/tgR = däcktemperatur (avancerad däckmodell, annars 1)
     // Differential. Öppen diff: i kurva avlastas innerhjulet och det spinner först → mindre drivkraft ut ur kurvan.
     // Svetsad diff (lukkoperä): båda hjulen drar alltid fullt, men axeln vill gå rakt och släpper plötsligt.
     const welded = !!s.trac, latUse = Math.min(1, Math.abs(c.vx * c.r) / (muE * G + 0.1));
@@ -198,7 +198,7 @@ export function phys(c, dt, trk) {
     if (Fd < -capD) Fd = -capD;
     c.slip = slip;
     let Fbf = 0, Fbr = 0, lockF = false, lockR = false; const sg = c.vx >= 0 ? 1 : -1;
-    if (c.brk > 0 && FzTot > 1) { const Fb = c.brk * 1.12 * m * G * s.brake; Fbf = Fb * s.bias; Fbr = Fb * (1 - s.bias);
+    if (c.brk > 0 && FzTot > 1) { const Fb = c.brk * 1.12 * m * G * s.brake * (c.fade || 1); Fbf = Fb * s.bias; Fbr = Fb * (1 - s.bias);
       if (Fbf > capF) { if (c.aids.abs) Fbf = capF * 0.96; else { lockF = true; Fbf = capF * 0.82; } }
       const prop = capR * (fwd ? 0.55 : 0.85); // lastkännande bromskraftsfördelare: framhjulsdrivna bilar är extra bakbromsade-snåla → drar rakt
       if (Fbr > prop && !c.aids.abs) Fbr = prop;
@@ -1125,6 +1125,12 @@ export class Race {
         const tgtF = 55 + slideHeat + Math.abs(c.steer) * 8, tgtR = 52 + slideHeat + (c.spec.drv === 'rwd' ? c.thr * 10 : 3);
         c.tireTemp[0] += (tgtF - c.tireTemp[0]) * dt * 0.8; c.tireTemp[1] += (tgtF - c.tireTemp[1]) * dt * 0.8;
         c.tireTemp[2] += (tgtR - c.tireTemp[2]) * dt * 0.8; c.tireTemp[3] += (tgtR - c.tireTemp[3]) * dt * 0.8;
+        if (this.cfg.settings?.tyreModel) { // avancerad däckmodell: greppet beror på däckens temperatur (fönster ca 58–98 °C, lågt tryck = varmare) och bromsarna kan blekna
+          const pr = c.spec.press ?? 2.0, heatK = 1 + 0.5 * Math.max(0, 2 - pr) - 0.25 * Math.max(0, pr - 2);
+          for (let w = 0; w < 4; w++) c.tireTemp[w] += (c.tireTemp[w] - (w < 2 ? 55 : 52)) * (heatK - 1) * dt * 0.8;
+          const g = T => clamp(1 - 0.004 * Math.max(0, 58 - T) - 0.006 * Math.max(0, T - 98), 0.82, 1);
+          c.tgF = g((c.tireTemp[0] + c.tireTemp[1]) / 2); c.tgR = g((c.tireTemp[2] + c.tireTemp[3]) / 2); c.fade = 1 - clamp((c.brakeTemp - 280) * 0.002, 0, 0.25);
+        }
         c.brakeTemp += ((60 + c.brk * 260) - c.brakeTemp) * dt * 1.5;
         // Däckslitage: sladd, hjulspinn och låsning sliter mest, asfalt mer än grus, is nästan inget. Slitna däck ger sämre grepp.
         { const st = trk.surfTypeAt ? trk.surfTypeAt(c.i) : trk.surface, k = st === 'asfalt' ? 1.5 : st === 'is' ? 0.25 : 1, sp = Math.min(1, Math.abs(c.vx) / 25), drvF = c.spec.drv === 'fwd';
