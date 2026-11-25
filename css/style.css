@@ -280,3 +280,10 @@ details{margin:6px 0}details summary{cursor:pointer;font-weight:700;padding:4px 
 .hud-watch span { font: 700 .7rem var(--mono); color: #cbd5e1; text-align: center; min-width: 9rem; line-height: 1.2; }
 .hud-watch b { display: block; font: 900 1.15rem var(--cond); color: #fff; letter-spacing: .04em; }
 .hud-watch button { font: 900 1.3rem var(--cond); width: 52px; height: 46px; border-radius: 10px; border: 0; background: var(--hi); color: #111; cursor: pointer; touch-action: manipulation; }
+
+.invite-box { position: fixed; left: 50%; top: 64px; transform: translateX(-50%); z-index: 60; display: flex; align-items: center; gap: 10px; background: rgba(14,18,24,.96); border: 2px solid var(--hi); border-radius: 14px; padding: 10px 12px; box-shadow: 0 8px 30px rgba(0,0,0,.5); max-width: calc(100vw - 24px); }
+.invite-box b { display: block; font: 900 1.05rem var(--cond); color: #fff; }
+.invite-box small { color: #cbd5e1; font-family: var(--mono); font-size: .72rem; }
+.inv-list { display: grid; gap: 6px; }
+.inv-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 6px 10px; background: rgba(255,255,255,.04); border-radius: 10px; }
+.inv-row b { display: block; } .inv-row small { color: var(--dim, #94a3b8); font-size: .75rem; }

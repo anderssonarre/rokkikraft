@@ -203,3 +203,34 @@ export class Board {
   }
   close() { this.links.forEach(l => l.close()); }
 }
+
+// ---------- närvaro & inbjudningar ----------
+// Alla som har spelet öppet skickar ett livstecken var 15:e s på rokkikraft/pres1/<id> och prenumererar på rokkikraft/pres1/+.
+// Inbjudningar går på rokkikraft/pres1/inv: { to: [id…], code, from, name } – mottagarna får en "Gå med"-ruta.
+export class Presence {
+  constructor({ getMe, onList, onInvite }) {
+    this.id = rid(); this.getMe = getMe; this.onList = onList || (() => { }); this.onInvite = onInvite || (() => { });
+    this.list = new Map(); this.topic = `rokkikraft/pres${PROTO}/+`;
+    this.links = brokers().map(u => new Mqtt(u, this.topic, m => this.recv(m), () => { this.beat(); this.pub(this.id, { k: 'who', id: this.id }); this.onList(); })); // 'who' = be alla andra svara direkt
+    this.iv = setInterval(() => this.beat(), 15000);
+    this.unload = () => this.pub(this.id, { k: 'bye', id: this.id }); window.addEventListener('pagehide', this.unload);
+  }
+  get connected() { return this.links.filter(l => l.open).length; }
+  pub(sub, o) { const bytes = packet(0x30, str(`rokkikraft/pres${PROTO}/${sub}`), enc.encode(JSON.stringify(o))); for (const l of this.links) if (l.open) l.send(bytes); }
+  beat() { const me = this.getMe(); this.pub(this.id, { k: 'here', id: this.id, name: me.name, room: me.room || '', racing: !!me.racing, t: Date.now() }); this.prune(); }
+  prune() { const now = Date.now(); let ch = false; for (const [k, v] of this.list) if (now - v.seen > 40000) { this.list.delete(k); ch = true; } if (ch) this.onList(); }
+  others() { this.prune(); return [...this.list.values()].filter(p => p.id !== this.id).sort((a, b) => a.name.localeCompare(b.name)); }
+  invite(ids, code, name) { if (!ids.length) return 0; this.pub('inv', { k: 'inv', to: ids.slice(0, 60), code, from: this.id, name, t: Date.now() }); return ids.length; }
+  recv(m) {
+    if (!m || typeof m !== 'object') return;
+    if (m.k === 'here' && typeof m.id === 'string' && m.id !== this.id) {
+      const had = this.list.get(m.id), p = { id: m.id.slice(0, 16), name: String(m.name || 'Förare').slice(0, 20), room: String(m.room || '').slice(0, 4), racing: !!m.racing, seen: Date.now() };
+      this.list.set(m.id, p); if (!had || had.name !== p.name || had.room !== p.room || had.racing !== p.racing) this.onList();
+    } else if (m.k === 'who' && m.id !== this.id) { clearTimeout(this.wt); this.wt = setTimeout(() => this.beat(), 200 + Math.random() * 800);
+    } else if (m.k === 'bye' && this.list.delete(m.id)) this.onList();
+    else if (m.k === 'inv' && Array.isArray(m.to) && m.to.includes(this.id) && m.from !== this.id && typeof m.code === 'string') {
+      if (this.lastInv === m.from + m.code + m.t) return; this.lastInv = m.from + m.code + m.t; // samma inbjudan kan komma via flera mäklare
+      this.onInvite({ code: m.code.slice(0, 4).toUpperCase(), name: String(m.name || 'Någon').slice(0, 20) });
+    }
+  }
+}

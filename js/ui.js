@@ -6,7 +6,7 @@ import { getTrack } from './track.js';
 import { Race, fmtTime, accel0100 } from './race.js';
 import { CAM_NAMES, DEFAULT_CAM } from './race.js';
 import { newTask, checkTask } from './dyno.js';
-import { Room, Board, makeCode, cleanCode } from './net.js';
+import { Room, Board, Presence, makeCode, cleanCode } from './net.js';
 import { newChamp, simHeat, setResult, advance, roundDone, myHeat, canSkip, skip as chSkip, heatName, whereIs, sortRows, ROUND, FIN, A_TABLE, NORMAL_PRIZE } from './champ.js';
 import { Showroom } from './view3.js';
 import { MUSIC } from './music.js';
@@ -40,7 +40,7 @@ export function render() {
   app().innerHTML = `<header class="topbar">${U.view !== 'menu' && U.view !== 'event' ? '<button class="back" data-act="go" data-arg="menu">‹ Meny</button>' : '<span class="brand">ROKKI<b>KRAFT</b></span>'}
     <span class="top-title">${{ karriar: 'Karriär & Banor', event: 'Tävlingsdag', garage: 'Garage & Besiktning', trim: 'Trimning', dyno: 'Räknebänken', komp: 'Kompendium & Sääntökirja', settings: 'Inställningar', setup: 'Bilinställningar', result: 'Resultat', play: 'Spela', name: 'Byt namn', top: 'Global topplista', karriar: 'Karriär', online: 'Online – rumskod' }[U.view] || ''}</span>
     <span class="wallet">${S.warnings > 0 ? `<i style="color:#ff6a3d">⚠ ${S.warnings}/3 varningar</i>` : ''}${S.vouchers > 0 ? `<i style="color:#5ce080">🎟 ${S.vouchers} hyvityskuitti</i>` : ''}<b>${eur(S.money)}</b><i>${CAREER[topLevel()].name}</i></span></header>
-    <main class="view v-${U.view}">${V()}</main>${U.toast ? `<div class="toast">${U.toast}</div>` : ''}`;
+    <main class="view v-${U.view}">${V()}</main>${U.toast ? `<div class="toast">${U.toast}</div>` : ''}${inviteBox()}`;
   if (U.toast) { clearTimeout(U.toastT); U.toastT = setTimeout(() => { U.toast = ''; document.querySelector('.toast')?.remove(); }, 2800); }
   after();
 }
@@ -508,6 +508,32 @@ function netMe() {
   const cs = activeCar(), insp = currentInsp(), s = insp.spec;
   return { name: netName(), car: { spec: s, paint: paintOf(cs.paint).rgb, bw: cs.bw || 'wb', num: formatCarNum(cs.num, insp.cls), model: carById(S.active).name, hp: Math.round(curve(s).hp), kgHp: curve(s).kgHp, cls: insp.rules.name } };
 }
+// ---- inbjudningar: se vilka som har spelet öppet och bjud in dem till rummet ----
+let PRES = null;
+function startPresence() {
+  if (PRES) return; try {
+    PRES = new Presence({
+      getMe: () => ({ name: netName(), room: ON.room && ['lobby', 'race'].includes(ON.room.status) ? ON.room.code : '', racing: U.view === 'race' }),
+      onList: () => { if (U.view === 'online' && ON.room) { clearTimeout(ON.plT); ON.plT = setTimeout(() => { if (U.view === 'online' && ON.room && !document.activeElement?.matches?.('input')) render(); }, 300); } },
+      onInvite: inv => { if (ON.room && ON.room.code === inv.code) return; U.invite = { ...inv, t: Date.now() }; if (U.view !== 'race') render(); },
+    });
+  } catch (e) { PRES = null; }
+}
+function inviteBox() {
+  const v = U.invite; if (!v || U.view === 'race') return ''; if (Date.now() - v.t > 180000) { U.invite = null; return ''; }
+  return `<div class="invite-box"><div><b>🏁 ${esc(v.name)} bjuder in dig</b><small>Online-rum ${esc(v.code)}</small></div>
+    <button class="btn small" data-act="inv-join">Gå med</button><button class="btn small ghost" data-act="inv-no">Nej tack</button></div>`;
+}
+function invitePanel(room) {
+  if (!PRES) return '';
+  const ppl = PRES.others().filter(p => p.room !== room.code), sent = ON.invited || (ON.invited = new Map());
+  const st = p => p.room ? `i rum ${esc(p.room)}` : p.racing ? 'kör ett lopp' : 'i menyerna';
+  return `<section class="panel"><h2>Bjud in spelare</h2>
+    ${!PRES.connected ? '<p class="dim">Ansluter…</p>' : !ppl.length ? '<p class="dim">Ingen annan har spelet öppet just nu. Listan uppdateras av sig själv.</p>' : `
+    <div class="row"><button class="btn" data-act="inv-all">📨 Bjud in alla (${ppl.length})</button></div>
+    <div class="inv-list">${ppl.map(p => `<div class="inv-row"><span><b>${esc(p.name)}</b><small>${st(p)}</small></span>
+      ${sent.get(p.id) && Date.now() - sent.get(p.id) < 60000 ? '<i class="dim">✓ Inbjuden</i>' : `<button class="chip s" data-act="inv-one" data-arg="${esc(p.id)}">Bjud in</button>`}</div>`).join('')}</div>`}</section>`;
+}
 const roomLink = code => location.origin + location.pathname + '?rum=' + code;
 function setRumParam(code) { try { const q = new URLSearchParams(location.search); if (code) q.set('rum', code); else q.delete('rum'); const t = q.toString(); history.replaceState(null, '', location.pathname + (t ? '?' + t : '')); } catch (e) { } }
 function openRoom(code, host) {
@@ -539,6 +565,10 @@ function hostStart() {
   const room = ON.room, cfg = room.cfg; if (!room || !room.isHost) return;
   const humans = room.members.filter(m => m.car && m.car.spec);
   const maxHp = Math.max(curve(spec()).hp, ...humans.map(m => m.car.hp || 0)), nAi = Math.max(0, Math.min(30, cfg.ai)), opps = makeOpps(nAi, 1, Math.max(0.01, cfg.diff / 100), currentInsp().cls, maxHp + 500, cfg.cm || 0); // AI: 500 hk mer än starkaste spelaren (spec-läge: en nivå högre)
+  if (!cfg.cm) { // egen bil: AI:n kör samma bil som den starkaste spelaren, men med 100 hk mer
+    const best = humans.reduce((b, m) => (m.car.hp || 0) > (b?.car.hp || 0) ? m : b, null), bs = best ? best.car.spec : spec(), bh = Math.max(1, curve(bs).hp);
+    for (const o of opps) { o.spec = bs; o.powScale = (bh + 100) / bh; }
+  }
   ON.O = {}; const ents = humans.map(m => ({ id: m.id, name: m.name, human: 1, kgHp: cfg.cm ? curve(specCar(cfg.cm)).kgHp : m.car.kgHp || 7 }));
   opps.forEach((o, i) => { const id = 'ai' + i; ON.O[id] = { id, ai: 1, ...o }; ents.push({ id, name: o.name, diff: o.diff, kgHp: curve(o.spec).kgHp / (o.powScale || 1) }); });
   const trkLen = getTrack(cfg.track).len;
@@ -607,6 +637,7 @@ function online() {
     <section class="panel"><h2>Förare i rummet (${room.members.length}/8)</h2><table class="stats">
       ${room.members.map(m => `<tr><td><span class="dot" style="background:${hex(m.car?.paint || [.5, .5, .5])}"></span><b>${esc(m.name)}</b>${m.host ? ' · värd' : ''}${m.id === room.id ? ' · du' : ''}</td><td>#${esc(m.car?.num)} ${esc(m.car?.model)} · ${esc(m.car?.hp)} hk</td><td>${cs?.where?.[m.id] ? esc(cs.where[m.id]) : ''}</td></tr>`).join('')}</table>
       <div class="row"><button class="btn small ghost" data-act="go" data-arg="garage">Byt bil i garaget</button></div></section>`;
+  if (room.status === 'lobby' || room.status === 'race') h += invitePanel(room); // bjud in andra som har spelet öppet
   if (H && !running) {
     const C = (k, v, n) => `<button class="chip s ${cfg[k] === v ? 'on' : ''}" data-act="on-cfg" data-arg="${k}:${v}">${n ?? v}</button>`;
     h += `<section class="panel"><h2>Tävlingsinställningar</h2>
@@ -934,6 +965,10 @@ const ACT = {
   },
   'bind-reset'() { delete S.settings.binds; save(); },
   go(a) { U.view = a; U.preview = null; if (a === 'komp') U.kompOpen = null; if (a === 'online' && ON.room) ON.room.setMe(netMe()); window.scrollTo(0, 0); },
+  'inv-one'(a) { const r = ON.room; if (!PRES || !r) return; PRES.invite([a], r.code, netName()); (ON.invited ||= new Map()).set(a, Date.now()); toast('📨 Inbjudan skickad'); },
+  'inv-all'() { const r = ON.room; if (!PRES || !r) return; const ids = PRES.others().filter(p => p.room !== r.code).map(p => p.id); PRES.invite(ids, r.code, netName()); ids.forEach(id => (ON.invited ||= new Map()).set(id, Date.now())); toast(`📨 Inbjudan skickad till ${ids.length} spelare`); },
+  'inv-no'() { U.invite = null; },
+  'inv-join'() { const v = U.invite; U.invite = null; if (!v) return; if (!activeCar()) { toast('Du behöver en bil för att köra online.'); return; } if (ON.room) leaveRoom(); ON.code = v.code; U.view = 'online'; openRoom(v.code, false); window.scrollTo(0, 0); },
   'on-create'() { const n = document.getElementById('onName'); if (n) { S.name = n.value.trim() || 'Du'; save(); } openRoom(makeCode(), true); },
   'on-join'() {
     const n = document.getElementById('onName'); if (n) { S.name = n.value.trim() || 'Du'; save(); }
@@ -1142,6 +1177,7 @@ const INP = {
 };
 
 export function initUI() {
+  setTimeout(startPresence, 1500); // närvaro för inbjudningar online
   document.addEventListener('click', e => { const el = e.target.closest('[data-act]'); if (!el || el.disabled) return; const f = ACT[el.dataset.act]; if (!f) return; if (f(el.dataset.arg, el) !== false) render(); });
   document.addEventListener('change', e => { const el = e.target.closest('[data-in]'); if (!el) return; if (el.dataset.in.startsWith('su:')) { const key = el.dataset.in.slice(3), cs = activeCar(), v = +el.value;
       // justeringar är gratis, men nya fälgar eller en annan däckbredd kräver nya delar
