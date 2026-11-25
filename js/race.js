@@ -38,7 +38,7 @@ export function makeCar(def, trk, slot, isPlayer, gridRows = 2, totalCars = 6) {
     i: trk.w(Math.round(trk.n - back)), pf: trk.n - back, lat, prog: -back, onSurf: true,
     jokerDone: false, coneDown: false, jump: false, retired: false, kaato: false,
     sanction: '', sanctionT: Infinity, warnCount: 0,
-    finished: false, finishT: 0, flag: '', dmg: 0, temp: 82, exhaustLoose: false,
+    finished: false, finishT: 0, flag: '', dmg: 0, temp: 82, exhaustLoose: false, steerDmg: 0, gearDmg: 0, pull: 0, gearLoss: 0,
     fuelKg: 18.5, tireWearF: 0, tireWearR: 0, tireTemp: [55, 55, 52, 52], brakeTemp: 60,
     secT: 0, curSec: 0, sectors: [null, null, null],
     pow: isPlayer ? 1 : Math.max(0.7, Math.min(1.04, 0.4 + 0.6 * (def.skill || 1))),
@@ -113,7 +113,7 @@ export function phys(c, dt, trk) {
 
   // lätta bilar har en liten fördel i kurvorna (lastkänslighet), skador försämrar väghållningen
   const mu = surf.mu * s.mu * (s.gripX || 1) * (c.gripF || 1) * (c.onSurf ? 1 : 0.72 + 0.12 * s.susp) * (s.surfK ? s.surfK[st] || 1 : 1) * Math.pow(1150 / m, 0.12) * (1 - Math.max(0, (c.dmg || 0) - 30) * 0.0025), crr = c.onSurf ? surf.crr : 0.09 - 0.03 * s.susp;
-  const v = Math.hypot(c.vx, c.vy), delta = (c.steer + (c.tsq || 0)) * 0.52 * (s.steerK || 1) * (1 - Math.max(0, (c.dmg || 0) - 50) * 0.002) / (1 + v * 0.035) * (s.steerX ? s.steerX / (1 + v * 0.03) : 1); // greppkoden: lugnare styrning, mer ju fortare
+  const v = Math.hypot(c.vx, c.vy), delta = (c.steer + (c.tsq || 0) + (c.pull || 0)) * 0.52 * (s.steerK || 1) * (1 - Math.max(0, (c.dmg || 0) - 50) * 0.002) / (1 + v * 0.035) * (s.steerX ? s.steerX / (1 + v * 0.03) : 1); // greppkoden: lugnare styrning, mer ju fortare
   c.steerVis = delta;
   const steerRate = (c.steer - (c.prevSteer ?? c.steer)) / Math.max(dt, 1e-4);
   c.steerVel = (c.steerVel || 0) + (clamp(steerRate, -12, 12) - (c.steerVel || 0)) * Math.min(1, 18 * dt);
@@ -268,10 +268,11 @@ export function phys(c, dt, trk) {
     if (Math.abs(c.vx) < 2.5) { c.vy *= 1 - Math.min(1, 6 * dt); c.r *= 1 - Math.min(1, 3 * dt); }
     if (c.brk > 0.1 && Math.abs(c.vx) < 0.35 && c.thr < 0.05) c.vx = 0;
     c.rpm = Math.min(s.redline + 60, rpm * (1 + Math.min(slip, 0.6) * 0.45));
-    // växling
+    // växling (skadad växellåda: de högsta växlarna kan försvinna och växlingarna blir långsammare)
+    if (c.gearLoss && c.gear > s.gears.length - c.gearLoss) { c.gear = s.gears.length - c.gearLoss; c.shiftT = s.shift; }
     if (c.aids.auto && c.shiftT <= 0) {
-      if (c.gear < s.gears.length && wheelRpm > c.upRpm && slip < 0.3 && groundContact > 0.5) {
-        c.gear++; c.shiftT = s.shift; c.shiftEv = 1;
+      if (c.gear < s.gears.length - (c.gearLoss || 0) && wheelRpm > c.upRpm && slip < 0.3 && groundContact > 0.5) {
+        c.gear++; c.shiftT = s.shift * (1 + (c.gearDmg || 0) * 0.015); c.shiftEv = 1;
         if (c.rpm > 4400) { c.backfire = Math.max(c.backfire || 0, 0.72); c.backfireEv = Math.max(c.backfireEv || 0, 0.72); }
       } else if (c.gear > 1 && (wheelRpm < s.idle * 1.5 || (c.thr > 0.6 && Math.abs(c.vy) < 0.15 * Math.abs(c.vx) || c.brk > 0.2) && wheelRpm * s.gears[c.gear - 2] / s.gears[c.gear - 1] < c.upRpm * (0.55 + 0.25 * c.thr))) {
         c.gear--; c.shiftT = s.shift * 0.6; c.shiftEv = 1;
@@ -652,7 +653,7 @@ export class Race {
     this.spectate = !!cfg.spectate;
     if (this.spectate) { const p = this.player; p.isPlayer = false; if (!p.remote) p.ai = { jokerLap: 0, off: 0, stuck: 0, prof: null }; p.diff = cfg.player.diff ?? 0.8; p.pow = cfg.player.powScale || 1; p.aids = { abs: 1, tc: 1, auto: 1 }; for (const c of this.cars) c.auto = true; }
     if (location.search.includes('auto')) { const c = this.player; c.auto = true; c.skill = 0.97; c.ai = { jokerLap: 0, off: 0, stuck: 0, prof: null }; c.aids = { abs: 1, tc: 1, auto: 1 }; }
-    this.player.dmg = cfg.dmg0 || 0; this.player.tireWearF = cfg.wear0?.[0] || 0; this.player.tireWearR = cfg.wear0?.[1] || 0; this.player.radLeak = !!cfg.radLeak0;
+    this.player.dmg = cfg.dmg0 || 0; this.player.tireWearF = cfg.wear0?.[0] || 0; this.player.tireWearR = cfg.wear0?.[1] || 0; this.player.radLeak = !!cfg.radLeak0; if (cfg.parts0) { const P = this.player; P.steerDmg = cfg.parts0.steer || 0; P.gearDmg = cfg.parts0.gear || 0; P.pullSign = cfg.parts0.sign || 0; P.pull = (P.pullSign || 0) * 0.075 * P.steerDmg / 100; P.gearLoss = P.gearDmg >= 80 ? 2 : P.gearDmg >= 45 ? 1 : 0; }
     const needMirrors = !this.sideContact;
     for (const c of this.cars) {
       if (this.R) c.obj = this.view.addCar(c.spec.body, c.paint, { model: c.spec.id, bars: c.spec.dmg < 1, mirrors: needMirrors, bw: c.bw, num: c.isPlayer ? (cfg.player.num || '') : c.num || 1 + ((c.slot * 37 + 11) % 98) });
@@ -732,9 +733,17 @@ export class Race {
   togglePause() { if (this.done) return; this.paused = !this.paused; this.$('hPauseBox').hidden = !this.paused; this.last = performance.now(); if (this.gain) this.gain.gain.value = 0; if (this.fxGain) this.fxGain.gain.value = this.paused ? 0 : (this.vol || 0); if (this.paused) this.ctl?.stopRumble?.(); }
   shift(d) { if (!this.spectate && (this.player.finished || this.player.retired) && this.cars.length > 1) { // i mål/utgått: E/Q byter vilken bil kameran följer
       const cur = this.camCar || this.player, i = (this.cars.indexOf(cur) + d + this.cars.length) % this.cars.length; this.camCar = this.cars[i]; this.camH = this.camCar.h; this.watchCam(); return; }
-    if (this.spectate) { const i = (this.cars.indexOf(this.player) + d + this.cars.length) % this.cars.length; this.player = this.cars[i]; this.camH = this.player.h; this.watchCam(); return; } const c = this.player; if (this.state !== 'run' || c.shiftT > 0) return; const g = c.gear + d; if (g >= 1 && g <= c.spec.gears.length) { c.gear = g; c.shiftT = (c.clutch || 0) > 0.5 ? 0.06 : c.spec.shift; c.shiftEv = 1; if (c.rpm > 4000) { c.backfire = Math.max(c.backfire || 0, 0.72); c.backfireEv = Math.max(c.backfireEv || 0, 0.72); } } }
+    if (this.spectate) { const i = (this.cars.indexOf(this.player) + d + this.cars.length) % this.cars.length; this.player = this.cars[i]; this.camH = this.player.h; this.watchCam(); return; } const c = this.player; if (this.state !== 'run' || c.shiftT > 0) return; const g = c.gear + d; if (g >= 1 && g <= c.spec.gears.length - (c.gearLoss || 0)) { c.gear = g; c.shiftT = ((c.clutch || 0) > 0.5 ? 0.06 : c.spec.shift) * (1 + (c.gearDmg || 0) * 0.015); c.shiftEv = 1; if (c.rpm > 4000) { c.backfire = Math.max(c.backfire || 0, 0.72); c.backfireEv = Math.max(c.backfireEv || 0, 0.72); } } }
   resize() { if (this.R) this.view.resize(); }
   resetCar(c) { const trk = this.trk, hwi = trk.hwAt ? trk.hwAt(c.i) : trk.hw, [x, z, h] = trk.point(c.i, clamp(c.lat, -hwi + 2, hwi - 2) * 0.3); c.x = x; c.z = z; c.h = h; c.vx = c.vy = c.r = 0; c.rev = false; c.gear = 1; c.airY = c.airVy = c.suspY = c.suspVy = c.landImpact = c.landAudio = 0; c.bodyPitch = c.bPitch = c.bodyRoll = c.bRoll = c.pitchVel = c.rollVel = 0; c.brakeGlow = c.backfire = 0; }
+  // Mekaniska skador vid smällar: styrning/hjulinställning (bilen drar åt ena hållet) och växellåda (högsta växlarna försvinner)
+  partDamage(p, d) {
+    if (Math.random() < 0.55) { const before = p.steerDmg; p.steerDmg = Math.min(100, p.steerDmg + d * (0.5 + Math.random() * 0.8));
+      if (!p.pullSign) p.pullSign = Math.random() < 0.5 ? -1 : 1; p.pull = p.pullSign * 0.075 * p.steerDmg / 100;
+      if (before < 25 && p.steerDmg >= 25) this.msg(`STYRNINGEN SKADAD<br><small>Ett hjul är snett – bilen drar åt ${p.pullSign > 0 ? 'vänster' : 'höger'}</small>`, 2.6, 'warn'); }
+    if (Math.random() < 0.3) { const before = p.gearLoss; p.gearDmg = Math.min(100, p.gearDmg + d * (0.4 + Math.random() * 0.7)); p.gearLoss = p.gearDmg >= 80 ? 2 : p.gearDmg >= 45 ? 1 : 0;
+      if (p.gearLoss > before) this.msg(`VÄXELLÅDAN SKADAD<br><small>${p.spec.gears.length - p.gearLoss + 1}:an går inte i längre${p.gearLoss > 1 ? ' (inte heller ' + (p.spec.gears.length) + ':an)' : ''}</small>`, 2.6, 'warn'); }
+  }
   msg(html, dur = 2.4, cls = '') { const e = this.$('hMsg'); e.innerHTML = html; e.className = 'hud-msg show ' + cls; this.msgT = dur; }
 
   buildMap() {
@@ -1141,6 +1150,7 @@ export class Race {
   }
   damage(d, impact, engine) {
     const p = this.player; d *= engine ? 1 : p.spec.dmg; p.dmg = Math.min(100, p.dmg + d);
+    if (impact && d > 4 && this.cfg.settings?.mechDmg !== false) this.partDamage(p, d);
     if (impact && d > 9 && !p.spec.radSafe && !p.radLeak && p.dmg > 45 && Math.random() < 0.5) {
       p.radLeak = true;
       this.msg('KYLAREN LÄCKER<br><small>Håll koll på temperaturen</small>', 2.6, 'warn');
@@ -1255,7 +1265,7 @@ export class Race {
         return { id: c.nid, name: r.name, isPlayer: r.isPlayer, flag: r.flag, time: c.finished && !c.retired ? r.t : null, best: isFinite(c.bestLap) ? c.bestLap : null, jokerLap: c.jokerLap ?? null, dist: dist ?? null }; }),
       pos: rows.findIndex(r => r.isPlayer) + 1,
       bestLap: p.bestLap, dmg: p.dmg, flag: pRow?.flag || "", sanction: p.sanction, kaato: p.kaato,
-      exhaustLoose: p.exhaustLoose, finished: p.finished && !p.retired,
+      exhaustLoose: p.exhaustLoose, parts: { steer: p.steerDmg, gear: p.gearDmg, sign: p.pullSign || 0 }, finished: p.finished && !p.retired,
       time: p.finished && !p.retired ? p.finishT : null, radLeak: p.radLeak, dur: this.t, wear: [p.tireWearF, p.tireWearR],
     };
     this.destroy(); this.cfg.onDone(res);
@@ -1511,7 +1521,7 @@ export class Race {
     // 5. Bränsle, Skick, Däck & Lisälenkki
     $('hFuelKg').textContent = fmt(p.fuelKg, 1) + ' kg';
     $('hHealthBar').style.width = Math.max(0, 100 - p.dmg) + '%';
-    $('hDmgTxt').textContent = `Skada ${Math.round(p.dmg)} % · ${p.radLeak ? 'Kylare läcker!' : 'Kylare OK'}`;
+    $('hDmgTxt').textContent = `Skada ${Math.round(p.dmg)} % · ${p.radLeak ? 'Kylare läcker!' : 'Kylare OK'}${p.steerDmg >= 25 ? ' · Styrning sned' : ''}${p.gearLoss ? ' · Växellåda −' + p.gearLoss : ''}`;
     $('hDbTxt').textContent = p.exhaustLoose ? '>110 dB LÖST!' : '≤110 dB OK';
     $('hDbTxt').style.color = p.exhaustLoose ? '#fb7185' : '#34d399';
     $('hWearF').textContent = Math.round(p.tireWearF) + ' %';

@@ -336,7 +336,7 @@ function evStart(arg) {
   opps.forEach((o, i) => { const id = 'ai' + i; O[id] = { ...o, nid: id }; ents.push({ id, name: o.name, diff: o.diff, kgHp: curve(o.spec).kgHp / (o.powScale || 1) }); });
   U.ev = {
     li: +li, e, L, cls: insp.cls, rules, laps, O, cm, ch: newChamp({ perStart: cc.perStart, heats: cc.heats, laps, joker: rules.joker, trackLen: trk.len }, ents),
-    dmg: 0, radLeak: false, exhaustLoose: false, needKaatoInsp: false, hist: [],
+    dmg: 0, radLeak: false, exhaustLoose: false, parts: null, needKaatoInsp: false, hist: [],
     cleanDay: true, protestUsed: false, arvat: 0, saleEligible: false, saleDone: false, saleMsg: '', feePaid: rules.fee, usedVoucher, over: null, last: null,
   };
   U.view = 'event';
@@ -358,13 +358,13 @@ function evRun(heatId, watch) {
   if (watch) { if (!defs.length) return; startRace({ trackId: ev.e.track, laps: ev.laps, opps: defs.slice(1), player: defs[0], spectate: true, grid: 0, gridRows: ev.rules.gridRows, useJoker: ev.rules.joker, sideContact: true, title: '👁 ' + title, mode: 'heat', onDone: done }); return; }
   startRace({
     trackId: ev.e.track, laps: ev.laps, opps: defs, grid: h.ids.indexOf('me'), gridRows: ev.rules.gridRows, useJoker: ev.rules.joker, sideContact: ev.rules.sideContact,
-    title, dmg0: ev.dmg, radLeak0: ev.radLeak, wear0: ev.wear, mode: 'heat', onDone: done, specLvl: ev.cm || 0,
+    title, dmg0: ev.dmg, radLeak0: ev.radLeak, parts0: ev.parts, wear0: ev.wear, mode: 'heat', onDone: done, specLvl: ev.cm || 0,
   });
 }
 
 function evAfter(res, h) {
   const ev = U.ev;
-  ev.dmg = res.dmg; ev.wear = res.wear || ev.wear; ev.radLeak = res.radLeak; ev.exhaustLoose = !!res.exhaustLoose; ev.needKaatoInsp = !!res.kaato;
+  ev.dmg = res.dmg; ev.parts = res.parts || ev.parts; ev.wear = res.wear || ev.wear; ev.radLeak = res.radLeak; ev.exhaustLoose = !!res.exhaustLoose; ev.needKaatoInsp = !!res.kaato;
   ev.last = res; ev.protestable = !!res.sanction;
   ev.hist.push({ stage: heatName(h), pos: res.pos, flag: res.flag });
   if (isFinite(res.bestLap)) record(ev.e.track, res.bestLap);
@@ -405,7 +405,7 @@ function resTable(rows, money) {
 const LADDER = [['alku', 'Alkuerä'], ['kerailu', 'Keräily'], ['lastcall', 'Last Call'], ['semi', 'Semi'], ['F', 'F'], ['E', 'E'], ['D', 'D'], ['C', 'C'], ['B', 'B'], ['A', 'A']];
 function eventView() {
   const ev = U.ev; if (!ev) { U.view = 'karriar'; return karriar(); }
-  const ch = ev.ch, t = TRACKS.find(x => x.id === ev.e.track), cost = Math.ceil(ev.dmg * 1.0 + (ev.radLeak ? 20 : 0) + (ev.exhaustLoose ? 15 : 0));
+  const ch = ev.ch, t = TRACKS.find(x => x.id === ev.e.track), cost = Math.ceil(ev.dmg * 1.0 + (ev.radLeak ? 20 : 0) + (ev.exhaustLoose ? 15 : 0) + (ev.parts ? Math.round((ev.parts.steer || 0) * 0.6 + (ev.parts.gear || 0) * 0.9) : 0));
   const curKey = ch.round === 'final' ? ch.letter : ch.round;
   let h = `<section class="panel evhead"><span class="kick">${t.name.toUpperCase()} · ${SURF[t.surface].name.toUpperCase()} · ${ev.rules.name.toUpperCase()} · ${ch.cfg.perStart} FÖRARE/START · ${ev.laps} VARV${ev.rules.joker ? ' · JOKERLAP' : ''}</span><h1>${ev.e.name}</h1>
     <div class="ladder">${LADDER.map(([k, n]) => `<span class="${k === curKey ? 'cur' : ''} ${k.length === 1 ? 'fin' : ''}">${n}</span>`).join('<i>›</i>')}</div>
@@ -435,6 +435,7 @@ function eventView() {
     ${isFinalRound ? `<p class="dim">Finalerna körs i ordning F → A. ${mine ? 'Det är din tur nu.' : 'Du väntar på din final – titta på eller simulera den här först.'}</p>` : ''}
     ${ev.needKaatoInsp ? `<div class="warnbox">⚠ <b>KAATOKATSASTUS KRÄVS</b> efter rullningen.<div class="row" style="margin-top:6px"><button class="btn small" data-act="ev-kaato">🔧 Kaatokatsastus (40 €)</button></div></div>` : ''}
     ${ev.exhaustLoose ? `<div class="warnbox">⚠ Avgasröret har lossnat (110 dB-regeln) – laga före nästa heat.</div>` : ''}
+    ${ev.parts && (ev.parts.steer >= 25 || ev.parts.gear >= 45) ? `<div class="warnbox">🔧 ${ev.parts.steer >= 25 ? `Styrningen är sned (${Math.round(ev.parts.steer)} %) – bilen drar åt ena hållet. ` : ''}${ev.parts.gear >= 45 ? `Växellådan är skadad (${Math.round(ev.parts.gear)} %) – högsta växeln saknas. ` : ''}Laga i depån.</div>` : ''}
     <div class="heats">${ch.heats.map(x => `<div class="heat ${x.ids.includes('me') ? 'mine' : ''} ${x.res ? 'done' : ''}"><div class="hh"><b>${heatName(x)}</b><span>${x.res ? 'Klart' : x.ids.length + ' förare'}</span></div>
       <ol>${(x.res || x.ids.map(id => ({ id, name: ch.E[id].name }))).map(r => `<li class="${r.id === 'me' ? 'me' : ''}">${esc(r.name)}${r.flag ? ` <i class="flag">${r.flag}</i>` : ''}</li>`).join('')}</ol>
       ${x.res ? '' : x.ids.includes('me') ? `<div class="row"><button class="btn small" data-act="ev-run" data-arg="${x.id}" ${ev.needKaatoInsp || ev.exhaustLoose ? 'disabled' : ''}>🏁 Kör ditt heat</button>${canSkip(ch, 'me') ? `<button class="btn small ghost" data-act="ev-skip">KESKÖIDÄ</button>` : ''}</div>` : `<div class="row"><button class="btn small ghost" data-act="ev-watch" data-arg="${x.id}">👁 Titta</button></div>`}</div>`).join('')}</div>
@@ -845,6 +846,7 @@ function trim() {
 const SETUP_UI = [
   ['Fjädring', 'spring', 1, 10, 1, v => v <= 3 ? 'mjuk' : v >= 8 ? 'styv' : 'medel', 'Mjukt är bäst på grus och is, styvt på asfalt.'],
   ['Dämpare', 'damper', 1, 10, 1, v => v <= 3 ? 'mjuk' : v >= 8 ? 'hård' : 'medel', 'Hårda dämpare håller bilen stilla på asfalt men studsar på gupp.'],
+  ['Däcktryck', 'press', 1.0, 3.0, 0.05, v => fmt(v, 2) + ' bar', '2,0 bar är neutralt. Lägre tryck ger mer grepp på grus men slarvigare styrning, mer slitage och lite mer rullmotstånd. Högre tryck ger skarpare styrning men mindre grepp.'],
   ['Camber', 'camber', -5, 1, 0.1, v => fmt(v, 1) + '°', 'Runt −2° ger mest grepp i kurvorna.'],
   ['Toe fram', 'toeF', -1, 1, 0.05, v => (v > 0 ? '+' : '') + fmt(v, 2) + '° ' + (v > 0 ? 'toe-in' : v < 0 ? 'toe-out' : ''), 'Toe-out ger skarpare instyrning, toe-in stabilitet.'],
   ['Toe bak', 'toeR', -1, 1, 0.05, v => (v > 0 ? '+' : '') + fmt(v, 2) + '°', 'Lite toe-in bak gör bilen stabil; toe-out gör den lös.'],
@@ -935,6 +937,8 @@ function settings() {
   <section class="panel"><h2>Grafik</h2><div class="row">${(() => { const cur = st.quality === 'lag' ? 'low' : st.quality === 'hog' ? 'high' : (st.quality || 'auto'); return [['auto', 'Auto'], ['low', 'Low'], ['medium', 'Medium'], ['high', 'High'], ['ultra', 'Ultra']].map(q => `<button class="chip s ${cur === q[0] ? 'on' : ''}" data-act="quality" data-arg="${q[0]}">${q[1]}</button>`).join(''); })()}</div><p class="dim">Auto väljer nivå efter datorn och sänker upplösningen under körning om bildfrekvensen faller under ~50 FPS. Low: inga skuggor, färre träd. Medium: skuggor, gräs, miljöreflexer. High: mjuka skuggor, PBR-terräng, mer gräs och damm. Ultra: 4K-skuggor, tätaste skogen och vegetationen.</p></section>
   <section class="panel"><h2>Upplösning</h2><div class="row">${[['auto', 'Auto (skärmens)'], ['1440', '1440p'], ['1080', '1080p'], ['720', '720p'], ['540', '540p']].map(q => `<button class="chip s ${(st.res || 'auto') === q[0] ? 'on' : ''}" data-act="res" data-arg="${q[0]}">${q[1]}</button>`).join('')}</div><p class="dim">Hur många bildrader 3D-vyn renderas med. Lägre ger högre bildfrekvens, högre ger skarpare bild. HUD:en påverkas inte.</p></section>
   <section class="panel"><h2>Pekskärmskontroller</h2><div class="row">${[['auto', 'Auto'], ['on', 'På'], ['off', 'Av']].map(q => `<button class="chip s ${st.touch === q[0] ? 'on' : ''}" data-act="touch" data-arg="${q[0]}">${q[1]}</button>`).join('')}</div></section>
+  <section class="panel"><h2>Realism</h2><div class="row"><span class="lbl">Mekaniska skador</span>${[[true, 'På'], [false, 'Av']].map(([v, n]) => `<button class="chip s ${(st.mechDmg !== false) === v ? 'on' : ''}" data-act="mechdmg" data-arg="${v ? 1 : 0}">${n}</button>`).join('')}</div>
+    <p class="dim">Hårda smällar kan skada styrningen (ett hjul blir snett och bilen drar åt ena hållet) och växellådan (högsta växeln försvinner, växlingarna blir långsammare). Lagas i depån. Oskadad bil kör exakt som vanligt.</p></section>
   ${controlsPanel()}
   <section class="panel"><h2>Sparning</h2><p class="dim">Pengar, bilar, delar, katsastuskortti, varningar och resultat sparas lokalt i webbläsaren.</p><div class="row"><button class="btn ghost danger" data-act="reset">Återställ sparning</button></div></section>`;
 }
@@ -1022,8 +1026,8 @@ const ACT = {
   'ev-next'() { evNext(); window.scrollTo(0, 0); },
   'ev-tyres'() { const ev = U.ev; if (ev && S.money >= 40) { S.money -= 40; ev.wear = [0, 0]; save(); toast('Fräscha däck monterade.'); } },
   'ev-repair'() {
-    const ev = U.ev, cost = Math.ceil(ev.dmg * 1.0 + (ev.radLeak ? 20 : 0) + (ev.exhaustLoose ? 15 : 0));
-    if (S.money >= cost) { S.money -= cost; ev.dmg = 0; ev.radLeak = false; ev.exhaustLoose = false; save(); toast('Bilen är lagad och avgasröret fäst (≤110 dB).'); }
+    const ev = U.ev, cost = Math.ceil(ev.dmg * 1.0 + (ev.radLeak ? 20 : 0) + (ev.exhaustLoose ? 15 : 0) + (ev.parts ? Math.round((ev.parts.steer || 0) * 0.6 + (ev.parts.gear || 0) * 0.9) : 0));
+    if (S.money >= cost) { S.money -= cost; ev.dmg = 0; ev.radLeak = false; ev.exhaustLoose = false; ev.parts = null; save(); toast('Bilen är lagad och avgasröret fäst (≤110 dB).'); }
   },
   'ev-kaato'() {
     const ev = U.ev;
@@ -1149,6 +1153,7 @@ const ACT = {
     if (r.all) { const n = S.dyno[U.taskDiff - 1], pay = n < 6 ? t.reward : Math.round(t.reward * 0.25); S.money += pay; S.dyno[U.taskDiff - 1]++; save(); U.taskMsg = `✓ Rätt! +${eur(pay)}`; } else U.taskMsg = 'Inte helt rätt – rätta svaren visas vid fälten. Ta en ny uppgift.';
   },
   camera(a) { const camera = Number(a); if (Number.isInteger(camera) && CAM_NAMES[camera]) { S.settings.camera = camera; save(); } },
+  mechdmg(a) { S.settings.mechDmg = a === "1"; save(); },
   quality(a) { S.settings.quality = a; save(); }, res(a) { S.settings.res = a; save(); }, touch(a) { S.settings.touch = a; save(); },
   reset() { if (U.confirmReset) { reset(); U.confirmReset = false; toast('Sparningen är återställd.'); U.view = 'menu'; } else { U.confirmReset = true; toast('Tryck en gång till för att radera allt.'); setTimeout(() => U.confirmReset = false, 4000); } },
 };

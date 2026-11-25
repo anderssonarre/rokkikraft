@@ -5,7 +5,7 @@ export const carById = id => CARS.find(c => c.id === id) || CARS[0];
 export const engById = id => ENGINES[id] || null;
 export const fuelById = id => FUELS.find(f => f.id === id) || FUELS[0];
 
-export const SETUP_DEF = { spring: 5, damper: 5, camber: -1.5, toeF: 0, toeR: 0.1, rideF: 14, rideR: 14, rake: 0, gearSpread: 1, brakeF: 1, rim: 38, width: 20, tyre: 'std' };
+export const SETUP_DEF = { spring: 5, damper: 5, camber: -1.5, toeF: 0, toeR: 0.1, rideF: 14, rideR: 14, rake: 0, gearSpread: 1, brakeF: 1, rim: 38, width: 20, press: 2.0, tyre: 'std' };
 export function defaultTune() { return { lambda: 0.95, ign: 0, fuel: 'b95', finalScale: 1, bias: 0.70, ...SETUP_DEF }; }
 const hpCache = {};
 
@@ -125,18 +125,20 @@ export function applySetup(s, t) {
   const wF = Math.pow(t.width / 20, 0.22) * (t.width < 12 ? 0.85 + t.width / 80 : 1);          // bredare = mer grepp (avtagande)
   const camF = 1 + 0.035 - 0.012 * (t.camber + 2) ** 2;                                         // optimum ca −2°
   const lowCG = 1 + (16 - (t.rideF + t.rideR) / 2) * 0.004;                                     // lägre = lite mer grepp
-  const base = ty.grip * wF * camF * lowCG;
+  // däcktryck (2,0 bar = neutralt): lägre ger större kontaktyta och mer grepp men slarvigare styrning, mer slitage och rullmotstånd
+  const pr = t.press ?? 2.0, dp = 2.0 - pr, prF = 1 + 0.06 * dp - 0.05 * dp * dp;
+  const base = ty.grip * wF * camF * lowCG * prF;
   const rake = (t.rideR + t.rake - t.rideF) * 0.006;                                            // högre bak = mer överstyrning
   s.muF = base * (1 + rake) * (1 - Math.abs(t.toeF) * 0.04);
   s.muR = base * (1 - rake) * (1 + t.toeR * 0.05 - Math.max(0, -t.toeR) * 0.08);
-  s.steerK = 1 - t.toeF * 0.12;                                                                 // toe-out fram = skarpare instyrning
+  s.steerK = (1 - t.toeF * 0.12) * (1 - 0.08 * dp);                                                                 // toe-out fram = skarpare instyrning
   // fjädring/dämpning: mjukt på grus och is, styvt på asfalt. Låg bil skrapar på grus.
   const sp = t.spring, dm = t.damper, scrape = Math.max(0, 9 - Math.min(t.rideF, t.rideR)) * 0.02;
   s.surfK = { grus: 1 + 0.03 - 0.006 * (sp - 3.5) ** 2 / 2 - 0.004 * (dm - 4) ** 2 / 2 - scrape, asfalt: 1 + 0.03 - 0.004 * (sp - 7) ** 2 / 2 - 0.004 * (dm - 7) ** 2 / 2, is: 1 + 0.02 - 0.005 * (sp - 3) ** 2 / 2 - scrape };
   s.roll = 1.15 - sp * 0.03; s.yawD = 0.8 + dm * 0.04;
-  s.brake *= t.brakeF; s.tyreWear = ty.wear * (t.width / 20) ** 0.3; s.tyre = ty.name;
+  s.brake *= t.brakeF; s.tyreWear = ty.wear * (t.width / 20) ** 0.3 * (1 + 0.35 * Math.max(0, dp) + 0.15 * Math.max(0, -dp)); s.tyre = ty.name;
   s.mass += (t.width - 20) * 0.4 + (t.rim - 38) * 0.15;                                          // tyngre hjul
-  s.CdA += (t.width - 20) * 0.002;
+  s.CdA += (t.width - 20) * 0.002; s.CdA += Math.max(0, dp) * 0.012; s.press = pr; // rullmotstånd vid lågt tryck
   // växellåda: spridning kring 2:an (1 = original)
   if (t.gearSpread !== 1) { const g = s.gears, mid = g[Math.min(1, g.length - 1)]; s.gears = g.map(x => mid * Math.pow(x / mid, t.gearSpread)); }
   s.setup = t;
