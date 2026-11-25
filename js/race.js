@@ -1,6 +1,7 @@
 // Heatet: körfysik, AI, kollisioner, lisälenkki, varningskoder (A1–B9), Vi/Li/K/KA,
 // autentisk 3D In-Car kupévy med roterande mockaratt samt Pro Telemetri-HUD inspirerad av referensbilden.
 import { qualityLevel, rememberAuto } from './gfx.js';
+import { SoftBody } from './softbody.js';
 import { getTrack } from './track.js';
 import { M4, cockpitMesh, steerWheelMesh, pendantMesh } from './gl.js';
 import { View3 } from './view3.js';
@@ -9,7 +10,14 @@ import { Controls } from './input.js';
 import { torqueTable, engineAt, fmt } from './engine.js';
 import { soundKey, soundProfile, engineWave, RallyAudioFX } from './enginesound.js';
 
-const G = 9.81, DT = 1 / 240;
+const G = 9.81, DT = 1 / 240, REC_K = 20;
+// AI-körstilar: k = kurvfart (andel av profilen), agg = hur nära/hårt den går på andra, noise = små misstag i styrningen
+export const AI_STYLES = [
+  { id: 'aggressiv', name: 'aggressiv', k: 1.015, agg: 0.25, noise: 0.01 },
+  { id: 'jamn', name: 'jämn', k: 1.0, agg: 0, noise: 0 },
+  { id: 'forsiktig', name: 'försiktig', k: 0.975, agg: -0.25, noise: 0 },
+  { id: 'vild', name: 'vild', k: 1.025, agg: 0.15, noise: 0.04 },
+];
 const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
 const wrapA = a => { while (a > Math.PI) a -= 2 * Math.PI; while (a < -Math.PI) a += 2 * Math.PI; return a; };
 export const fmtTime = t => { if (!isFinite(t)) return '–'; const m = Math.floor(t / 60), s = t - m * 60; return m + ':' + (s < 10 ? '0' : '') + s.toFixed(2); };
@@ -38,7 +46,7 @@ export function makeCar(def, trk, slot, isPlayer, gridRows = 2, totalCars = 6) {
     i: trk.w(Math.round(trk.n - back)), pf: trk.n - back, lat, prog: -back, onSurf: true,
     jokerDone: false, coneDown: false, jump: false, retired: false, kaato: false,
     sanction: '', sanctionT: Infinity, warnCount: 0,
-    finished: false, finishT: 0, flag: '', dmg: 0, temp: 82, exhaustLoose: false,
+    finished: false, finishT: 0, flag: '', dmg: 0, temp: 82, exhaustLoose: false, steerDmg: 0, gearDmg: 0, pull: 0, gearLoss: 0,
     fuelKg: 18.5, tireWearF: 0, tireWearR: 0, tireTemp: [55, 55, 52, 52], brakeTemp: 60,
     secT: 0, curSec: 0, sectors: [null, null, null],
     pow: isPlayer ? 1 : Math.max(0.7, Math.min(1.04, 0.4 + 0.6 * (def.skill || 1))),
@@ -113,7 +121,7 @@ export function phys(c, dt, trk) {
 
   // lätta bilar har en liten fördel i kurvorna (lastkänslighet), skador försämrar väghållningen
   const mu = surf.mu * s.mu * (s.gripX || 1) * (c.gripF || 1) * (c.onSurf ? 1 : 0.72 + 0.12 * s.susp) * (s.surfK ? s.surfK[st] || 1 : 1) * Math.pow(1150 / m, 0.12) * (1 - Math.max(0, (c.dmg || 0) - 30) * 0.0025), crr = c.onSurf ? surf.crr : 0.09 - 0.03 * s.susp;
-  const v = Math.hypot(c.vx, c.vy), delta = (c.steer + (c.tsq || 0)) * 0.52 * (s.steerK || 1) * (1 - Math.max(0, (c.dmg || 0) - 50) * 0.002) / (1 + v * 0.035) * (s.steerX ? s.steerX / (1 + v * 0.03) : 1); // greppkoden: lugnare styrning, mer ju fortare
+  const v = Math.hypot(c.vx, c.vy), delta = (c.steer + (c.tsq || 0) + (c.pull || 0)) * 0.52 * (s.steerK || 1) * (1 - Math.max(0, (c.dmg || 0) - 50) * 0.002) / (1 + v * 0.035) * (s.steerX ? s.steerX / (1 + v * 0.03) : 1); // greppkoden: lugnare styrning, mer ju fortare
   c.steerVis = delta;
   const steerRate = (c.steer - (c.prevSteer ?? c.steer)) / Math.max(dt, 1e-4);
   c.steerVel = (c.steerVel || 0) + (clamp(steerRate, -12, 12) - (c.steerVel || 0)) * Math.min(1, 18 * dt);
@@ -165,7 +173,7 @@ export function phys(c, dt, trk) {
     else if (rpm < s.redline) Fd = c.tq(rpm) * c.thr * c.pow * gr * s.eff / s.rw * (1 - cl);
     if (c.thr < 0.05 && c.vx > 1) Fd -= (0.97 + 0.15 * rpm / 1000) * 1e5 * s.Vd * 1e-3 / 12.566 * gr / s.rw * (1 - cl);
     const wk = trk.wetK ? (st === 'asfalt' ? trk.wetK[0] : trk.wetK[1]) : 1;
-    const capF = mu * wk * FzfEff * (s.muF || 1), capR = mu * wk * FzrEff * (s.muR || 1), muE = mu * wk;
+    const capF = mu * wk * FzfEff * (s.muF || 1) * (c.tgF || 1), capR = mu * wk * FzrEff * (s.muR || 1) * (c.tgR || 1), muE = mu * wk; // tgF/tgR = däcktemperatur (avancerad däckmodell, annars 1)
     // Differential. Öppen diff: i kurva avlastas innerhjulet och det spinner först → mindre drivkraft ut ur kurvan.
     // Svetsad diff (lukkoperä): båda hjulen drar alltid fullt, men axeln vill gå rakt och släpper plötsligt.
     const welded = !!s.trac, latUse = Math.min(1, Math.abs(c.vx * c.r) / (muE * G + 0.1));
@@ -191,7 +199,7 @@ export function phys(c, dt, trk) {
     if (Fd < -capD) Fd = -capD;
     c.slip = slip;
     let Fbf = 0, Fbr = 0, lockF = false, lockR = false; const sg = c.vx >= 0 ? 1 : -1;
-    if (c.brk > 0 && FzTot > 1) { const Fb = c.brk * 1.12 * m * G * s.brake; Fbf = Fb * s.bias; Fbr = Fb * (1 - s.bias);
+    if (c.brk > 0 && FzTot > 1) { const Fb = c.brk * 1.12 * m * G * s.brake * (c.fade || 1); Fbf = Fb * s.bias; Fbr = Fb * (1 - s.bias);
       if (Fbf > capF) { if (c.aids.abs) Fbf = capF * 0.96; else { lockF = true; Fbf = capF * 0.82; } }
       const prop = capR * (fwd ? 0.55 : 0.85); // lastkännande bromskraftsfördelare: framhjulsdrivna bilar är extra bakbromsade-snåla → drar rakt
       if (Fbr > prop && !c.aids.abs) Fbr = prop;
@@ -268,10 +276,11 @@ export function phys(c, dt, trk) {
     if (Math.abs(c.vx) < 2.5) { c.vy *= 1 - Math.min(1, 6 * dt); c.r *= 1 - Math.min(1, 3 * dt); }
     if (c.brk > 0.1 && Math.abs(c.vx) < 0.35 && c.thr < 0.05) c.vx = 0;
     c.rpm = Math.min(s.redline + 60, rpm * (1 + Math.min(slip, 0.6) * 0.45));
-    // växling
+    // växling (skadad växellåda: de högsta växlarna kan försvinna och växlingarna blir långsammare)
+    if (c.gearLoss && c.gear > s.gears.length - c.gearLoss) { c.gear = s.gears.length - c.gearLoss; c.shiftT = s.shift; }
     if (c.aids.auto && c.shiftT <= 0) {
-      if (c.gear < s.gears.length && wheelRpm > c.upRpm && slip < 0.3 && groundContact > 0.5) {
-        c.gear++; c.shiftT = s.shift; c.shiftEv = 1;
+      if (c.gear < s.gears.length - (c.gearLoss || 0) && wheelRpm > c.upRpm && slip < 0.3 && groundContact > 0.5) {
+        c.gear++; c.shiftT = s.shift * (1 + (c.gearDmg || 0) * 0.015); c.shiftEv = 1;
         if (c.rpm > 4400) { c.backfire = Math.max(c.backfire || 0, 0.72); c.backfireEv = Math.max(c.backfireEv || 0, 0.72); }
       } else if (c.gear > 1 && (wheelRpm < s.idle * 1.5 || (c.thr > 0.6 && Math.abs(c.vy) < 0.15 * Math.abs(c.vx) || c.brk > 0.2) && wheelRpm * s.gears[c.gear - 2] / s.gears[c.gear - 1] < c.upRpm * (0.55 + 0.25 * c.thr))) {
         c.gear--; c.shiftT = s.shift * 0.6; c.shiftEv = 1;
@@ -337,10 +346,20 @@ export function trackStep(c, trk, t, useJoker = true) {
     c.x -= nx * over; c.z -= nz * over;
     const ch = Math.cos(c.h), sh = Math.sin(c.h); let wx = c.vx * ch - c.vy * sh, wz = c.vx * sh + c.vy * ch; const vn = wx * nx + wz * nz;
     if (vn > 0) { wx -= 1.25 * vn * nx; wz -= 1.25 * vn * nz; wx *= 0.93; wz *= 0.93; c.vx = wx * ch + wz * sh; c.vy = -wx * sh + wz * ch; c.r *= 0.6; hit = vn; }
+    if (vn > 2.5) addDent(c, nx, nz, vn);
   }
   return hit;
 }
 
+// Bucklor: sparar var på bilen en smäll träffade (bilens egna koordinater: x framåt, z åt sidan) så att 3D-karossen trycks in just där
+export function addDent(c, wx, wz, mag) {
+  if (!(mag > 1.2)) return; const ch = Math.cos(c.h), sh = Math.sin(c.h), lx = wx * ch + wz * sh, lz = -wx * sh + wz * ch, n = Math.hypot(lx, lz) || 1;
+  const ux = lx / n, uz = lz / n, D = c.dents || (c.dents = []), depth = Math.min(0.2, mag * 0.018);
+  const near = D.find(d => d.ux * ux + d.uz * uz > 0.93);
+  if (near) near.m = Math.min(0.26, near.m + depth * 0.6); else { D.push({ ux, uz, m: depth }); if (D.length > 10) D.shift(); }
+  c.dentV = (c.dentV || 0) + 1;
+  if (c.sb) c.sb.impact(ux, uz, mag); // mjukkroppsfysik (BeamNG-läge)
+}
 export function collide(A, B) {
   let hit = 0;
   collide.front = ''; collide.type = '';
@@ -357,6 +376,7 @@ export function collide(A, B) {
       c.vx = w[0] * ch + w[1] * sh; c.vy = -w[0] * sh + w[1] * ch;
       const side = -sh * dx + ch * dz; c.r += sgn * o * side * J / (mm * c.spec.wb * c.spec.wb * 0.36) * 0.55; };
     ap(A, va, -1, oa, ma); ap(B, vb, 1, ob, mb);
+    if (rel > 1.5) { const ca = Math.cos(A.h), sa = Math.sin(A.h), cb = Math.cos(B.h), sb = Math.sin(B.h); addDent(A, dx + ca * oa * 0.45, dz + sa * oa * 0.45, rel); addDent(B, -dx + cb * ob * 0.45, -dz + sb * ob * 0.45, rel); }
     if (rel > hit) {
       hit = rel;
       if (oa > 0 && ob < 0) { collide.front = 'A'; collide.type = 'rear'; }
@@ -374,9 +394,13 @@ export function aiSetup(c, trk) {
   const e = d != null ? clamp((d - 0.85) / 0.15, 0, 1) : 0; c.ai.e = e;
   c.ai.thrMax = d != null ? 0.3 + 0.7 * Math.pow(d, 1.5) : 1; c.ai.noise = d != null ? 0.9 * (1 - d) ** 2 : 0; c.ai.agg = d != null ? d : 0.8; c.ai.wob = 0;
   c.ai.prof = trk.profile(mu * G * 0.90 * k * k, mu * G * (0.85 + 0.15 * e) * k, d != null && d < 0.99 ? top : 90);
+  // Individuell körstil per AI-förare (samma förare kör alltid likadant): aggressiv, jämn, försiktig eller vild
+  if (d != null && !c.isPlayer) { let h = 0; for (const ch of String(c.name || '')) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+    const st = c.ai.style = AI_STYLES[h % AI_STYLES.length]; c.ai.agg = clamp(c.ai.agg + st.agg, 0, 1.2); c.ai.noise += st.noise; c.ai.styleK = st.k; }
   // toppnivån kör en riktig racinglinje (ytter–inner–ytter) med fartprofil efter linjens egen krökning
   if (e > 0 && trk.raceLine) { c.ai.rl = trk.raceLine(1.3); const pL = trk.profileOn(c.ai.rl, mu * G * 0.95 * k * k, mu * G * 1.0 * k, 90);
-    for (let i = 0; i < pL.length; i++) c.ai.prof[i] += (pL[i] - c.ai.prof[i]) * e; } c.ai.vJ = Math.sqrt(mu * G * 0.85 * k * k * 21); c.ai.aB = mu * G * (0.6 + 0.2 * e) * k;
+    for (let i = 0; i < pL.length; i++) c.ai.prof[i] += (pL[i] - c.ai.prof[i]) * e; }
+  if (c.ai.styleK && c.ai.styleK !== 1) for (let i = 0; i < c.ai.prof.length; i++) c.ai.prof[i] *= c.ai.styleK; c.ai.vJ = Math.sqrt(mu * G * 0.85 * k * k * 21); c.ai.aB = mu * G * (0.6 + 0.2 * e) * k;
 }
 
 export function aiDrive(c, race, dt) {
@@ -633,7 +657,7 @@ export class Race {
     ensureTerrain(trk);
     trk.wetK = { regn: [0.78, 0.9], sno: [0.75, 0.82], dimma: [0.97, 0.98] }[cfg.weather] || null;
     const QL = qualityLevel(cfg.settings?.quality), q = QL.level >= 1 ? 1 : 0; this.q = q; this.QL = QL;
-    this.view = new View3(this.cv, trk, { level: QL.level, auto: QL.auto, res: cfg.settings?.res || 'auto', weather: cfg.weather || 'sol' }); this.R = this.view.ok ? this.view : null;
+    this.view = new View3(this.cv, trk, { level: QL.level, auto: QL.auto, res: cfg.settings?.res || 'auto', weather: cfg.weather || 'sol', tod: cfg.tod || 'dag' }); this.R = this.view.ok ? this.view : null;
     if (this.R) this.view.setCockpit([cockpitMesh(), steerWheelMesh(), pendantMesh(), cockpitMesh({ driverView: true })], cfg.player.paint);
     this.env = trk.winter
       ? { zenith: [0.46, 0.62, 0.82], fog: [0.82, 0.88, 0.94], fd: 0.000014, light: [0.42, 0.78, 0.32] }
@@ -652,11 +676,12 @@ export class Race {
     this.spectate = !!cfg.spectate;
     if (this.spectate) { const p = this.player; p.isPlayer = false; if (!p.remote) p.ai = { jokerLap: 0, off: 0, stuck: 0, prof: null }; p.diff = cfg.player.diff ?? 0.8; p.pow = cfg.player.powScale || 1; p.aids = { abs: 1, tc: 1, auto: 1 }; for (const c of this.cars) c.auto = true; }
     if (location.search.includes('auto')) { const c = this.player; c.auto = true; c.skill = 0.97; c.ai = { jokerLap: 0, off: 0, stuck: 0, prof: null }; c.aids = { abs: 1, tc: 1, auto: 1 }; }
-    this.player.dmg = cfg.dmg0 || 0; this.player.tireWearF = cfg.wear0?.[0] || 0; this.player.tireWearR = cfg.wear0?.[1] || 0; this.player.radLeak = !!cfg.radLeak0;
+    this.player.dmg = cfg.dmg0 || 0; this.player.tireWearF = cfg.wear0?.[0] || 0; this.player.tireWearR = cfg.wear0?.[1] || 0; this.player.radLeak = !!cfg.radLeak0; if (cfg.parts0) { const P = this.player; P.steerDmg = cfg.parts0.steer || 0; P.gearDmg = cfg.parts0.gear || 0; P.pullSign = cfg.parts0.sign || 0; P.pull = (P.pullSign || 0) * 0.075 * P.steerDmg / 100; P.gearLoss = P.gearDmg >= 80 ? 2 : P.gearDmg >= 45 ? 1 : 0; }
     const needMirrors = !this.sideContact;
     for (const c of this.cars) {
       if (this.R) c.obj = this.view.addCar(c.spec.body, c.paint, { model: c.spec.id, bars: c.spec.dmg < 1, mirrors: needMirrors, bw: c.bw, num: c.isPlayer ? (cfg.player.num || '') : c.num || 1 + ((c.slot * 37 + 11) % 98) });
       c.y = trk.heightAt(c.x, c.z); c.wspin = 0;
+      if (cfg.settings?.softBody && !cfg.replay) c.sb = new SoftBody(c.obj?.userData.halfL || 2.2, c.obj?.userData.halfW || 0.86); // BeamNG-läge: nod-balk-kaross
       if (c.ai) {
         // svårighet 1–100 %: 1 % kör ca 4–5 km/h-krypfart med vingliga linjer (≈5 min/varv), 100 % pressar däcken till gränsen
         aiSetup(c, trk);
@@ -676,15 +701,16 @@ export class Race {
     if (cfg.mode === 'time') { this.$('hLbCard').style.display = 'none'; }
     this.audioInit();
     if (this.spectate) { this.msg('👁 ÅSKÅDARLÄGE – ◀ ▶ eller E/Q byter bil, C byter kamera', 4); this.watchCam(); }
+    if (cfg.replay) { this.replay = cfg.replay; this.state = 'run'; this.camCar = this.player; this.rt = 0; this.msg('🎬 REPRIS – ◀ ▶ eller E/Q byter bil · C byter kamera · P → Avsluta för att gå tillbaka', 5); this.watchBar(); this.$('hLights').style.display = 'none'; }
     if (this.net) { this.heatId = cfg.heatId || 'h1'; this.netLead = cfg.netLead === this.net.id; this.goAt = Infinity; this.net.race = this; if (!this.spectate) this.net.imReady(this.heatId); this.msg(this.spectate ? '👁 Väntar på start…' : 'Väntar på övriga förare…', 60); }
     this.last = performance.now(); this.raf = requestAnimationFrame(t => this.frame(t));
   }
 
   // Bilen kameran följer när man tittar på andra (åskådarläge eller i mål/utgått online), annars null
-  watched() { return this.spectate ? this.player : this.camCar && (this.player.finished || this.player.retired) ? this.camCar : null; }
+  watched() { if (this.replay) return this.camCar || this.player; return this.spectate ? this.player : this.camCar && (this.player.finished || this.player.retired) ? this.camCar : null; }
   // Tittar man på någon annan: kör en yttre kamera (kupévyn ser ut som om man själv kör) och visa vem man följer
   watchCam() { const w = this.watched(); if (w && (this.spectate || w !== this.player) && (this.cam === 0 || this.cam === 1 || this.cam === DEFAULT_CAM)) this.setCam(2, false); this.watchBar(); }
-  watchBar() { const w = this.watched(), el = this.$('hWatch'); if (!el) return; el.hidden = !w || this.done; if (w) this.$('hWName').textContent = w.name + (w === this.player && !this.spectate ? ' (du)' : ''); }
+  watchBar() { const w = this.watched(), el = this.$('hWatch'); if (!el) return; el.hidden = !w || this.done; if (w) this.$('hWName').textContent = w.name + (w === this.player && !this.spectate ? ' (du)' : '') + (w.ai?.style && !w.isPlayer && !w.remote ? ' · ' + w.ai.style.name : ''); }
   cycleCam() {
     this.setCam((this.cam + 1) % CAM_NAMES.length);
   }
@@ -722,6 +748,7 @@ export class Race {
     this.$('hResume').onclick = () => this.togglePause();
     this.$('hWPrev').onclick = () => this.shift(-1); this.$('hWNext').onclick = () => this.shift(1);
     this.$('hQuit').onclick = () => {
+      if (this.replay) { this.done = true; this.destroy(); return this.cfg.onDone(null); } // repris: bara tillbaka
       this.player.retired = true; this.player.flag = 'K';
       if (!this.net) return this.finish();
       if (this.netLead && this.cars.every(c => c.remote ? c.finished || c.retired : true)) this.endAt = this.t; // ensam kvar: avsluta för alla
@@ -730,11 +757,50 @@ export class Race {
   }
 
   togglePause() { if (this.done) return; this.paused = !this.paused; this.$('hPauseBox').hidden = !this.paused; this.last = performance.now(); if (this.gain) this.gain.gain.value = 0; if (this.fxGain) this.fxGain.gain.value = this.paused ? 0 : (this.vol || 0); if (this.paused) this.ctl?.stopRumble?.(); }
-  shift(d) { if (!this.spectate && (this.player.finished || this.player.retired) && this.cars.length > 1) { // i mål/utgått: E/Q byter vilken bil kameran följer
+  shift(d) { if (this.replay) { const i = (this.cars.indexOf(this.camCar || this.player) + d + this.cars.length) % this.cars.length; this.camCar = this.cars[i]; this.camH = this.camCar.h; this.watchCam(); return; }
+    if (!this.spectate && (this.player.finished || this.player.retired) && this.cars.length > 1) { // i mål/utgått: E/Q byter vilken bil kameran följer
       const cur = this.camCar || this.player, i = (this.cars.indexOf(cur) + d + this.cars.length) % this.cars.length; this.camCar = this.cars[i]; this.camH = this.camCar.h; this.watchCam(); return; }
-    if (this.spectate) { const i = (this.cars.indexOf(this.player) + d + this.cars.length) % this.cars.length; this.player = this.cars[i]; this.camH = this.player.h; this.watchCam(); return; } const c = this.player; if (this.state !== 'run' || c.shiftT > 0) return; const g = c.gear + d; if (g >= 1 && g <= c.spec.gears.length) { c.gear = g; c.shiftT = (c.clutch || 0) > 0.5 ? 0.06 : c.spec.shift; c.shiftEv = 1; if (c.rpm > 4000) { c.backfire = Math.max(c.backfire || 0, 0.72); c.backfireEv = Math.max(c.backfireEv || 0, 0.72); } } }
+    if (this.spectate) { const i = (this.cars.indexOf(this.player) + d + this.cars.length) % this.cars.length; this.player = this.cars[i]; this.camH = this.player.h; this.watchCam(); return; } const c = this.player; if (this.state !== 'run' || c.shiftT > 0) return; const g = c.gear + d; if (g >= 1 && g <= c.spec.gears.length - (c.gearLoss || 0)) { c.gear = g; c.shiftT = ((c.clutch || 0) > 0.5 ? 0.06 : c.spec.shift) * (1 + (c.gearDmg || 0) * 0.015); c.shiftEv = 1; if (c.rpm > 4000) { c.backfire = Math.max(c.backfire || 0, 0.72); c.backfireEv = Math.max(c.backfireEv || 0, 0.72); } } }
   resize() { if (this.R) this.view.resize(); }
   resetCar(c) { const trk = this.trk, hwi = trk.hwAt ? trk.hwAt(c.i) : trk.hw, [x, z, h] = trk.point(c.i, clamp(c.lat, -hwi + 2, hwi - 2) * 0.3); c.x = x; c.z = z; c.h = h; c.vx = c.vy = c.r = 0; c.rev = false; c.gear = 1; c.airY = c.airVy = c.suspY = c.suspVy = c.landImpact = c.landAudio = 0; c.bodyPitch = c.bPitch = c.bodyRoll = c.bRoll = c.pitchVel = c.rollVel = 0; c.brakeGlow = c.backfire = 0; }
+  // BeamNG-läge: hur nätet har deformerats styr mekaniken – sneda hjul drar bilen åt det skadade hållet,
+  // intryckt front ger kylarläcka och motorskada, intryckt bak kan slita loss avgasröret
+  sbEffects(c) {
+    const st = c.sb.state(); c.sbState = st;
+    c.pull = clamp(-st.toeF * 1.0 - st.toeR * 0.4, -0.1, 0.1); c.steerDmg = Math.max(c.steerDmg || 0, Math.min(100, Math.abs(c.pull) / 0.075 * 100)); c.pullSign = Math.sign(c.pull) || c.pullSign;
+    if (st.front > 0.12 && !c.radLeak && !c.spec.radSafe) { c.radLeak = true; this.msg('FRONTEN INTRYCKT – KYLAREN LÄCKER<br><small>Håll koll på temperaturen</small>', 2.6, 'warn'); }
+    if (st.front > 0.3 && !c.sbEng) { c.sbEng = true; c.dmg = Math.min(100, c.dmg + 25); this.msg('MOTORRUMMET INTRYCKT<br><small>Motorn har tagit skada – mindre effekt</small>', 2.6, 'warn'); }
+    if (st.rear > 0.25 && !c.exhaustLoose) { c.exhaustLoose = true; this.msg('BAKVAGNEN INTRYCKT – AVGASRÖRET LOSSNADE<br><small>Måste fästas före nästa heat (110 dB)</small>', 2.6, 'warn'); }
+    if (Math.abs(c.pull) > 0.02 && !c.sbPullMsg) { c.sbPullMsg = true; this.msg(`HJULUPPHÄNGNINGEN SNEDDE<br><small>Bilen drar åt ${c.pull > 0 ? 'höger' : 'vänster'}</small>`, 2.4, 'warn'); }
+  }
+  // Mekaniska skador vid smällar: styrning/hjulinställning (bilen drar åt ena hållet) och växellåda (högsta växlarna försvinner)
+  partDamage(p, d) {
+    if (!p.sb && Math.random() < 0.55) { const before = p.steerDmg; p.steerDmg = Math.min(100, p.steerDmg + d * (0.5 + Math.random() * 0.8));
+      if (!p.pullSign) p.pullSign = Math.random() < 0.5 ? -1 : 1; p.pull = p.pullSign * 0.075 * p.steerDmg / 100;
+      if (before < 25 && p.steerDmg >= 25) this.msg(`STYRNINGEN SKADAD<br><small>Ett hjul är snett – bilen drar åt ${p.pullSign > 0 ? 'höger' : 'vänster'}</small>`, 2.6, 'warn'); }
+    if (Math.random() < 0.3) { const before = p.gearLoss; p.gearDmg = Math.min(100, p.gearDmg + d * (0.4 + Math.random() * 0.7)); p.gearLoss = p.gearDmg >= 80 ? 2 : p.gearDmg >= 45 ? 1 : 0;
+      if (p.gearLoss > before) this.msg(`VÄXELLÅDAN SKADAD<br><small>${p.spec.gears.length - p.gearLoss + 1}:an går inte i längre${p.gearLoss > 1 ? ' (inte heller ' + (p.spec.gears.length) + ':an)' : ''}</small>`, 2.6, 'warn'); }
+  }
+  // ---- repris: alla bilars läge spelas in 20 ggr/s under heatet och kan spelas upp efteråt ----
+  recTick() {
+    const R = this.rec ||= { dt: 0.05, n: this.cars.length, K: REC_K, f: [], t0: this.t };
+    if (this.t - R.t0 < R.f.length * R.dt || R.f.length > 9000) return; // max ca 7,5 min
+    const a = new Float32Array(R.n * REC_K);
+    this.cars.forEach((c, j) => { const o = j * REC_K; a[o] = c.x; a[o + 1] = c.z; a[o + 2] = c.h; a[o + 3] = c.vx; a[o + 4] = c.vy; a[o + 5] = c.r || 0; a[o + 6] = c.steer || 0; a[o + 7] = c.rpm || 0;
+      a[o + 8] = c.gear || 1; a[o + 9] = c.thr || 0; a[o + 10] = c.brk || 0; a[o + 11] = c.dmg || 0; a[o + 12] = c.airY || 0; a[o + 13] = c.prog || 0; a[o + 14] = c.i || 0; a[o + 15] = c.lat || 0;
+      a[o + 16] = c.finished ? 1 : 0; a[o + 17] = c.wheelSpin ?? c.wspin ?? 0; a[o + 18] = c.bodyPitch || 0; a[o + 19] = c.bodyRoll || 0; });
+    R.f.push(a);
+  }
+  playReplay(dt) {
+    const R = this.replay, F = R.f; if (!F.length) return; this.rt = (this.rt || 0) + dt; let k = this.rt / R.dt;
+    if (k >= F.length - 1) { this.rt = 0; k = 0; this.msg('🎬 Repriset börjar om', 1.5); }
+    const i0 = Math.floor(k), al = k - i0, A = F[i0], B = F[Math.min(F.length - 1, i0 + 1)], L = (x, y) => x + (y - x) * al;
+    this.t = R.t0 + this.rt; this.state = 'run';
+    this.cars.forEach((c, j) => { if (j >= R.n) return; const o = j * REC_K; let dh = B[o + 2] - A[o + 2]; while (dh > Math.PI) dh -= 2 * Math.PI; while (dh < -Math.PI) dh += 2 * Math.PI;
+      c.x = L(A[o], B[o]); c.z = L(A[o + 1], B[o + 1]); c.h = A[o + 2] + dh * al; c.vx = L(A[o + 3], B[o + 3]); c.vy = L(A[o + 4], B[o + 4]); c.r = A[o + 5]; c.steer = L(A[o + 6], B[o + 6]);
+      c.rpm = L(A[o + 7], B[o + 7]); c.gear = A[o + 8]; c.thr = A[o + 9]; c.brk = A[o + 10]; c.dmg = A[o + 11]; c.airY = L(A[o + 12], B[o + 12]); c.prog = L(A[o + 13], B[o + 13]); c.i = A[o + 14]; c.lat = A[o + 15];
+      c.finished = A[o + 16] > 0.5; c.wheelSpin = A[o + 17]; c.bodyPitch = A[o + 18]; c.bodyRoll = A[o + 19]; c.slip = 0; c.onSurf = true; });
+  }
   msg(html, dur = 2.4, cls = '') { const e = this.$('hMsg'); e.innerHTML = html; e.className = 'hud-msg show ' + cls; this.msgT = dur; }
 
   buildMap() {
@@ -985,6 +1051,7 @@ export class Race {
 
   step(dt) {
     const trk = this.trk, n = trk.n, p = this.player;
+    for (const c of this.cars) if (c.sb && c.sb.step(dt) && c.isPlayer) this.sbEffects(c); // mjukkroppen svänger ut efter smällar
     if (this.state === 'grid') {
       this.gridT += dt; this.input(dt);
       if (this.net) { // gemensam start: värden skickar en klocktid, lamporna räknar ner mot den
@@ -1072,6 +1139,12 @@ export class Race {
         const tgtF = 55 + slideHeat + Math.abs(c.steer) * 8, tgtR = 52 + slideHeat + (c.spec.drv === 'rwd' ? c.thr * 10 : 3);
         c.tireTemp[0] += (tgtF - c.tireTemp[0]) * dt * 0.8; c.tireTemp[1] += (tgtF - c.tireTemp[1]) * dt * 0.8;
         c.tireTemp[2] += (tgtR - c.tireTemp[2]) * dt * 0.8; c.tireTemp[3] += (tgtR - c.tireTemp[3]) * dt * 0.8;
+        if (this.cfg.settings?.tyreModel) { // avancerad däckmodell: greppet beror på däckens temperatur (fönster ca 58–98 °C, lågt tryck = varmare) och bromsarna kan blekna
+          const pr = c.spec.press ?? 2.0, heatK = 1 + 0.5 * Math.max(0, 2 - pr) - 0.25 * Math.max(0, pr - 2);
+          for (let w = 0; w < 4; w++) c.tireTemp[w] += (c.tireTemp[w] - (w < 2 ? 55 : 52)) * (heatK - 1) * dt * 0.8;
+          const g = T => clamp(1 - 0.004 * Math.max(0, 58 - T) - 0.006 * Math.max(0, T - 98), 0.82, 1);
+          c.tgF = g((c.tireTemp[0] + c.tireTemp[1]) / 2); c.tgR = g((c.tireTemp[2] + c.tireTemp[3]) / 2); c.fade = 1 - clamp((c.brakeTemp - 280) * 0.002, 0, 0.25);
+        }
         c.brakeTemp += ((60 + c.brk * 260) - c.brakeTemp) * dt * 1.5;
         // Däckslitage: sladd, hjulspinn och låsning sliter mest, asfalt mer än grus, is nästan inget. Slitna däck ger sämre grepp.
         { const st = trk.surfTypeAt ? trk.surfTypeAt(c.i) : trk.surface, k = st === 'asfalt' ? 1.5 : st === 'is' ? 0.25 : 1, sp = Math.min(1, Math.abs(c.vx) / 25), drvF = c.spec.drv === 'fwd';
@@ -1141,6 +1214,7 @@ export class Race {
   }
   damage(d, impact, engine) {
     const p = this.player; d *= engine ? 1 : p.spec.dmg; p.dmg = Math.min(100, p.dmg + d);
+    if (impact && d > 4 && this.cfg.settings?.mechDmg !== false) this.partDamage(p, d);
     if (impact && d > 9 && !p.spec.radSafe && !p.radLeak && p.dmg > 45 && Math.random() < 0.5) {
       p.radLeak = true;
       this.msg('KYLAREN LÄCKER<br><small>Håll koll på temperaturen</small>', 2.6, 'warn');
@@ -1255,8 +1329,9 @@ export class Race {
         return { id: c.nid, name: r.name, isPlayer: r.isPlayer, flag: r.flag, time: c.finished && !c.retired ? r.t : null, best: isFinite(c.bestLap) ? c.bestLap : null, jokerLap: c.jokerLap ?? null, dist: dist ?? null }; }),
       pos: rows.findIndex(r => r.isPlayer) + 1,
       bestLap: p.bestLap, dmg: p.dmg, flag: pRow?.flag || "", sanction: p.sanction, kaato: p.kaato,
-      exhaustLoose: p.exhaustLoose, finished: p.finished && !p.retired,
+      exhaustLoose: p.exhaustLoose, parts: { steer: p.steerDmg, gear: p.gearDmg, sign: p.pullSign || 0 }, finished: p.finished && !p.retired,
       time: p.finished && !p.retired ? p.finishT : null, radLeak: p.radLeak, dur: this.t, wear: [p.tireWearF, p.tireWearR],
+      replay: this.rec && this.rec.f.length > 20 ? this.rec : null,
     };
     this.destroy(); this.cfg.onDone(res);
   }
@@ -1276,7 +1351,9 @@ export class Race {
     if (this.ctl) this.controlEvents();
     if (this.net) this.netTick();
     { const tn = performance.now(), sdt = this.steerT ? Math.min(0.5, (tn - this.steerT) / 1000) : 0; this.steerT = tn; if (!this.paused || this.net) this.steerRamp(sdt); } // ratten följer riktiga klockan
+    if (this.replay) { if (!this.paused) { this.playReplay(dt); this.particlesStep(dt); this.audio(dt); } this.render(dt); this.hud(dt); return; }
     if (!this.paused || this.net) { this.acc += dt; let k = 0; while (this.acc >= DT && k++ < 14 * sp) { this.step(DT); this.acc -= DT; if (this.done) return; } if (this.acc > DT * 4) this.acc = 0; this.particlesStep(dt); this.audio(dt); }
+    if (this.state === 'run' && !this.done) this.recTick();
     this.render(dt); this.hud(dt);
   }
 
@@ -1424,7 +1501,7 @@ export class Race {
       at = [p.x + ch * 6, pY + 0.6, p.z + sh * 6];
     }
 
-    for (const c of this.cars) if (c.obj && (c.dmg || 0) > 4) this.view.damageCar(c.obj, c.dmg);
+    for (const c of this.cars) if (c.obj) { if (c.sb) { if (c.sb.ver) this.view.softDeform(c.obj, c.sb, c.dmg || 0); } else if ((c.dmg || 0) > 4 || c.dentV) this.view.damageCar(c.obj, c.dmg || 0, c.dents, c.dentV || 0); }
     for (const c of this.cars) this.view.poseCar(c.obj, c.x, c.y, c.z, c.h, c.tRoll || 0, c.tPitch || 0, c.steer, c.wheelSpin ?? c.wspin, c.brk > 0.1, !(c === p && (this.cam === 0 || this.cam === 1 || this.cam === DEFAULT_CAM)), (c.bodyRoll || 0) + (c.vR || 0), (c.bodyPitch || 0) + (c.vP || 0), (c.bY || 0) + (c.suspY || 0), c);
     let cockpit = null;
     if (this.cam === 0) { const sway = clamp((p.ay || 0) * 0.045 + Math.sin(this.t * 6.0) * 0.03, -0.45, 0.45);
@@ -1511,7 +1588,7 @@ export class Race {
     // 5. Bränsle, Skick, Däck & Lisälenkki
     $('hFuelKg').textContent = fmt(p.fuelKg, 1) + ' kg';
     $('hHealthBar').style.width = Math.max(0, 100 - p.dmg) + '%';
-    $('hDmgTxt').textContent = `Skada ${Math.round(p.dmg)} % · ${p.radLeak ? 'Kylare läcker!' : 'Kylare OK'}`;
+    $('hDmgTxt').textContent = `Skada ${Math.round(p.dmg)} % · ${p.radLeak ? 'Kylare läcker!' : 'Kylare OK'}${p.steerDmg >= 25 ? ' · Styrning sned' : ''}${p.gearLoss ? ' · Växellåda −' + p.gearLoss : ''}`;
     $('hDbTxt').textContent = p.exhaustLoose ? '>110 dB LÖST!' : '≤110 dB OK';
     $('hDbTxt').style.color = p.exhaustLoose ? '#fb7185' : '#34d399';
     $('hWearF').textContent = Math.round(p.tireWearF) + ' %';

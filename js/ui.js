@@ -1,5 +1,5 @@
 // Alla menyvyer + tävlingsdagens logik enligt ROKKIRALLI RY SÄÄNTÖKIRJA (21.04.2026).
-import { TYRES, CARS, ENGINES, CLASSES, CLASS_RULES, BUILD, UPG, FUELS, PAINTS, TRACKS, SURF, CAREER, FINALS, calcPoints, PRIZE_SHARE, CODES, MARKS, DRIVERS, KOMP } from './data.js';
+import { TYRES, CARS, ENGINES, CLASSES, CLASS_RULES, BUILD, UPG, FUELS, PAINTS, TRACKS, SURF, CAREER, FINALS, calcPoints, PRIZE_SHARE, CODES, MARKS, DRIVERS, KOMP, XP_LEVELS, XP_UNLOCKS } from './data.js';
 import { buildSpec, engineAt, curve, carById, engById, fuelById, defaultTune, fmt, checkInspection, formatCarNum, SETUP_DEF, SPEC_CARS, specCar } from './engine.js';
 import { S, save, reset, activeCar } from './state.js';
 import { getTrack } from './track.js';
@@ -45,6 +45,7 @@ export function render() {
   after();
 }
 const toast = t => { U.toast = t; };
+const TOD = [['morgon', '🌅 Morgon'], ['dag', '☀️ Dag'], ['kvall', '🌇 Kväll'], ['skymning', '🌆 Skymning']];
 const WEATHER = [['sol', '☀️ Sol'], ['mulet', '☁️ Mulet'], ['regn', '🌧 Regn'], ['dimma', '🌫 Dimma'], ['sno', '🌨 Snöfall']];
 function after() {
   const cv = document.getElementById('curve'); if (cv) drawCurve(cv);
@@ -70,7 +71,7 @@ function menu() {
         <div><span>Moment · Ljud</span><b>${fmt(k.peakT.T)} Nm</b><small>${k.db4500} dB @ 4500 rpm (max 110)</small></div>
         <div class="${k.kgHp < 5 ? 'good' : k.kgHp > 7 ? 'bad' : ''}"><span>Vikt/effekt</span><b>${fmt(k.kgHp, 1)} kg/hk</b><small>${fmt(s.mass)} kg (reg. ${s.regMass} kg)</small></div></div></div>
     <div class="hero-r">${plate(numStr, hex(paintOf(cs.paint).rgb), cs.bw)}</div></section>
-    ${statsPanel()}
+    ${xpPanel()}${statsPanel()}
     <nav class="mgrid">
       ${btn('play', '🏁', 'Snabbstart', 'Spela', 'Välj bana, varv, väder och AI – kör direkt', 'c1')}
       ${btn('online', '🌐', ON.room ? `Rum ${ON.room.code}` : 'Rumskod', 'Online', 'Skapa eller gå med i rum och kör mot kompisar', 'c5')}
@@ -157,6 +158,7 @@ function karriar() {
           <span class="lbl">Motståndare</span>${[3, 5].map(n => `<button class="chip s ${q.opp === n ? 'on' : ''}" data-act="q-opp" data-arg="${n}">${n}</button>`).join('')}
           <span class="lbl">Lisälenkki</span><button class="chip s ${q.joker ? 'on' : ''}" data-act="q-joker">${q.joker ? 'PÅ' : 'AV'}</button></div>
         <div class="row"><span class="lbl">Väder</span>${WEATHER.map(([k, n]) => `<button class="chip s ${(q.weather || 'sol') === k ? 'on' : ''}" data-act="q-weather" data-arg="${k}">${n}</button>`).join('')}</div>
+        <div class="row"><span class="lbl">Tid på dygnet</span>${TOD.map(([k, n]) => `<button class="chip s ${(q.tod || 'dag') === k ? 'on' : ''}" data-act="q-tod" data-arg="${k}">${n}</button>`).join('')}</div>
         <div class="row"><span class="lbl">AI-svårighet ${q.ai} %</span><input type="range" min="1" max="100" step="1" value="${q.ai}" data-in="q-ai"></div>
         ${carModeRow('q-cm', q.cm)}
         <div class="row"><button class="btn" data-act="quick-race" ${ok ? '' : 'disabled'}>🏁 Starta träningsheat</button><button class="btn ghost" data-act="quick-time" ${ok ? '' : 'disabled'}>⏱ Tidskörning</button></div>
@@ -334,7 +336,7 @@ function evStart(arg) {
   opps.forEach((o, i) => { const id = 'ai' + i; O[id] = { ...o, nid: id }; ents.push({ id, name: o.name, diff: o.diff, kgHp: curve(o.spec).kgHp / (o.powScale || 1) }); });
   U.ev = {
     li: +li, e, L, cls: insp.cls, rules, laps, O, cm, ch: newChamp({ perStart: cc.perStart, heats: cc.heats, laps, joker: rules.joker, trackLen: trk.len }, ents),
-    dmg: 0, radLeak: false, exhaustLoose: false, needKaatoInsp: false, hist: [],
+    dmg: 0, radLeak: false, exhaustLoose: false, parts: null, needKaatoInsp: false, hist: [],
     cleanDay: true, protestUsed: false, arvat: 0, saleEligible: false, saleDone: false, saleMsg: '', feePaid: rules.fee, usedVoucher, over: null, last: null,
   };
   U.view = 'event';
@@ -356,13 +358,13 @@ function evRun(heatId, watch) {
   if (watch) { if (!defs.length) return; startRace({ trackId: ev.e.track, laps: ev.laps, opps: defs.slice(1), player: defs[0], spectate: true, grid: 0, gridRows: ev.rules.gridRows, useJoker: ev.rules.joker, sideContact: true, title: '👁 ' + title, mode: 'heat', onDone: done }); return; }
   startRace({
     trackId: ev.e.track, laps: ev.laps, opps: defs, grid: h.ids.indexOf('me'), gridRows: ev.rules.gridRows, useJoker: ev.rules.joker, sideContact: ev.rules.sideContact,
-    title, dmg0: ev.dmg, radLeak0: ev.radLeak, wear0: ev.wear, mode: 'heat', onDone: done, specLvl: ev.cm || 0,
+    title, dmg0: ev.dmg, radLeak0: ev.radLeak, parts0: ev.parts, wear0: ev.wear, mode: 'heat', onDone: done, specLvl: ev.cm || 0,
   });
 }
 
 function evAfter(res, h) {
   const ev = U.ev;
-  ev.dmg = res.dmg; ev.wear = res.wear || ev.wear; ev.radLeak = res.radLeak; ev.exhaustLoose = !!res.exhaustLoose; ev.needKaatoInsp = !!res.kaato;
+  ev.dmg = res.dmg; ev.parts = res.parts || ev.parts; ev.wear = res.wear || ev.wear; ev.radLeak = res.radLeak; ev.exhaustLoose = !!res.exhaustLoose; ev.needKaatoInsp = !!res.kaato;
   ev.last = res; ev.protestable = !!res.sanction;
   ev.hist.push({ stage: heatName(h), pos: res.pos, flag: res.flag });
   if (isFinite(res.bestLap)) record(ev.e.track, res.bestLap);
@@ -384,7 +386,7 @@ function evEnd() {
   if (ev.cleanDay && S.warnings > 0) { S.warnings = 0; toast('✓ Ren tävling körd – varningslistan är nollställd!'); }
   const sf = ev.rules.saleFrom; if (fin && sf && sf !== 'semi' && FIN.indexOf(fin.letter) <= FIN.indexOf(sf)) ev.saleEligible = true;
   ev.over = { pos: me.pos, prize: me.prize, pts: me.pts, final: fin ? fin.letter : 'out' };
-  S.money += me.prize;
+  me.prize = withBonus(me.prize); S.money += me.prize;
   const old = S.career.res[ev.e.id]; if (!old || me.pts > old.pts) S.career.res[ev.e.id] = { final: ev.over.final, pos: me.pos, pts: me.pts };
   save();
 }
@@ -403,7 +405,7 @@ function resTable(rows, money) {
 const LADDER = [['alku', 'Alkuerä'], ['kerailu', 'Keräily'], ['lastcall', 'Last Call'], ['semi', 'Semi'], ['F', 'F'], ['E', 'E'], ['D', 'D'], ['C', 'C'], ['B', 'B'], ['A', 'A']];
 function eventView() {
   const ev = U.ev; if (!ev) { U.view = 'karriar'; return karriar(); }
-  const ch = ev.ch, t = TRACKS.find(x => x.id === ev.e.track), cost = Math.ceil(ev.dmg * 1.0 + (ev.radLeak ? 20 : 0) + (ev.exhaustLoose ? 15 : 0));
+  const ch = ev.ch, t = TRACKS.find(x => x.id === ev.e.track), cost = Math.ceil(ev.dmg * 1.0 + (ev.radLeak ? 20 : 0) + (ev.exhaustLoose ? 15 : 0) + (ev.parts ? Math.round((ev.parts.steer || 0) * 0.6 + (ev.parts.gear || 0) * 0.9) : 0));
   const curKey = ch.round === 'final' ? ch.letter : ch.round;
   let h = `<section class="panel evhead"><span class="kick">${t.name.toUpperCase()} · ${SURF[t.surface].name.toUpperCase()} · ${ev.rules.name.toUpperCase()} · ${ch.cfg.perStart} FÖRARE/START · ${ev.laps} VARV${ev.rules.joker ? ' · JOKERLAP' : ''}</span><h1>${ev.e.name}</h1>
     <div class="ladder">${LADDER.map(([k, n]) => `<span class="${k === curKey ? 'cur' : ''} ${k.length === 1 ? 'fin' : ''}">${n}</span>`).join('<i>›</i>')}</div>
@@ -433,6 +435,8 @@ function eventView() {
     ${isFinalRound ? `<p class="dim">Finalerna körs i ordning F → A. ${mine ? 'Det är din tur nu.' : 'Du väntar på din final – titta på eller simulera den här först.'}</p>` : ''}
     ${ev.needKaatoInsp ? `<div class="warnbox">⚠ <b>KAATOKATSASTUS KRÄVS</b> efter rullningen.<div class="row" style="margin-top:6px"><button class="btn small" data-act="ev-kaato">🔧 Kaatokatsastus (40 €)</button></div></div>` : ''}
     ${ev.exhaustLoose ? `<div class="warnbox">⚠ Avgasröret har lossnat (110 dB-regeln) – laga före nästa heat.</div>` : ''}
+    ${ev.parts && (ev.parts.steer >= 25 || ev.parts.gear >= 45) ? `<div class="warnbox">🔧 ${ev.parts.steer >= 25 ? `Styrningen är sned (${Math.round(ev.parts.steer)} %) – bilen drar åt ena hållet. ` : ''}${ev.parts.gear >= 45 ? `Växellådan är skadad (${Math.round(ev.parts.gear)} %) – högsta växeln saknas. ` : ''}Laga i depån.</div>` : ''}
+    ${U.lastReplay ? `<div class="row">${replayBtn()}</div>` : ''}
     <div class="heats">${ch.heats.map(x => `<div class="heat ${x.ids.includes('me') ? 'mine' : ''} ${x.res ? 'done' : ''}"><div class="hh"><b>${heatName(x)}</b><span>${x.res ? 'Klart' : x.ids.length + ' förare'}</span></div>
       <ol>${(x.res || x.ids.map(id => ({ id, name: ch.E[id].name }))).map(r => `<li class="${r.id === 'me' ? 'me' : ''}">${esc(r.name)}${r.flag ? ` <i class="flag">${r.flag}</i>` : ''}</li>`).join('')}</ol>
       ${x.res ? '' : x.ids.includes('me') ? `<div class="row"><button class="btn small" data-act="ev-run" data-arg="${x.id}" ${ev.needKaatoInsp || ev.exhaustLoose ? 'disabled' : ''}>🏁 Kör ditt heat</button>${canSkip(ch, 'me') ? `<button class="btn small ghost" data-act="ev-skip">KESKÖIDÄ</button>` : ''}</div>` : `<div class="row"><button class="btn small ghost" data-act="ev-watch" data-arg="${x.id}">👁 Titta</button></div>`}</div>`).join('')}</div>
@@ -458,7 +462,25 @@ function statsPanel() { const st = stats(), h = st.sec / 3600, rows = Object.ent
       <div><span>Körda heat</span><b>${st.races}</b><small>${st.wins} segrar</small></div>
       <div><span>Banor körda</span><b>${rows.length} / ${TRACKS.length}</b></div></div>
     ${rows.length ? `<table class="res stat-t"><tr><th>Bana</th><th>Heat</th><th>Körtid</th><th>Bästa varv</th></tr>${rows.map(([id, r]) => `<tr><td>${tname(id)}</td><td>${r.n}</td><td>${fmt(r.sec / 60, 0)} min</td><td>${S.records[id] ? fmtTime(S.records[id]) : '–'}</td></tr>`).join('')}</table>` : '<p class="dim">Kör ditt första heat så börjar listan fyllas.</p>'}</section>`; }
-function countRace(trackId, res) { const st = stats(), d = Math.max(0, res.dur || 0); st.sec += d; st.races++; if (res.pos === 1 && res.finished) st.wins++; const t = st.tracks[trackId] || (st.tracks[trackId] = { n: 0, sec: 0 }); t.n++; t.sec += d; save(); pushBoard(); }
+// ---- erfarenhet (XP), nivåer och upplåsningar ----
+const xpLevel = (xp = S.xp || 0) => { let l = 1; while (l < XP_LEVELS.length && xp >= XP_LEVELS[l]) l++; return l; };
+const xpBonus = () => { let b = 0; for (let l = 2; l <= xpLevel(); l++) if (XP_UNLOCKS[l]?.bonus) b = XP_UNLOCKS[l].bonus; return b; };
+const withBonus = prize => Math.round(prize * (1 + xpBonus() / 100));
+function giveXp(res) {
+  if (!res) return; const fin = !!res.finished, pos = res.pos || 0;
+  let xp = 10 + (fin ? 10 : 0) + (pos ? Math.max(0, 7 - pos) * 5 : 0) + (fin && pos === 1 ? 15 : 0) + (fin && !res.flag ? 5 : 0);
+  const before = xpLevel(); S.xp = (S.xp || 0) + xp; const after = xpLevel();
+  U.toast = after > before ? `⭐ NIVÅ ${after}! ${XP_UNLOCKS[after] ? 'Upplåst: ' + XP_UNLOCKS[after].text : ''}` : `+${xp} XP`;
+}
+function xpPanel() {
+  const xp = S.xp || 0, l = xpLevel(xp), lo = XP_LEVELS[l - 1] || 0, hi = XP_LEVELS[l], pct = hi ? Math.round((xp - lo) / (hi - lo) * 100) : 100;
+  const next = Object.keys(XP_UNLOCKS).map(Number).find(k => k > l);
+  return `<section class="panel"><h2>Erfarenhet – nivå ${l}${l >= 11 ? ' · Veteraani' : ''}</h2>
+    <div class="xpbar"><i style="width:${pct}%"></i></div>
+    <p class="dim">${fmt(xp)} XP${hi ? ` · ${fmt(hi - xp)} XP kvar till nivå ${l + 1}` : ' · högsta nivån'}${xpBonus() ? ` · +${xpBonus()} % prispengar` : ''}${next ? ` · Nästa upplåsning (nivå ${next}): ${XP_UNLOCKS[next].text}` : ''}</p>
+    <p class="dim">XP får du för varje heat: mer för bra placering, vinst, målgång och rent lopp.</p></section>`;
+}
+function countRace(trackId, res) { giveXp(res); const st = stats(), d = Math.max(0, res.dur || 0); st.sec += d; st.races++; if (res.pos === 1 && res.finished) st.wins++; const t = st.tracks[trackId] || (st.tracks[trackId] = { n: 0, sec: 0 }); t.n++; t.sec += d; save(); pushBoard(); }
 function record(track, lap) { if (!S.records[track] || lap < S.records[track]) { S.records[track] = lap; save(); } }
 
 function startRace(o) {
@@ -467,7 +489,7 @@ function startRace(o) {
   U.view = 'race'; document.body.classList.add('racing'); app().innerHTML = ''; MUSIC.stop();
   const done = o.onDone;
   U.race = new Race(app(), {
-    ...o, onDone: res => { if (!o.spectate) countRace(o.trackId, res); done(res); }, record: S.records[o.trackId], settings: S.settings,
+    ...o, onDone: res => { if (o.replay) return done(res); if (res?.replay && !o.spectate) U.lastReplay = { o: { ...o, net: null, netLead: false, heatId: null }, rec: res.replay }; if (!o.spectate) countRace(o.trackId, res); done(res); }, record: S.records[o.trackId], settings: S.settings,
     onCameraChange: camera => { S.settings.camera = camera; save(); },
     player: o.spectate ? o.player : { nid: 'me', name: o.net ? `${netName()} #${numStr}` : `${S.name || 'Du'} (#${numStr})`, num: numStr, spec: s, paint: paintOf(cs.paint).rgb, bw: cs.bw || 'wb', aids: { ...S.aids } },
   });
@@ -553,7 +575,7 @@ function netRace(h, grid, cfg, lead, watch) {
   const defs = grid.filter(g => watch || g.id !== room.id).map(g => g.ai
     ? { name: g.name, paint: g.paint, bw: g.bw, diff: g.diff, powScale: g.powScale, spec: g.spec, nid: g.id, remote: watch || !amLead }
     : { name: g.name, paint: g.car.paint, bw: g.car.bw, num: g.car.num, skill: 1, spec: cfg.cm ? specCar(cfg.cm) : g.car.spec, nid: g.id, remote: true });
-  const base = { trackId: cfg.track, laps: cfg.laps, gridRows: 2, useJoker: !!cfg.joker, sideContact: true, mode: 'heat', weather: cfg.weather, net: room, heatId: h, netLead: lead, specLvl: cfg.cm || 0 };
+  const base = { trackId: cfg.track, laps: cfg.laps, gridRows: 2, useJoker: !!cfg.joker, sideContact: true, mode: 'heat', weather: cfg.weather, tod: cfg.tod || 'dag', net: room, heatId: h, netLead: lead, specLvl: cfg.cm || 0 };
   if (watch) { const hum = defs.filter(d => grid.find(g => g.id === d.nid && !g.ai)), first = hum.find(d => d.nid !== room.id) || hum[0] || defs[0], rest = defs.filter(d => d !== first); // börja på en kompis, inte en AI
     startRace({ ...base, opps: rest, player: first, spectate: true, grid: 0, title: '👁 Online', onDone: () => { room.backToLobby(); U.view = 'online'; render(); } }); return; }
   startRace({ ...base, opps: defs, grid: my, title: 'Online – ' + (ON.champ?.heats?.find(x => x.id === h)?.name || 'heat'),
@@ -629,7 +651,7 @@ function online() {
   const cfg = room.cfg, H = room.isHost, cs = room.champ, trk = TRACKS.find(t => t.id === cfg.track) || TRACKS[0];
   // Prispengar online: när heatet/mästerskapet är klart får varje riktig spelare sitt pris (vinnaren mest) – en gång per tävling
   if (cs?.done && cs.overall) { const key = room.code + ':' + cs.overall.map(r => r.id + r.pos).join(','), me = cs.overall.find(r => r.id === room.id); S.onlinePaid = S.onlinePaid || [];
-    if (me && !S.onlinePaid.includes(key)) { S.onlinePaid.push(key); if (S.onlinePaid.length > 40) S.onlinePaid.shift(); if (me.prize > 0) { S.money += me.prize; U.toast = `🏆 ${me.pos === 1 ? 'Du vann' : 'Plats ' + me.pos} – ${eur(me.prize)} insatt!`; } save(); } }
+    if (me && !S.onlinePaid.includes(key)) { S.onlinePaid.push(key); if (S.onlinePaid.length > 40) S.onlinePaid.shift(); if (me.prize > 0) { me.prize = withBonus(me.prize); S.money += me.prize; U.toast = `🏆 ${me.pos === 1 ? 'Du vann' : 'Plats ' + me.pos} – ${eur(me.prize)} insatt!`; } save(); } }
   const running = cs && !cs.all && !cs.done;
   let h = `<section class="panel">${head}
       <div class="row"><input class="on-in link" readonly value="${esc(roomLink(room.code))}" onclick="this.select()"><button class="btn small" data-act="on-copy">${ON.copied ? '✓ Kopierad' : '📋 Kopiera länk'}</button></div>
@@ -638,11 +660,13 @@ function online() {
       ${room.members.map(m => `<tr><td><span class="dot" style="background:${hex(m.car?.paint || [.5, .5, .5])}"></span><b>${esc(m.name)}</b>${m.host ? ' · värd' : ''}${m.id === room.id ? ' · du' : ''}</td><td>#${esc(m.car?.num)} ${esc(m.car?.model)} · ${esc(m.car?.hp)} hk</td><td>${cs?.where?.[m.id] ? esc(cs.where[m.id]) : ''}</td></tr>`).join('')}</table>
       <div class="row"><button class="btn small ghost" data-act="go" data-arg="garage">Byt bil i garaget</button></div></section>`;
   if (room.status === 'lobby' || room.status === 'race') h += invitePanel(room); // bjud in andra som har spelet öppet
+  if (U.lastReplay && room.status === 'lobby') h += `<section class="panel"><div class="row">${replayBtn()}</div></section>`;
   if (H && !running) {
-    const C = (k, v, n) => `<button class="chip s ${cfg[k] === v ? 'on' : ''}" data-act="on-cfg" data-arg="${k}:${v}">${n ?? v}</button>`;
+    cfg.tod ??= 'dag'; const C = (k, v, n) => `<button class="chip s ${cfg[k] === v ? 'on' : ''}" data-act="on-cfg" data-arg="${k}:${v}">${n ?? v}</button>`;
     h += `<section class="panel"><h2>Tävlingsinställningar</h2>
       ${cs && !cs.done ? '<p class="dim">Mästerskapet pågår – inställningarna låses tills det är klart.</p>' : `      <h3>Bana</h3><div class="chips">${TRACKS.map(t => `<button class="chip ${cfg.track === t.id ? 'on' : ''}" data-act="on-cfg" data-arg="track:${t.id}">${t.name}<small>${SURF[t.surface].name.split(' ')[0]}</small></button>`).join('')}</div>
       <div class="row"><span class="lbl">Väder</span>${WEATHER.map(([k, n]) => C('weather', k, n)).join('')}</div>
+      <div class="row"><span class="lbl">Tid på dygnet</span>${TOD.map(([k, n]) => C('tod', k, n)).join('')}</div>
       <div class="row"><span class="lbl">Varv ${cfg.laps}</span><input type="range" min="1" max="100" step="1" value="${cfg.laps}" data-in="on-laps"></div>
       <div class="row"><span class="lbl">AI-motståndare ${cfg.ai}</span><input type="range" min="0" max="30" step="1" value="${cfg.ai}" data-in="on-ai"></div>
       <div class="row"><span class="lbl">AI-svårighet ${cfg.diff} %</span><input type="range" min="1" max="100" step="1" value="${cfg.diff}" data-in="on-diff"></div>
@@ -764,7 +788,7 @@ function garage() {
   // Lack & Tävlingsnummer (Kilpailunumerot s. 8)
   h += `<section class="panel"><h2>Lack & Kilpailunumerot (Takasivulasi ≥ 20 cm, fram-/bakruta ≥ 10 cm)</h2>
     <p class="dim">Enligt Sääntökirja s. 8 måste siffrorna vara <b>svarta på vit botten</b> eller <b>vita på svart botten</b> (inga undantag!) och placeras i <b>bakre sidorutorna</b> (nummer på dörren är förbjudet!). Super har <b>S</b>, Junior <b>J</b> och Lady <b>L</b> framför numret. På tävlingskontoret kostar stora siffror 2 €/st och små 1 €/st.</p>
-    <div class="row wrap">${PAINTS.map(p => `<button class="swatch ${cs.paint === p.id ? 'on' : ''}" style="--c:${hex(p.rgb)}" data-act="paint" data-arg="${p.id}" title="${p.name}"></button>`).join('')}
+    <div class="row wrap">${PAINTS.map(p => p.lvl && xpLevel() < p.lvl ? `<button class="swatch locked" style="--c:${hex(p.rgb)}" disabled title="${p.name} – låses upp på nivå ${p.lvl}">🔒</button>` : `<button class="swatch ${cs.paint === p.id ? 'on' : ''}" style="--c:${hex(p.rgb)}" data-act="paint" data-arg="${p.id}" title="${p.name}${p.lvl ? ' (nivå ' + p.lvl + ')' : ''}"></button>`).join('')}
     <span class="lbl">Nummer (${ CLASS_RULES[insp.cls]?.prefix || '1–999' })</span><input class="num" type="number" min="1" max="999" value="${cs.num}" data-in="num">
     <button class="chip s ${cs.bw !== 'bw' ? 'on' : ''}" data-act="num-bw" data-arg="wb">Svart på vit botten</button>
     <button class="chip s ${cs.bw === 'bw' ? 'on' : ''}" data-act="num-bw" data-arg="bw">Vit på svart botten</button></div></section>`;
@@ -842,6 +866,7 @@ function trim() {
 const SETUP_UI = [
   ['Fjädring', 'spring', 1, 10, 1, v => v <= 3 ? 'mjuk' : v >= 8 ? 'styv' : 'medel', 'Mjukt är bäst på grus och is, styvt på asfalt.'],
   ['Dämpare', 'damper', 1, 10, 1, v => v <= 3 ? 'mjuk' : v >= 8 ? 'hård' : 'medel', 'Hårda dämpare håller bilen stilla på asfalt men studsar på gupp.'],
+  ['Däcktryck', 'press', 1.0, 3.0, 0.05, v => fmt(v, 2) + ' bar', '2,0 bar är neutralt. Lägre tryck ger mer grepp på grus men slarvigare styrning, mer slitage och lite mer rullmotstånd. Högre tryck ger skarpare styrning men mindre grepp.'],
   ['Camber', 'camber', -5, 1, 0.1, v => fmt(v, 1) + '°', 'Runt −2° ger mest grepp i kurvorna.'],
   ['Toe fram', 'toeF', -1, 1, 0.05, v => (v > 0 ? '+' : '') + fmt(v, 2) + '° ' + (v > 0 ? 'toe-in' : v < 0 ? 'toe-out' : ''), 'Toe-out ger skarpare instyrning, toe-in stabilitet.'],
   ['Toe bak', 'toeR', -1, 1, 0.05, v => (v > 0 ? '+' : '') + fmt(v, 2) + '°', 'Lite toe-in bak gör bilen stabil; toe-out gör den lös.'],
@@ -932,6 +957,12 @@ function settings() {
   <section class="panel"><h2>Grafik</h2><div class="row">${(() => { const cur = st.quality === 'lag' ? 'low' : st.quality === 'hog' ? 'high' : (st.quality || 'auto'); return [['auto', 'Auto'], ['low', 'Low'], ['medium', 'Medium'], ['high', 'High'], ['ultra', 'Ultra']].map(q => `<button class="chip s ${cur === q[0] ? 'on' : ''}" data-act="quality" data-arg="${q[0]}">${q[1]}</button>`).join(''); })()}</div><p class="dim">Auto väljer nivå efter datorn och sänker upplösningen under körning om bildfrekvensen faller under ~50 FPS. Low: inga skuggor, färre träd. Medium: skuggor, gräs, miljöreflexer. High: mjuka skuggor, PBR-terräng, mer gräs och damm. Ultra: 4K-skuggor, tätaste skogen och vegetationen.</p></section>
   <section class="panel"><h2>Upplösning</h2><div class="row">${[['auto', 'Auto (skärmens)'], ['1440', '1440p'], ['1080', '1080p'], ['720', '720p'], ['540', '540p']].map(q => `<button class="chip s ${(st.res || 'auto') === q[0] ? 'on' : ''}" data-act="res" data-arg="${q[0]}">${q[1]}</button>`).join('')}</div><p class="dim">Hur många bildrader 3D-vyn renderas med. Lägre ger högre bildfrekvens, högre ger skarpare bild. HUD:en påverkas inte.</p></section>
   <section class="panel"><h2>Pekskärmskontroller</h2><div class="row">${[['auto', 'Auto'], ['on', 'På'], ['off', 'Av']].map(q => `<button class="chip s ${st.touch === q[0] ? 'on' : ''}" data-act="touch" data-arg="${q[0]}">${q[1]}</button>`).join('')}</div></section>
+  <section class="panel"><h2>Realism</h2><div class="row"><span class="lbl">Mekaniska skador</span>${[[true, 'På'], [false, 'Av']].map(([v, n]) => `<button class="chip s ${(st.mechDmg !== false) === v ? 'on' : ''}" data-act="mechdmg" data-arg="${v ? 1 : 0}">${n}</button>`).join('')}</div>
+    <div class="row"><span class="lbl">Mjukkroppsfysik (BeamNG-läge)</span>${[[true, 'På'], [false, 'Av']].map(([v, n]) => `<button class="chip s ${!!st.softBody === v ? 'on' : ''}" data-act="softbody" data-arg="${v ? 1 : 0}">${n}</button>`).join('')}</div>
+    <p class="dim">BeamNG-läge: varje bils kaross är ett nät av noder och balkar som böjs permanent vid smällar. Hela bilen deformeras där den träffas, och skadorna påverkar körningen: sneda hjul gör att bilen drar åt det skadade hållet, intryckt front ger kylarläcka och motorskada, intryckt bak kan slita loss avgasröret. Av = som förut.</p>
+    <div class="row"><span class="lbl">Avancerad däckmodell</span>${[[true, 'På'], [false, 'Av']].map(([v, n]) => `<button class="chip s ${!!st.tyreModel === v ? 'on' : ''}" data-act="tyremodel" data-arg="${v ? 1 : 0}">${n}</button>`).join('')}</div>
+    <p class="dim">Avancerad däckmodell: kalla däck (under ca 58 °C, t.ex. första sekunderna) och överhettade däck (över ca 98 °C) greppar sämre, lågt däcktryck värmer däcken snabbare och heta bromsar bleknar. Se däcktemperaturerna i telemetrin [T]. Av = som förut.</p>
+    <p class="dim">Hårda smällar kan skada styrningen (ett hjul blir snett och bilen drar åt ena hållet) och växellådan (högsta växeln försvinner, växlingarna blir långsammare). Lagas i depån. Oskadad bil kör exakt som vanligt.</p></section>
   ${controlsPanel()}
   <section class="panel"><h2>Sparning</h2><p class="dim">Pengar, bilar, delar, katsastuskortti, varningar och resultat sparas lokalt i webbläsaren.</p><div class="row"><button class="btn ghost danger" data-act="reset">Återställ sparning</button></div></section>`;
 }
@@ -969,6 +1000,8 @@ const ACT = {
   'inv-all'() { const r = ON.room; if (!PRES || !r) return; const ids = PRES.others().filter(p => p.room !== r.code).map(p => p.id); PRES.invite(ids, r.code, netName()); ids.forEach(id => (ON.invited ||= new Map()).set(id, Date.now())); toast(`📨 Inbjudan skickad till ${ids.length} spelare`); },
   'inv-no'() { U.invite = null; },
   'inv-join'() { const v = U.invite; U.invite = null; if (!v) return; if (!activeCar()) { toast('Du behöver en bil för att köra online.'); return; } if (ON.room) leaveRoom(); ON.code = v.code; U.view = 'online'; openRoom(v.code, false); window.scrollTo(0, 0); },
+  replay() { const L = U.lastReplay; if (!L) return; const back = U.view; window.scrollTo(0, 0);
+    startRace({ ...L.o, replay: L.rec, title: '🎬 Repris – ' + (L.o.title || ''), onDone: () => { U.view = back; render(); } }); return false; },
   'on-create'() { const n = document.getElementById('onName'); if (n) { S.name = n.value.trim() || 'Du'; save(); } openRoom(makeCode(), true); },
   'on-join'() {
     const n = document.getElementById('onName'); if (n) { S.name = n.value.trim() || 'Du'; save(); }
@@ -979,7 +1012,7 @@ const ACT = {
   'on-retry'() { openRoom(ON.room.code, false); },
   'on-leave'() { leaveRoom(); },
   'on-cm'(a) { ON.room?.setCfg({ cm: +a }); return false; },
-  'on-cfg'(a) { const [k, v] = a.split(':'); ON.room?.setCfg({ [k]: k === 'track' || k === 'weather' ? v : +v }); return false; },
+  'on-cfg'(a) { const [k, v] = a.split(':'); ON.room?.setCfg({ [k]: k === 'track' || k === 'weather' || k === 'tod' ? v : +v }); return false; },
   'on-copy'() { const l = roomLink(ON.room.code); try { navigator.clipboard.writeText(l); } catch (e) { } ON.copied = 1; setTimeout(() => { ON.copied = 0; if (U.view === 'online') render(); }, 1800); },
   'on-start'() { hostStart(); return false; },
   'on-next'() { hostNext(); return false; },
@@ -992,7 +1025,7 @@ const ACT = {
   'drv-cls'(a) { S.driverCls = a; save(); },
   'do-lippumies'() { S.lippumies = 0; S.warnings = 0; save(); toast('🚩 Du har stått flaggvakt en tävlingsdag (lippumiespesti) – du har nu tävlingsrätt igen!'); },
   'q-track'(a) { U.quick.track = a; }, 'q-laps'(a) { U.quick.laps = +a; }, 'q-opp'(a) { U.quick.opp = +a; },
-  'q-weather'(a) { U.quick.weather = a; }, 'q-cm'(a) { U.quick.cm = +a; },
+  'q-weather'(a) { U.quick.weather = a; }, 'q-tod'(a) { U.quick.tod = a; }, 'q-cm'(a) { U.quick.cm = +a; },
   'cc-cm'(a) { champCfg().cm = +a; save(); },
   'q-joker'() { U.quick.joker = U.quick.joker ? 0 : 1; },
   'quick-race'() {
@@ -1000,13 +1033,13 @@ const ACT = {
     startRace({
       trackId: q.track, laps: q.laps, opps: makeOpps(q.opp, li, q.ai / 100, insp.cls, undefined, q.cm || 0), specLvl: q.cm || 0,
       grid: q.opp, gridRows: insp.rules.gridRows, useJoker: !!q.joker, sideContact: insp.rules.sideContact,
-      title: `${insp.rules.name} – Träningsheat`, mode: 'heat', weather: q.weather, onDone: r => quickDone(r),
+      title: `${insp.rules.name} – Träningsheat`, mode: 'heat', weather: q.weather, tod: q.tod, onDone: r => quickDone(r),
     });
     return false;
   },
   'quick-time'() {
     const q = U.quick;
-    startRace({ trackId: q.track, laps: q.laps, opps: [], specLvl: q.cm || 0, grid: 0, gridRows: 1, useJoker: false, title: 'Tidskörning', mode: 'time', weather: q.weather, onDone: r => quickDone(r, true) });
+    startRace({ trackId: q.track, laps: q.laps, opps: [], specLvl: q.cm || 0, grid: 0, gridRows: 1, useJoker: false, title: 'Tidskörning', mode: 'time', weather: q.weather, tod: q.tod, onDone: r => quickDone(r, true) });
     return false;
   },
   'ev-start'(a) { evStart(a); window.scrollTo(0, 0); },
@@ -1019,8 +1052,8 @@ const ACT = {
   'ev-next'() { evNext(); window.scrollTo(0, 0); },
   'ev-tyres'() { const ev = U.ev; if (ev && S.money >= 40) { S.money -= 40; ev.wear = [0, 0]; save(); toast('Fräscha däck monterade.'); } },
   'ev-repair'() {
-    const ev = U.ev, cost = Math.ceil(ev.dmg * 1.0 + (ev.radLeak ? 20 : 0) + (ev.exhaustLoose ? 15 : 0));
-    if (S.money >= cost) { S.money -= cost; ev.dmg = 0; ev.radLeak = false; ev.exhaustLoose = false; save(); toast('Bilen är lagad och avgasröret fäst (≤110 dB).'); }
+    const ev = U.ev, cost = Math.ceil(ev.dmg * 1.0 + (ev.radLeak ? 20 : 0) + (ev.exhaustLoose ? 15 : 0) + (ev.parts ? Math.round((ev.parts.steer || 0) * 0.6 + (ev.parts.gear || 0) * 0.9) : 0));
+    if (S.money >= cost) { S.money -= cost; ev.dmg = 0; ev.radLeak = false; ev.exhaustLoose = false; ev.parts = null; save(); toast('Bilen är lagad och avgasröret fäst (≤110 dB).'); }
   },
   'ev-kaato'() {
     const ev = U.ev;
@@ -1146,22 +1179,27 @@ const ACT = {
     if (r.all) { const n = S.dyno[U.taskDiff - 1], pay = n < 6 ? t.reward : Math.round(t.reward * 0.25); S.money += pay; S.dyno[U.taskDiff - 1]++; save(); U.taskMsg = `✓ Rätt! +${eur(pay)}`; } else U.taskMsg = 'Inte helt rätt – rätta svaren visas vid fälten. Ta en ny uppgift.';
   },
   camera(a) { const camera = Number(a); if (Number.isInteger(camera) && CAM_NAMES[camera]) { S.settings.camera = camera; save(); } },
+  softbody(a) { S.settings.softBody = a === '1'; save(); },
+  tyremodel(a) { S.settings.tyreModel = a === '1'; save(); },
+  mechdmg(a) { S.settings.mechDmg = a === "1"; save(); },
   quality(a) { S.settings.quality = a; save(); }, res(a) { S.settings.res = a; save(); }, touch(a) { S.settings.touch = a; save(); },
   reset() { if (U.confirmReset) { reset(); U.confirmReset = false; toast('Sparningen är återställd.'); U.view = 'menu'; } else { U.confirmReset = true; toast('Tryck en gång till för att radera allt.'); setTimeout(() => U.confirmReset = false, 4000); } },
 };
 
 function quickDone(r, time) {
   if (isFinite(r.bestLap)) record(U.quick.track, r.bestLap);
-  const prize = time || r.flag ? 0 : NORMAL_PRIZE[r.pos - 1] || 0; if (prize && r.finished) S.money += prize; save();
+  const prize = time || r.flag ? 0 : withBonus(NORMAL_PRIZE[r.pos - 1] || 0); if (prize && r.finished) S.money += prize; save();
   U.result = { r, time, prize: r.finished ? prize : 0, title: time ? 'Tidskörning' : 'Träningsheat' }; U.view = 'result'; render();
 }
+// 🎬 Repris av senaste heatet: samma bana, bilar och väder – bilarna följer inspelningen
+function replayBtn() { return U.lastReplay ? '<button class="btn ghost" data-act="replay">🎬 Se repris av senaste heatet</button>' : ''; }
 function result() {
   const R = U.result; if (!R) { U.view = 'karriar'; return karriar(); }
   const r = R.r;
   return `<section class="panel"><span class="kick">${R.title.toUpperCase()}</span><h1>${R.time ? 'Bästa varv ' + fmtTime(r.bestLap) : `Plats ${r.pos}${r.flag ? ' (' + r.flag + ')' : ''}`}</h1>
     ${R.time ? '' : `<div class="pills"><div><span>Prispengar</span><b>${eur(R.prize)}</b></div></div>`}
     ${resTable(r.order, R.time ? null : (o, i) => [o.flag ? 0 : NORMAL_PRIZE[i] || 0, 0])}
-    <div class="row"><button class="btn" data-act="go" data-arg="play">Kör igen</button><button class="btn ghost" data-act="go" data-arg="menu">Meny</button></div></section>`;
+    <div class="row"><button class="btn" data-act="go" data-arg="play">Kör igen</button>${replayBtn()}<button class="btn ghost" data-act="go" data-arg="menu">Meny</button></div></section>`;
 }
 
 const INP = {

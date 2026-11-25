@@ -147,6 +147,25 @@ export class View3 {
       hemiSky: w ? 0xd8e8ff : 0xbad7ff, hemiGnd: w ? 0x92a0b2 : 0x64543c, hemiI: w ? 0.62 : 0.56,
       gnd: w ? 0x98a4b2 : 0x423d28, exp: 1.15, sRad: this.level >= 2 ? 1.8 : 2.5, wind: [1.5, 0.8], dustTint: [1.10, 1.01, 0.90],
     };
+    // Tid på dygnet: flyttar solen och färgar om ljuset (morgon = låg kall sol + dis, kväll = låg gyllene sol, skymning = blå timme)
+    const tod = this.tod = opt.tod || 'dag';
+    if (tod !== 'dag') {
+      const C = h => new THREE.Color(h), mix = (a, b, t) => C(a).lerp(C(b), t).getHex(), sunny = !grey;
+      const M = {
+        morgon: { sunY: 0.20, sunRot: -1.9, sunCol: 0xffd9b0, sunK: 0.82, hor: 0xf2d6c4, zen: 0x6f8fbf, t: 0.45, hemiK: 0.85, fogK: 0.62, exp: 1.12 },
+        kvall: { sunY: 0.14, sunRot: 1.7, sunCol: 0xffa860, sunK: 0.86, hor: 0xffb27a, zen: 0x3b5d99, t: 0.55, hemiK: 0.78, fogK: 0.85, exp: 1.16 },
+        skymning: { sunY: 0.035, sunRot: 2.1, sunCol: 0xff7a4a, sunK: 0.34, hor: 0xd9877a, zen: 0x1c2550, t: 0.75, hemiK: 0.46, fogK: 0.7, exp: 1.32 },
+      }[tod];
+      if (M) {
+        const a0 = Math.atan2(wp.sun[2], wp.sun[0]) + M.sunRot, rr = Math.sqrt(1 - M.sunY * M.sunY);
+        wp.sun = [Math.cos(a0) * rr, M.sunY, Math.sin(a0) * rr];
+        const t = sunny ? M.t : M.t * 0.5;
+        wp.sunCol = mix(wp.sunCol, M.sunCol, sunny ? 0.85 : 0.4); wp.sunI *= M.sunK;
+        wp.hor = mix(wp.hor, M.hor, t); wp.zen = mix(wp.zen, M.zen, t);
+        wp.hemiSky = mix(wp.hemiSky, M.zen, t * 0.6); wp.hemiI *= M.hemiK; wp.gnd = mix(wp.gnd, 0x1a1c24, tod === 'skymning' ? 0.5 : 0.15);
+        wp.fogN *= M.fogK; wp.fogF *= M.fogK; wp.exp = Math.max(wp.exp, M.exp); wp.sRad *= 1.3;
+      }
+    }
     R.toneMappingExposure = wp.exp;
     this.wind = wp.wind;
     const horizon = new THREE.Color(wp.hor), zenith = new THREE.Color(wp.zen);
@@ -762,23 +781,53 @@ export class View3 {
     }
     rollP.add(bodyG); liftG.add(rollP); G.add(liftG);
     G.userData.bodyG = bodyG; G.userData.chassis = bodyG; G.userData.rollP = rollP; G.userData.liftG = liftG; G.userData.halfW = W / 2;
-    this.scene.add(G); this.cars.push(G); return G; }
+    G.userData.halfL = L / 2; G.userData.halfW = W / 2; this.scene.add(G); this.cars.push(G); return G; }
   // Synliga skador: bucklar in lackerade delar (deterministiskt per bil) och gör lacken mattare/repig
-  damageCar(G, dmg) {
-    const lvl = Math.round(dmg / 5) * 5; if (G.userData.dl === lvl) return; G.userData.dl = lvl;
-    const seed = G.userData.seed ??= Math.random() * 100, k = lvl / 100;
+  // Skador på karossen: riktiga bucklor där smällarna träffade (dents från fysiken) + lätt allmän tilltryckning och matt/smutsig lack
+  damageCar(G, dmg, dents, dv = 0) {
+    const lvl = Math.round(dmg / 5) * 5; if (G.userData.dl === lvl && G.userData.dv === dv) return; G.userData.dl = lvl; G.userData.dv = dv;
+    const THREE = T(), seed = G.userData.seed ??= Math.random() * 100, k = lvl / 100, D = dents || [];
+    G.updateMatrixWorld(true); const inv = new THREE.Matrix4().copy(G.matrixWorld).invert(), v = new THREE.Vector3(), w = new THREE.Vector3();
+    const hl = G.userData.halfL || 2.2, hw = G.userData.halfW || 0.86;
+    // varje buckla: träffpunkt på karossens kant i riktningen (ux, uz)
+    const P = D.map(d => { const t = Math.min(hl / Math.max(1e-3, Math.abs(d.ux)), hw / Math.max(1e-3, Math.abs(d.uz))); return { x: d.ux * t, z: d.uz * t, ux: d.ux, uz: d.uz, m: d.m }; });
     G.traverse(m => {
       if (!m.isMesh || !m.material || !m.material.userData?.paint) return; // lackerade delar
       const pos = m.geometry.attributes.position; if (!m.userData.orig) m.userData.orig = pos.array.slice();
       const o = m.userData.orig, a = pos.array;
+      const toCar = new THREE.Matrix4().multiplyMatrices(inv, m.matrixWorld), back = new THREE.Matrix4().copy(toCar).invert();
       for (let i = 0; i < a.length; i += 3) {
         const x = o[i], y = o[i + 1], z = o[i + 2], n = Math.sin(x * 3.1 + seed) * Math.cos(z * 2.7 + seed * 1.7) * Math.sin(y * 4.3 + seed * 0.3);
-        const d = Math.max(0, n) * 0.16 * k;
-        a[i] = x - Math.sign(x) * d * 0.6; a[i + 1] = y - d * 0.5; a[i + 2] = z - Math.sign(z) * d;
+        const d = Math.max(0, n) * 0.06 * k; // lätt allmän tilltryckning
+        let px = x - Math.sign(x) * d * 0.6, py = y - d * 0.5, pz = z - Math.sign(z) * d;
+        if (P.length) { v.set(x, y, z).applyMatrix4(toCar); let ox = 0, oy = 0, oz = 0;
+          for (const q of P) { const dist = Math.hypot(v.x - q.x, v.z - q.z), r = 0.55 + q.m * 3; if (dist >= r) continue; const f = (1 - dist / r) ** 2 * q.m * (0.7 + 0.3 * Math.sin(v.y * 9 + seed));
+            ox -= q.ux * f; oz -= q.uz * f; oy -= f * 0.25; }
+          if (ox || oy || oz) { w.set(v.x + ox, v.y + oy, v.z + oz).applyMatrix4(back); px += w.x - x; py += w.y - y; pz += w.z - z; } }
+        a[i] = px; a[i + 1] = py; a[i + 2] = pz;
       }
       pos.needsUpdate = true; m.geometry.computeVertexNormals();
       if (!m.userData.c0) m.userData.c0 = m.material.color.clone();
-      m.material.color.copy(m.userData.c0).lerp(new (T().Color)(0.35, 0.33, 0.3), k * 0.35); m.material.roughness = Math.min(0.98, 0.48 + k * 0.50);
+      m.material.color.copy(m.userData.c0).lerp(new THREE.Color(0.35, 0.33, 0.3), k * 0.35); m.material.roughness = Math.min(0.98, 0.48 + k * 0.50);
+    });
+  }
+  // Mjukkroppsfysik: hela bilens 3D-modell (kaross, lampor, stötfångare, hjulupphängning) följer nod-balk-nätets förskjutning
+  softDeform(G, sb, dmg) {
+    const now = performance.now(), U = G.userData, lvl = Math.round(dmg / 5) * 5;
+    if (U.sbv === sb.ver && U.sbl === lvl) return; if (sb.awake > 0 && now - (U.sbT || 0) < 70) return; U.sbT = now; U.sbv = sb.ver; U.sbl = lvl;
+    const THREE = T(), o = [0, 0, 0], v = new THREE.Vector3(), w = new THREE.Vector3(), k = lvl / 100;
+    G.updateMatrixWorld(true); const inv = new THREE.Matrix4().copy(G.matrixWorld).invert(), wheels = new Set((U.wheels || []).map(x => x.piv));
+    for (const piv of wheels) { const p0 = piv.userData.p0 ||= piv.position.clone(); sb.disp(p0.x, p0.y + 0.3, p0.z, o); piv.position.set(p0.x + o[0], p0.y + o[1] * 0.5, p0.z + o[2]); }
+    const inWheel = m => { for (let q = m; q && q !== G; q = q.parent) if (wheels.has(q)) return true; return false; };
+    G.traverse(m => {
+      if (!m.isMesh || !m.geometry?.attributes?.position || inWheel(m) || m.userData.keep) return;
+      if (!m.userData.sbOrig) { m.geometry = m.geometry.clone(); m.userData.sbOrig = (m.userData.orig || m.geometry.attributes.position.array).slice(); }
+      const pos = m.geometry.attributes.position, a = pos.array, or = m.userData.sbOrig, toCar = new THREE.Matrix4().multiplyMatrices(inv, m.matrixWorld), back = new THREE.Matrix4().copy(toCar).invert();
+      let moved = false;
+      for (let i = 0; i < a.length; i += 3) { v.set(or[i], or[i + 1], or[i + 2]).applyMatrix4(toCar); sb.disp(v.x, v.y, v.z, o);
+        if (o[0] || o[1] || o[2]) { moved = true; w.set(v.x + o[0], v.y + o[1], v.z + o[2]).applyMatrix4(back); a[i] = w.x; a[i + 1] = w.y; a[i + 2] = w.z; } else { a[i] = or[i]; a[i + 1] = or[i + 1]; a[i + 2] = or[i + 2]; } }
+      if (moved) { pos.needsUpdate = true; m.geometry.computeVertexNormals(); m.geometry.computeBoundingSphere(); }
+      if (m.material?.userData?.paint && !Array.isArray(m.material)) { if (!m.userData.c0) m.userData.c0 = m.material.color.clone(); m.material.color.copy(m.userData.c0).lerp(new THREE.Color(0.35, 0.33, 0.3), k * 0.35); m.material.roughness = Math.min(0.98, 0.48 + k * 0.5); }
     });
   }
   // roll/pitch = markens lutning (hjulen följer den). bRoll/bPitch/bY = karossens krängning, nickning och vibration ovanpå fjädringen.
