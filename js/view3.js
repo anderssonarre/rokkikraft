@@ -3,6 +3,7 @@
 import { ensureTerrain } from './terrain.js';
 import { hash, mulberry } from './gl.js';
 import * as GFX from './gfx.js';
+import { applyVehicleModel, poseModelWheels } from '../graphics/assets/ModelLoader.js';
 import { PRESETS, roadTextures, terrainTextures, makeEnvironment, grassMaterial, grassGeometry, dustTexture, TrackMarks } from './gfx.js';
 
 const T = () => window.THREE;
@@ -781,7 +782,9 @@ export class View3 {
     }
     rollP.add(bodyG); liftG.add(rollP); G.add(liftG);
     G.userData.bodyG = bodyG; G.userData.chassis = bodyG; G.userData.rollP = rollP; G.userData.liftG = liftG; G.userData.halfW = W / 2;
-    G.userData.halfL = L / 2; G.userData.halfW = W / 2; this.scene.add(G); this.cars.push(G); return G; }
+    G.userData.halfL = L / 2; G.userData.halfW = W / 2; this.scene.add(G); this.cars.push(G);
+    if (opt.model && opt.glb !== false && typeof indexedDB !== 'undefined') applyVehicleModel(G, opt.model, paint).catch(() => { }); // riktig 3D-modell (GLB) om det finns en
+    return G; }
   // Synliga skador: bucklar in lackerade delar (deterministiskt per bil) och gör lacken mattare/repig
   // Skador på karossen: riktiga bucklor där smällarna träffade (dents från fysiken) + lätt allmän tilltryckning och matt/smutsig lack
   damageCar(G, dmg, dents, dv = 0) {
@@ -841,6 +844,7 @@ export class View3 {
     const effPitch = car && car.bodyPitch != null ? car.bodyPitch + (car.vP || 0) : bPitch;
     const steerAng = car && car.steerVis != null ? -car.steerVis : -steer * 0.45;
     const wheelAng = car && car.wheelSpin != null ? car.wheelSpin : spin;
+    if (U.glbWheels) poseModelWheels(U, -steerAng / 0.45, wheelAng);
     const bGlow = car?.brakeGlow || 0;
     const bFire = car?.backfire || 0;
     // Hopp över krön: lyft kaross & hjul med airY medan kontaktskuggan ligger kvar på vägytan och tonas mjukt
@@ -1119,7 +1123,8 @@ export class Showroom {
     if (!this.ok) return; const k = JSON.stringify(o); if (k === this.key) return; this.key = k;
     if (this.car) { this.turn.remove(this.car); this.car.traverse(m => { if (m.geometry) m.geometry.dispose(); }); }
     const holder = { scene: { add() { } }, cars: [] };
-    const G = View3.prototype.addCar.call(holder, o.body, o.paint, { model: o.model, num: o.num, bw: o.bw, bars: o.bars, mirrors: o.mirrors });
+    const G = View3.prototype.addCar.call(holder, o.body, o.paint, { model: o.model, num: o.num, bw: o.bw, bars: o.bars, mirrors: o.mirrors, glb: false }); G.userData.bodyBase = 0;
+    applyVehicleModel(G, o.model, o.paint).then(ok => { if (ok) G.traverse(m => { if (m.isMesh) m.castShadow = true; }); }).catch(() => { });
     G.traverse(m => { if (m.isMesh && !m.userData.noShadow) m.castShadow = true; });
     for (const w of G.userData.wheels) w.wh.rotation.z = 0;
     this.car = G; this.turn.add(G); const st = G.userData.style || { L: 4.3, W: 1.68 }; this.shadow.scale.set(st.L * 1.25, st.W * 1.5, 1);

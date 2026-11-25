@@ -1,0 +1,4 @@
+{
+  "_info": "Lägg GLB-filer i den här mappen och lista dem under cars med spelets bil-id (t.ex. passat_rx, mazda626, bmw325). Se graphics/assets/MODELLSTANDARD.md. Tom lista = de inbyggda bilarna används.",
+  "cars": {}
+}

@@ -7,6 +7,7 @@ import { Race, fmtTime, accel0100 } from './race.js';
 import { CAM_NAMES, DEFAULT_CAM } from './race.js';
 import { newTask, checkTask } from './dyno.js';
 import { Room, Board, Presence, makeCode, cleanCode } from './net.js';
+import { parseGlb, saveCustomModel, deleteCustomModel, customModelInfo, customModel } from '../graphics/assets/ModelLoader.js';
 import { newChamp, simHeat, setResult, advance, roundDone, myHeat, canSkip, skip as chSkip, heatName, whereIs, sortRows, ROUND, FIN, A_TABLE, NORMAL_PRIZE } from './champ.js';
 import { Showroom } from './view3.js';
 import { MUSIC } from './music.js';
@@ -52,7 +53,7 @@ function after() {
   const tm = document.getElementById('trkPreview'); if (tm) drawTrackPreview(tm, tm.dataset.trk);
   const sr = document.getElementById('showroom');
   if (sr) { try { SR ??= new Showroom(); if (SR.ok) { const cs = activeCar(), sp = currentInsp().spec;
-    SR.setCar({ model: S.active, body: sp.body, paint: paintOf(cs.paint).rgb, num: formatCarNum(cs.num, currentInsp().cls), bw: cs.bw || 'wb', bars: sp.dmg < 1, mirrors: currentInsp().cls === 'super' }); SR.mount(sr); } else sr.parentElement.style.display = 'none'; } catch (e) { sr.parentElement.style.display = 'none'; } }
+    SR.setCar({ model: S.active, body: sp.body, paint: paintOf(cs.paint).rgb, num: formatCarNum(cs.num, currentInsp().cls), bw: cs.bw || 'wb', bars: sp.dmg < 1, mirrors: currentInsp().cls === 'super', glbv: U.glbV || 0 }); SR.mount(sr); } else sr.parentElement.style.display = 'none'; } catch (e) { sr.parentElement.style.display = 'none'; } }
 }
 let SR = null;
 
@@ -727,6 +728,27 @@ function carList() {
 function carShop() {
   const m = U.ev?.saleMsg; return `${m ? `<section class="panel"><div class="okbox">${m}</div></section>` : ''}<section class="panel"><span class="kick">BILHANDELN</span><h1>Du har ingen bil</h1><p>Din bil är såld. Köp en ny bil nedan för att kunna tävla, trimma och besiktiga igen. Du har <b>${eur(S.money)}</b>.</p></section>` + carList();
 }
+// ---- riktig 3D-modell (GLB) för den aktiva bilen: laddas upp här, sparas i webbläsaren och används i garaget och på banan ----
+function glbPanel(id, carName) {
+  const G = U.glb || (U.glb = {}); if (!(id in G)) { G[id] = undefined; customModelInfo(id).then(i => { G[id] = i || null; if (U.view === 'garage') render(); }).catch(() => { G[id] = null; }); }
+  const i = G[id];
+  return `<section class="panel"><h2>3D-modell (GLB)</h2>
+    <p class="dim">Byt den inbyggda karossen mot en riktig 3D-modell av din ${esc(carName)}. Ladda ner en bil i <b>.glb</b>-format (t.ex. från Sketchfab med "Downloadable" och en licens som tillåter användning, eller en egen från Blender) och välj filen här. Spelet passar in den automatiskt: rätt längd, på marken, och hittar hjulen och lacken själv. Modellen sparas bara i den här webbläsaren. Fysiken påverkas inte.</p>
+    ${i === undefined ? '<p class="dim">Läser…</p>' : i ? `<table class="stats"><tr><td>Modell</td><td>${esc(i.name)} (${(i.size / 1048576).toFixed(1)} MB)</td></tr></table>
+      <div class="row"><span class="lbl">Justera</span><button class="chip s" data-act="glb-rot">↻ Vrid 90°</button><button class="chip s" data-act="glb-flip">⇄ Vänd fram/bak</button>
+        <button class="chip s ${i.paint ? 'on' : ''}" data-act="glb-paint">🎨 Spelets lack ${i.paint ? 'på' : 'av'}</button><button class="btn small ghost danger" data-act="glb-del">Ta bort modellen</button></div>` : ''}
+    <div class="row"><label class="btn small">📂 ${i ? 'Byt modell' : 'Välj GLB-fil'}<input type="file" accept=".glb,model/gltf-binary" data-glb="${esc(id)}" hidden></label></div></section>`;
+}
+async function glbUpload(id, file) {
+  if (!file) return; if (file.size > 60 * 1048576) { U.toast = 'Filen är för stor (max 60 MB).'; render(); return; }
+  try { const buf = await file.arrayBuffer(); const sc = await parseGlb(buf); let meshes = 0; sc.traverse(m => { if (m.isMesh) meshes++; });
+    if (!meshes) throw new Error('ingen 3D-modell i filen');
+    await saveCustomModel(id, { name: file.name, buf, rot: 0, flip: false, paint: true }); (U.glb ||= {})[id] = undefined; delete U.glb[id];
+    U.glbV = (U.glbV || 0) + 1; U.toast = `✓ 3D-modellen ${file.name} används nu för bilen (${meshes} delar).`;
+  } catch (e) { U.toast = 'Kunde inte läsa filen som GLB: ' + (e?.message || e); }
+  render();
+}
+async function glbEdit(fn) { const id = S.active, r = await customModel(id); if (!r) return; fn(r); await saveCustomModel(id, r); delete U.glb[id]; U.glbV = (U.glbV || 0) + 1; render(); }
 function garage() {
   const cs = activeCar(), car = carById(S.active), insp = currentInsp(), s = insp.spec, k = curve(s), ok = insp.ok;
   const numStr = formatCarNum(cs.num, insp.cls);
@@ -791,7 +813,8 @@ function garage() {
     <div class="row wrap">${PAINTS.map(p => p.lvl && xpLevel() < p.lvl ? `<button class="swatch locked" style="--c:${hex(p.rgb)}" disabled title="${p.name} – låses upp på nivå ${p.lvl}">🔒</button>` : `<button class="swatch ${cs.paint === p.id ? 'on' : ''}" style="--c:${hex(p.rgb)}" data-act="paint" data-arg="${p.id}" title="${p.name}${p.lvl ? ' (nivå ' + p.lvl + ')' : ''}"></button>`).join('')}
     <span class="lbl">Nummer (${ CLASS_RULES[insp.cls]?.prefix || '1–999' })</span><input class="num" type="number" min="1" max="999" value="${cs.num}" data-in="num">
     <button class="chip s ${cs.bw !== 'bw' ? 'on' : ''}" data-act="num-bw" data-arg="wb">Svart på vit botten</button>
-    <button class="chip s ${cs.bw === 'bw' ? 'on' : ''}" data-act="num-bw" data-arg="bw">Vit på svart botten</button></div></section>`;
+    <button class="chip s ${cs.bw === 'bw' ? 'on' : ''}" data-act="num-bw" data-arg="bw">Vit på svart botten</button></div></section>
+  ${glbPanel(S.active, car.name)}`;
 
   // Delar
   for (const u of UPG) {
@@ -1154,6 +1177,10 @@ const ACT = {
     }
   },
   paint(a) { activeCar().paint = a; save(); },
+  'glb-rot'() { glbEdit(r => { r.rot = ((r.rot || 0) + 1) % 4; }); return false; },
+  'glb-flip'() { glbEdit(r => { r.flip = !r.flip; }); return false; },
+  'glb-paint'() { glbEdit(r => { r.paint = r.paint === false; }); return false; },
+  'glb-del'() { deleteCustomModel(S.active).then(() => { delete U.glb[S.active]; U.glbV = (U.glbV || 0) + 1; U.toast = 'Modellen är borttagen – den inbyggda karossen används igen.'; render(); }); return false; },
   tyre(a) { const cs = activeCar(), ty = TYRES[a]; cs.tyres = cs.tyres || ['std'];
     if (!cs.tyres.includes(a)) { if (S.money < ty.price) { toast(`En sats ${ty.name} kostar ${eur(ty.price)}.`); return; } S.money -= ty.price; cs.tyres.push(a); toast(`Ny sats ${ty.name} monterad (${eur(ty.price)}).`); }
     cs.tune.tyre = a; save(); },
@@ -1217,6 +1244,7 @@ const INP = {
 export function initUI() {
   setTimeout(startPresence, 1500); // närvaro för inbjudningar online
   document.addEventListener('click', e => { const el = e.target.closest('[data-act]'); if (!el || el.disabled) return; const f = ACT[el.dataset.act]; if (!f) return; if (f(el.dataset.arg, el) !== false) render(); });
+  document.addEventListener('change', e => { const gf = e.target.closest?.('[data-glb]'); if (gf) { glbUpload(gf.dataset.glb, gf.files?.[0]); return; } });
   document.addEventListener('change', e => { const el = e.target.closest('[data-in]'); if (!el) return; if (el.dataset.in.startsWith('su:')) { const key = el.dataset.in.slice(3), cs = activeCar(), v = +el.value;
       // justeringar är gratis, men nya fälgar eller en annan däckbredd kräver nya delar
       const cost = key === 'rim' && v !== cs.tune.rim ? 220 : key === 'width' && v !== cs.tune.width ? TYRES[cs.tune.tyre || 'std'].price : 0;

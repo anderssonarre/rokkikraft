@@ -32,6 +32,7 @@ Spelet är en statisk webbsida utan byggsteg. Alla moduler är vanliga ES-module
 | `race.js` | Klassen `Race` kör ett heat. Exporterar ren logik som även körs i node: `makeCar`, `phys` (bilfysik), `aiSetup`/`aiDrive` (AI), `trackStep` (bana/regler), `collide`. |
 | (race.js forts.) | `AI_STYLES` = AI-förarnas körstilar (aggressiv/jämn/försiktig/vild, bestäms av namnet). `recTick`/`playReplay` spelar in och spelar upp repriser (20 bilder/s). Mekaniska skador i `partDamage`. |
 | `softbody.js` | BeamNG-läge (tillval): `SoftBody` = nod-balk-nät (6×2×3 noder, 206 balkar) per kaross med plastisk deformation. `impact()` vid smällar, `step()` i fysiken, `disp()` deformerar 3D-modellen (`view3.softDeform`), `state()` ger hjulinställning/intryckning som styr mekaniska skador. |
+| `graphics/assets/ModelLoader.js` | Riktiga 3D-bilar (GLB): egen uppladdad modell (IndexedDB) eller `assets/models/manifest.json`. Automatisk inpassning, hjul- och lackigenkänning. Anropas från `View3.addCar` och garagets `Showroom`. |
 | `view3.js` | 3D-scenen: terräng, skog, publik, bilar (`addCar`, `poseCar`, `damageCar`), kupé, väder, effekter. |
 | `gfx.js` | Grafiknivåer Low–Ultra + Auto (dynamisk upplösning), procedurella PBR-texturer, himmel, gräs, däckspår. |
 | `input.js` | Kontroller med ombindning, deadzone och styrkurvor för tangentbord, handkontroll, ratt och pekskärm. |
