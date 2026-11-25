@@ -436,6 +436,7 @@ function eventView() {
     ${ev.needKaatoInsp ? `<div class="warnbox">⚠ <b>KAATOKATSASTUS KRÄVS</b> efter rullningen.<div class="row" style="margin-top:6px"><button class="btn small" data-act="ev-kaato">🔧 Kaatokatsastus (40 €)</button></div></div>` : ''}
     ${ev.exhaustLoose ? `<div class="warnbox">⚠ Avgasröret har lossnat (110 dB-regeln) – laga före nästa heat.</div>` : ''}
     ${ev.parts && (ev.parts.steer >= 25 || ev.parts.gear >= 45) ? `<div class="warnbox">🔧 ${ev.parts.steer >= 25 ? `Styrningen är sned (${Math.round(ev.parts.steer)} %) – bilen drar åt ena hållet. ` : ''}${ev.parts.gear >= 45 ? `Växellådan är skadad (${Math.round(ev.parts.gear)} %) – högsta växeln saknas. ` : ''}Laga i depån.</div>` : ''}
+    ${U.lastReplay ? `<div class="row">${replayBtn()}</div>` : ''}
     <div class="heats">${ch.heats.map(x => `<div class="heat ${x.ids.includes('me') ? 'mine' : ''} ${x.res ? 'done' : ''}"><div class="hh"><b>${heatName(x)}</b><span>${x.res ? 'Klart' : x.ids.length + ' förare'}</span></div>
       <ol>${(x.res || x.ids.map(id => ({ id, name: ch.E[id].name }))).map(r => `<li class="${r.id === 'me' ? 'me' : ''}">${esc(r.name)}${r.flag ? ` <i class="flag">${r.flag}</i>` : ''}</li>`).join('')}</ol>
       ${x.res ? '' : x.ids.includes('me') ? `<div class="row"><button class="btn small" data-act="ev-run" data-arg="${x.id}" ${ev.needKaatoInsp || ev.exhaustLoose ? 'disabled' : ''}>🏁 Kör ditt heat</button>${canSkip(ch, 'me') ? `<button class="btn small ghost" data-act="ev-skip">KESKÖIDÄ</button>` : ''}</div>` : `<div class="row"><button class="btn small ghost" data-act="ev-watch" data-arg="${x.id}">👁 Titta</button></div>`}</div>`).join('')}</div>
@@ -470,7 +471,7 @@ function startRace(o) {
   U.view = 'race'; document.body.classList.add('racing'); app().innerHTML = ''; MUSIC.stop();
   const done = o.onDone;
   U.race = new Race(app(), {
-    ...o, onDone: res => { if (!o.spectate) countRace(o.trackId, res); done(res); }, record: S.records[o.trackId], settings: S.settings,
+    ...o, onDone: res => { if (o.replay) return done(res); if (res?.replay && !o.spectate) U.lastReplay = { o: { ...o, net: null, netLead: false, heatId: null }, rec: res.replay }; if (!o.spectate) countRace(o.trackId, res); done(res); }, record: S.records[o.trackId], settings: S.settings,
     onCameraChange: camera => { S.settings.camera = camera; save(); },
     player: o.spectate ? o.player : { nid: 'me', name: o.net ? `${netName()} #${numStr}` : `${S.name || 'Du'} (#${numStr})`, num: numStr, spec: s, paint: paintOf(cs.paint).rgb, bw: cs.bw || 'wb', aids: { ...S.aids } },
   });
@@ -641,6 +642,7 @@ function online() {
       ${room.members.map(m => `<tr><td><span class="dot" style="background:${hex(m.car?.paint || [.5, .5, .5])}"></span><b>${esc(m.name)}</b>${m.host ? ' · värd' : ''}${m.id === room.id ? ' · du' : ''}</td><td>#${esc(m.car?.num)} ${esc(m.car?.model)} · ${esc(m.car?.hp)} hk</td><td>${cs?.where?.[m.id] ? esc(cs.where[m.id]) : ''}</td></tr>`).join('')}</table>
       <div class="row"><button class="btn small ghost" data-act="go" data-arg="garage">Byt bil i garaget</button></div></section>`;
   if (room.status === 'lobby' || room.status === 'race') h += invitePanel(room); // bjud in andra som har spelet öppet
+  if (U.lastReplay && room.status === 'lobby') h += `<section class="panel"><div class="row">${replayBtn()}</div></section>`;
   if (H && !running) {
     cfg.tod ??= 'dag'; const C = (k, v, n) => `<button class="chip s ${cfg[k] === v ? 'on' : ''}" data-act="on-cfg" data-arg="${k}:${v}">${n ?? v}</button>`;
     h += `<section class="panel"><h2>Tävlingsinställningar</h2>
@@ -976,6 +978,8 @@ const ACT = {
   'inv-all'() { const r = ON.room; if (!PRES || !r) return; const ids = PRES.others().filter(p => p.room !== r.code).map(p => p.id); PRES.invite(ids, r.code, netName()); ids.forEach(id => (ON.invited ||= new Map()).set(id, Date.now())); toast(`📨 Inbjudan skickad till ${ids.length} spelare`); },
   'inv-no'() { U.invite = null; },
   'inv-join'() { const v = U.invite; U.invite = null; if (!v) return; if (!activeCar()) { toast('Du behöver en bil för att köra online.'); return; } if (ON.room) leaveRoom(); ON.code = v.code; U.view = 'online'; openRoom(v.code, false); window.scrollTo(0, 0); },
+  replay() { const L = U.lastReplay; if (!L) return; const back = U.view; window.scrollTo(0, 0);
+    startRace({ ...L.o, replay: L.rec, title: '🎬 Repris – ' + (L.o.title || ''), onDone: () => { U.view = back; render(); } }); return false; },
   'on-create'() { const n = document.getElementById('onName'); if (n) { S.name = n.value.trim() || 'Du'; save(); } openRoom(makeCode(), true); },
   'on-join'() {
     const n = document.getElementById('onName'); if (n) { S.name = n.value.trim() || 'Du'; save(); }
@@ -1163,13 +1167,15 @@ function quickDone(r, time) {
   const prize = time || r.flag ? 0 : NORMAL_PRIZE[r.pos - 1] || 0; if (prize && r.finished) S.money += prize; save();
   U.result = { r, time, prize: r.finished ? prize : 0, title: time ? 'Tidskörning' : 'Träningsheat' }; U.view = 'result'; render();
 }
+// 🎬 Repris av senaste heatet: samma bana, bilar och väder – bilarna följer inspelningen
+function replayBtn() { return U.lastReplay ? '<button class="btn ghost" data-act="replay">🎬 Se repris av senaste heatet</button>' : ''; }
 function result() {
   const R = U.result; if (!R) { U.view = 'karriar'; return karriar(); }
   const r = R.r;
   return `<section class="panel"><span class="kick">${R.title.toUpperCase()}</span><h1>${R.time ? 'Bästa varv ' + fmtTime(r.bestLap) : `Plats ${r.pos}${r.flag ? ' (' + r.flag + ')' : ''}`}</h1>
     ${R.time ? '' : `<div class="pills"><div><span>Prispengar</span><b>${eur(R.prize)}</b></div></div>`}
     ${resTable(r.order, R.time ? null : (o, i) => [o.flag ? 0 : NORMAL_PRIZE[i] || 0, 0])}
-    <div class="row"><button class="btn" data-act="go" data-arg="play">Kör igen</button><button class="btn ghost" data-act="go" data-arg="menu">Meny</button></div></section>`;
+    <div class="row"><button class="btn" data-act="go" data-arg="play">Kör igen</button>${replayBtn()}<button class="btn ghost" data-act="go" data-arg="menu">Meny</button></div></section>`;
 }
 
 const INP = {

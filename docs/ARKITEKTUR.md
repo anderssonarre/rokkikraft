@@ -30,6 +30,7 @@ Spelet är en statisk webbsida utan byggsteg. Alla moduler är vanliga ES-module
 | `engine.js` | `buildSpec(carId, carState, tune)` gör om data + uppgraderingar + inställningar till en fysikspec. `curve()` ger effekt/vridmoment. `checkInspection()` = besiktning. `specCar(1–5)` = gemensamma spec-bilar. |
 | `track.js` | `getTrack(id)` bygger bangeometrin: mittlinje var 2:a m, bredd, underlag, lisälenkki (`joker`, med konportar `joker.gates`), `raceLine()` och `profile()`/`profileOn()` för AI:ns fart. |
 | `race.js` | Klassen `Race` kör ett heat. Exporterar ren logik som även körs i node: `makeCar`, `phys` (bilfysik), `aiSetup`/`aiDrive` (AI), `trackStep` (bana/regler), `collide`. |
+| (race.js forts.) | `AI_STYLES` = AI-förarnas körstilar (aggressiv/jämn/försiktig/vild, bestäms av namnet). `recTick`/`playReplay` spelar in och spelar upp repriser (20 bilder/s). Mekaniska skador i `partDamage`. |
 | `view3.js` | 3D-scenen: terräng, skog, publik, bilar (`addCar`, `poseCar`, `damageCar`), kupé, väder, effekter. |
 | `gfx.js` | Grafiknivåer Low–Ultra + Auto (dynamisk upplösning), procedurella PBR-texturer, himmel, gräs, däckspår. |
 | `input.js` | Kontroller med ombindning, deadzone och styrkurvor för tangentbord, handkontroll, ratt och pekskärm. |

@@ -9,7 +9,14 @@ import { Controls } from './input.js';
 import { torqueTable, engineAt, fmt } from './engine.js';
 import { soundKey, soundProfile, engineWave, RallyAudioFX } from './enginesound.js';
 
-const G = 9.81, DT = 1 / 240;
+const G = 9.81, DT = 1 / 240, REC_K = 20;
+// AI-körstilar: k = kurvfart (andel av profilen), agg = hur nära/hårt den går på andra, noise = små misstag i styrningen
+export const AI_STYLES = [
+  { id: 'aggressiv', name: 'aggressiv', k: 1.015, agg: 0.25, noise: 0.01 },
+  { id: 'jamn', name: 'jämn', k: 1.0, agg: 0, noise: 0 },
+  { id: 'forsiktig', name: 'försiktig', k: 0.975, agg: -0.25, noise: 0 },
+  { id: 'vild', name: 'vild', k: 1.025, agg: 0.15, noise: 0.04 },
+];
 const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
 const wrapA = a => { while (a > Math.PI) a -= 2 * Math.PI; while (a < -Math.PI) a += 2 * Math.PI; return a; };
 export const fmtTime = t => { if (!isFinite(t)) return '–'; const m = Math.floor(t / 60), s = t - m * 60; return m + ':' + (s < 10 ? '0' : '') + s.toFixed(2); };
@@ -375,9 +382,13 @@ export function aiSetup(c, trk) {
   const e = d != null ? clamp((d - 0.85) / 0.15, 0, 1) : 0; c.ai.e = e;
   c.ai.thrMax = d != null ? 0.3 + 0.7 * Math.pow(d, 1.5) : 1; c.ai.noise = d != null ? 0.9 * (1 - d) ** 2 : 0; c.ai.agg = d != null ? d : 0.8; c.ai.wob = 0;
   c.ai.prof = trk.profile(mu * G * 0.90 * k * k, mu * G * (0.85 + 0.15 * e) * k, d != null && d < 0.99 ? top : 90);
+  // Individuell körstil per AI-förare (samma förare kör alltid likadant): aggressiv, jämn, försiktig eller vild
+  if (d != null && !c.isPlayer) { let h = 0; for (const ch of String(c.name || '')) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+    const st = c.ai.style = AI_STYLES[h % AI_STYLES.length]; c.ai.agg = clamp(c.ai.agg + st.agg, 0, 1.2); c.ai.noise += st.noise; c.ai.styleK = st.k; }
   // toppnivån kör en riktig racinglinje (ytter–inner–ytter) med fartprofil efter linjens egen krökning
   if (e > 0 && trk.raceLine) { c.ai.rl = trk.raceLine(1.3); const pL = trk.profileOn(c.ai.rl, mu * G * 0.95 * k * k, mu * G * 1.0 * k, 90);
-    for (let i = 0; i < pL.length; i++) c.ai.prof[i] += (pL[i] - c.ai.prof[i]) * e; } c.ai.vJ = Math.sqrt(mu * G * 0.85 * k * k * 21); c.ai.aB = mu * G * (0.6 + 0.2 * e) * k;
+    for (let i = 0; i < pL.length; i++) c.ai.prof[i] += (pL[i] - c.ai.prof[i]) * e; }
+  if (c.ai.styleK && c.ai.styleK !== 1) for (let i = 0; i < c.ai.prof.length; i++) c.ai.prof[i] *= c.ai.styleK; c.ai.vJ = Math.sqrt(mu * G * 0.85 * k * k * 21); c.ai.aB = mu * G * (0.6 + 0.2 * e) * k;
 }
 
 export function aiDrive(c, race, dt) {
@@ -677,15 +688,16 @@ export class Race {
     if (cfg.mode === 'time') { this.$('hLbCard').style.display = 'none'; }
     this.audioInit();
     if (this.spectate) { this.msg('👁 ÅSKÅDARLÄGE – ◀ ▶ eller E/Q byter bil, C byter kamera', 4); this.watchCam(); }
+    if (cfg.replay) { this.replay = cfg.replay; this.state = 'run'; this.camCar = this.player; this.rt = 0; this.msg('🎬 REPRIS – ◀ ▶ eller E/Q byter bil · C byter kamera · P → Avsluta för att gå tillbaka', 5); this.watchBar(); this.$('hLights').style.display = 'none'; }
     if (this.net) { this.heatId = cfg.heatId || 'h1'; this.netLead = cfg.netLead === this.net.id; this.goAt = Infinity; this.net.race = this; if (!this.spectate) this.net.imReady(this.heatId); this.msg(this.spectate ? '👁 Väntar på start…' : 'Väntar på övriga förare…', 60); }
     this.last = performance.now(); this.raf = requestAnimationFrame(t => this.frame(t));
   }
 
   // Bilen kameran följer när man tittar på andra (åskådarläge eller i mål/utgått online), annars null
-  watched() { return this.spectate ? this.player : this.camCar && (this.player.finished || this.player.retired) ? this.camCar : null; }
+  watched() { if (this.replay) return this.camCar || this.player; return this.spectate ? this.player : this.camCar && (this.player.finished || this.player.retired) ? this.camCar : null; }
   // Tittar man på någon annan: kör en yttre kamera (kupévyn ser ut som om man själv kör) och visa vem man följer
   watchCam() { const w = this.watched(); if (w && (this.spectate || w !== this.player) && (this.cam === 0 || this.cam === 1 || this.cam === DEFAULT_CAM)) this.setCam(2, false); this.watchBar(); }
-  watchBar() { const w = this.watched(), el = this.$('hWatch'); if (!el) return; el.hidden = !w || this.done; if (w) this.$('hWName').textContent = w.name + (w === this.player && !this.spectate ? ' (du)' : ''); }
+  watchBar() { const w = this.watched(), el = this.$('hWatch'); if (!el) return; el.hidden = !w || this.done; if (w) this.$('hWName').textContent = w.name + (w === this.player && !this.spectate ? ' (du)' : '') + (w.ai?.style && !w.isPlayer && !w.remote ? ' · ' + w.ai.style.name : ''); }
   cycleCam() {
     this.setCam((this.cam + 1) % CAM_NAMES.length);
   }
@@ -723,6 +735,7 @@ export class Race {
     this.$('hResume').onclick = () => this.togglePause();
     this.$('hWPrev').onclick = () => this.shift(-1); this.$('hWNext').onclick = () => this.shift(1);
     this.$('hQuit').onclick = () => {
+      if (this.replay) { this.done = true; this.destroy(); return this.cfg.onDone(null); } // repris: bara tillbaka
       this.player.retired = true; this.player.flag = 'K';
       if (!this.net) return this.finish();
       if (this.netLead && this.cars.every(c => c.remote ? c.finished || c.retired : true)) this.endAt = this.t; // ensam kvar: avsluta för alla
@@ -731,7 +744,8 @@ export class Race {
   }
 
   togglePause() { if (this.done) return; this.paused = !this.paused; this.$('hPauseBox').hidden = !this.paused; this.last = performance.now(); if (this.gain) this.gain.gain.value = 0; if (this.fxGain) this.fxGain.gain.value = this.paused ? 0 : (this.vol || 0); if (this.paused) this.ctl?.stopRumble?.(); }
-  shift(d) { if (!this.spectate && (this.player.finished || this.player.retired) && this.cars.length > 1) { // i mål/utgått: E/Q byter vilken bil kameran följer
+  shift(d) { if (this.replay) { const i = (this.cars.indexOf(this.camCar || this.player) + d + this.cars.length) % this.cars.length; this.camCar = this.cars[i]; this.camH = this.camCar.h; this.watchCam(); return; }
+    if (!this.spectate && (this.player.finished || this.player.retired) && this.cars.length > 1) { // i mål/utgått: E/Q byter vilken bil kameran följer
       const cur = this.camCar || this.player, i = (this.cars.indexOf(cur) + d + this.cars.length) % this.cars.length; this.camCar = this.cars[i]; this.camH = this.camCar.h; this.watchCam(); return; }
     if (this.spectate) { const i = (this.cars.indexOf(this.player) + d + this.cars.length) % this.cars.length; this.player = this.cars[i]; this.camH = this.player.h; this.watchCam(); return; } const c = this.player; if (this.state !== 'run' || c.shiftT > 0) return; const g = c.gear + d; if (g >= 1 && g <= c.spec.gears.length - (c.gearLoss || 0)) { c.gear = g; c.shiftT = ((c.clutch || 0) > 0.5 ? 0.06 : c.spec.shift) * (1 + (c.gearDmg || 0) * 0.015); c.shiftEv = 1; if (c.rpm > 4000) { c.backfire = Math.max(c.backfire || 0, 0.72); c.backfireEv = Math.max(c.backfireEv || 0, 0.72); } } }
   resize() { if (this.R) this.view.resize(); }
@@ -743,6 +757,26 @@ export class Race {
       if (before < 25 && p.steerDmg >= 25) this.msg(`STYRNINGEN SKADAD<br><small>Ett hjul är snett – bilen drar åt ${p.pullSign > 0 ? 'vänster' : 'höger'}</small>`, 2.6, 'warn'); }
     if (Math.random() < 0.3) { const before = p.gearLoss; p.gearDmg = Math.min(100, p.gearDmg + d * (0.4 + Math.random() * 0.7)); p.gearLoss = p.gearDmg >= 80 ? 2 : p.gearDmg >= 45 ? 1 : 0;
       if (p.gearLoss > before) this.msg(`VÄXELLÅDAN SKADAD<br><small>${p.spec.gears.length - p.gearLoss + 1}:an går inte i längre${p.gearLoss > 1 ? ' (inte heller ' + (p.spec.gears.length) + ':an)' : ''}</small>`, 2.6, 'warn'); }
+  }
+  // ---- repris: alla bilars läge spelas in 20 ggr/s under heatet och kan spelas upp efteråt ----
+  recTick() {
+    const R = this.rec ||= { dt: 0.05, n: this.cars.length, K: REC_K, f: [], t0: this.t };
+    if (this.t - R.t0 < R.f.length * R.dt || R.f.length > 9000) return; // max ca 7,5 min
+    const a = new Float32Array(R.n * REC_K);
+    this.cars.forEach((c, j) => { const o = j * REC_K; a[o] = c.x; a[o + 1] = c.z; a[o + 2] = c.h; a[o + 3] = c.vx; a[o + 4] = c.vy; a[o + 5] = c.r || 0; a[o + 6] = c.steer || 0; a[o + 7] = c.rpm || 0;
+      a[o + 8] = c.gear || 1; a[o + 9] = c.thr || 0; a[o + 10] = c.brk || 0; a[o + 11] = c.dmg || 0; a[o + 12] = c.airY || 0; a[o + 13] = c.prog || 0; a[o + 14] = c.i || 0; a[o + 15] = c.lat || 0;
+      a[o + 16] = c.finished ? 1 : 0; a[o + 17] = c.wheelSpin ?? c.wspin ?? 0; a[o + 18] = c.bodyPitch || 0; a[o + 19] = c.bodyRoll || 0; });
+    R.f.push(a);
+  }
+  playReplay(dt) {
+    const R = this.replay, F = R.f; if (!F.length) return; this.rt = (this.rt || 0) + dt; let k = this.rt / R.dt;
+    if (k >= F.length - 1) { this.rt = 0; k = 0; this.msg('🎬 Repriset börjar om', 1.5); }
+    const i0 = Math.floor(k), al = k - i0, A = F[i0], B = F[Math.min(F.length - 1, i0 + 1)], L = (x, y) => x + (y - x) * al;
+    this.t = R.t0 + this.rt; this.state = 'run';
+    this.cars.forEach((c, j) => { if (j >= R.n) return; const o = j * REC_K; let dh = B[o + 2] - A[o + 2]; while (dh > Math.PI) dh -= 2 * Math.PI; while (dh < -Math.PI) dh += 2 * Math.PI;
+      c.x = L(A[o], B[o]); c.z = L(A[o + 1], B[o + 1]); c.h = A[o + 2] + dh * al; c.vx = L(A[o + 3], B[o + 3]); c.vy = L(A[o + 4], B[o + 4]); c.r = A[o + 5]; c.steer = L(A[o + 6], B[o + 6]);
+      c.rpm = L(A[o + 7], B[o + 7]); c.gear = A[o + 8]; c.thr = A[o + 9]; c.brk = A[o + 10]; c.dmg = A[o + 11]; c.airY = L(A[o + 12], B[o + 12]); c.prog = L(A[o + 13], B[o + 13]); c.i = A[o + 14]; c.lat = A[o + 15];
+      c.finished = A[o + 16] > 0.5; c.wheelSpin = A[o + 17]; c.bodyPitch = A[o + 18]; c.bodyRoll = A[o + 19]; c.slip = 0; c.onSurf = true; });
   }
   msg(html, dur = 2.4, cls = '') { const e = this.$('hMsg'); e.innerHTML = html; e.className = 'hud-msg show ' + cls; this.msgT = dur; }
 
@@ -1267,6 +1301,7 @@ export class Race {
       bestLap: p.bestLap, dmg: p.dmg, flag: pRow?.flag || "", sanction: p.sanction, kaato: p.kaato,
       exhaustLoose: p.exhaustLoose, parts: { steer: p.steerDmg, gear: p.gearDmg, sign: p.pullSign || 0 }, finished: p.finished && !p.retired,
       time: p.finished && !p.retired ? p.finishT : null, radLeak: p.radLeak, dur: this.t, wear: [p.tireWearF, p.tireWearR],
+      replay: this.rec && this.rec.f.length > 20 ? this.rec : null,
     };
     this.destroy(); this.cfg.onDone(res);
   }
@@ -1286,7 +1321,9 @@ export class Race {
     if (this.ctl) this.controlEvents();
     if (this.net) this.netTick();
     { const tn = performance.now(), sdt = this.steerT ? Math.min(0.5, (tn - this.steerT) / 1000) : 0; this.steerT = tn; if (!this.paused || this.net) this.steerRamp(sdt); } // ratten följer riktiga klockan
+    if (this.replay) { if (!this.paused) { this.playReplay(dt); this.particlesStep(dt); this.audio(dt); } this.render(dt); this.hud(dt); return; }
     if (!this.paused || this.net) { this.acc += dt; let k = 0; while (this.acc >= DT && k++ < 14 * sp) { this.step(DT); this.acc -= DT; if (this.done) return; } if (this.acc > DT * 4) this.acc = 0; this.particlesStep(dt); this.audio(dt); }
+    if (this.state === 'run' && !this.done) this.recTick();
     this.render(dt); this.hud(dt);
   }
 
