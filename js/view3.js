@@ -147,6 +147,25 @@ export class View3 {
       hemiSky: w ? 0xd8e8ff : 0xbad7ff, hemiGnd: w ? 0x92a0b2 : 0x64543c, hemiI: w ? 0.62 : 0.56,
       gnd: w ? 0x98a4b2 : 0x423d28, exp: 1.15, sRad: this.level >= 2 ? 1.8 : 2.5, wind: [1.5, 0.8], dustTint: [1.10, 1.01, 0.90],
     };
+    // Tid på dygnet: flyttar solen och färgar om ljuset (morgon = låg kall sol + dis, kväll = låg gyllene sol, skymning = blå timme)
+    const tod = this.tod = opt.tod || 'dag';
+    if (tod !== 'dag') {
+      const C = h => new THREE.Color(h), mix = (a, b, t) => C(a).lerp(C(b), t).getHex(), sunny = !grey;
+      const M = {
+        morgon: { sunY: 0.20, sunRot: -1.9, sunCol: 0xffd9b0, sunK: 0.82, hor: 0xf2d6c4, zen: 0x6f8fbf, t: 0.45, hemiK: 0.85, fogK: 0.62, exp: 1.12 },
+        kvall: { sunY: 0.14, sunRot: 1.7, sunCol: 0xffa860, sunK: 0.86, hor: 0xffb27a, zen: 0x3b5d99, t: 0.55, hemiK: 0.78, fogK: 0.85, exp: 1.16 },
+        skymning: { sunY: 0.035, sunRot: 2.1, sunCol: 0xff7a4a, sunK: 0.34, hor: 0xd9877a, zen: 0x1c2550, t: 0.75, hemiK: 0.46, fogK: 0.7, exp: 1.32 },
+      }[tod];
+      if (M) {
+        const a0 = Math.atan2(wp.sun[2], wp.sun[0]) + M.sunRot, rr = Math.sqrt(1 - M.sunY * M.sunY);
+        wp.sun = [Math.cos(a0) * rr, M.sunY, Math.sin(a0) * rr];
+        const t = sunny ? M.t : M.t * 0.5;
+        wp.sunCol = mix(wp.sunCol, M.sunCol, sunny ? 0.85 : 0.4); wp.sunI *= M.sunK;
+        wp.hor = mix(wp.hor, M.hor, t); wp.zen = mix(wp.zen, M.zen, t);
+        wp.hemiSky = mix(wp.hemiSky, M.zen, t * 0.6); wp.hemiI *= M.hemiK; wp.gnd = mix(wp.gnd, 0x1a1c24, tod === 'skymning' ? 0.5 : 0.15);
+        wp.fogN *= M.fogK; wp.fogF *= M.fogK; wp.exp = Math.max(wp.exp, M.exp); wp.sRad *= 1.3;
+      }
+    }
     R.toneMappingExposure = wp.exp;
     this.wind = wp.wind;
     const horizon = new THREE.Color(wp.hor), zenith = new THREE.Color(wp.zen);

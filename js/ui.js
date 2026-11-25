@@ -45,6 +45,7 @@ export function render() {
   after();
 }
 const toast = t => { U.toast = t; };
+const TOD = [['morgon', '🌅 Morgon'], ['dag', '☀️ Dag'], ['kvall', '🌇 Kväll'], ['skymning', '🌆 Skymning']];
 const WEATHER = [['sol', '☀️ Sol'], ['mulet', '☁️ Mulet'], ['regn', '🌧 Regn'], ['dimma', '🌫 Dimma'], ['sno', '🌨 Snöfall']];
 function after() {
   const cv = document.getElementById('curve'); if (cv) drawCurve(cv);
@@ -157,6 +158,7 @@ function karriar() {
           <span class="lbl">Motståndare</span>${[3, 5].map(n => `<button class="chip s ${q.opp === n ? 'on' : ''}" data-act="q-opp" data-arg="${n}">${n}</button>`).join('')}
           <span class="lbl">Lisälenkki</span><button class="chip s ${q.joker ? 'on' : ''}" data-act="q-joker">${q.joker ? 'PÅ' : 'AV'}</button></div>
         <div class="row"><span class="lbl">Väder</span>${WEATHER.map(([k, n]) => `<button class="chip s ${(q.weather || 'sol') === k ? 'on' : ''}" data-act="q-weather" data-arg="${k}">${n}</button>`).join('')}</div>
+        <div class="row"><span class="lbl">Tid på dygnet</span>${TOD.map(([k, n]) => `<button class="chip s ${(q.tod || 'dag') === k ? 'on' : ''}" data-act="q-tod" data-arg="${k}">${n}</button>`).join('')}</div>
         <div class="row"><span class="lbl">AI-svårighet ${q.ai} %</span><input type="range" min="1" max="100" step="1" value="${q.ai}" data-in="q-ai"></div>
         ${carModeRow('q-cm', q.cm)}
         <div class="row"><button class="btn" data-act="quick-race" ${ok ? '' : 'disabled'}>🏁 Starta träningsheat</button><button class="btn ghost" data-act="quick-time" ${ok ? '' : 'disabled'}>⏱ Tidskörning</button></div>
@@ -553,7 +555,7 @@ function netRace(h, grid, cfg, lead, watch) {
   const defs = grid.filter(g => watch || g.id !== room.id).map(g => g.ai
     ? { name: g.name, paint: g.paint, bw: g.bw, diff: g.diff, powScale: g.powScale, spec: g.spec, nid: g.id, remote: watch || !amLead }
     : { name: g.name, paint: g.car.paint, bw: g.car.bw, num: g.car.num, skill: 1, spec: cfg.cm ? specCar(cfg.cm) : g.car.spec, nid: g.id, remote: true });
-  const base = { trackId: cfg.track, laps: cfg.laps, gridRows: 2, useJoker: !!cfg.joker, sideContact: true, mode: 'heat', weather: cfg.weather, net: room, heatId: h, netLead: lead, specLvl: cfg.cm || 0 };
+  const base = { trackId: cfg.track, laps: cfg.laps, gridRows: 2, useJoker: !!cfg.joker, sideContact: true, mode: 'heat', weather: cfg.weather, tod: cfg.tod || 'dag', net: room, heatId: h, netLead: lead, specLvl: cfg.cm || 0 };
   if (watch) { const hum = defs.filter(d => grid.find(g => g.id === d.nid && !g.ai)), first = hum.find(d => d.nid !== room.id) || hum[0] || defs[0], rest = defs.filter(d => d !== first); // börja på en kompis, inte en AI
     startRace({ ...base, opps: rest, player: first, spectate: true, grid: 0, title: '👁 Online', onDone: () => { room.backToLobby(); U.view = 'online'; render(); } }); return; }
   startRace({ ...base, opps: defs, grid: my, title: 'Online – ' + (ON.champ?.heats?.find(x => x.id === h)?.name || 'heat'),
@@ -639,10 +641,11 @@ function online() {
       <div class="row"><button class="btn small ghost" data-act="go" data-arg="garage">Byt bil i garaget</button></div></section>`;
   if (room.status === 'lobby' || room.status === 'race') h += invitePanel(room); // bjud in andra som har spelet öppet
   if (H && !running) {
-    const C = (k, v, n) => `<button class="chip s ${cfg[k] === v ? 'on' : ''}" data-act="on-cfg" data-arg="${k}:${v}">${n ?? v}</button>`;
+    cfg.tod ??= 'dag'; const C = (k, v, n) => `<button class="chip s ${cfg[k] === v ? 'on' : ''}" data-act="on-cfg" data-arg="${k}:${v}">${n ?? v}</button>`;
     h += `<section class="panel"><h2>Tävlingsinställningar</h2>
       ${cs && !cs.done ? '<p class="dim">Mästerskapet pågår – inställningarna låses tills det är klart.</p>' : `      <h3>Bana</h3><div class="chips">${TRACKS.map(t => `<button class="chip ${cfg.track === t.id ? 'on' : ''}" data-act="on-cfg" data-arg="track:${t.id}">${t.name}<small>${SURF[t.surface].name.split(' ')[0]}</small></button>`).join('')}</div>
       <div class="row"><span class="lbl">Väder</span>${WEATHER.map(([k, n]) => C('weather', k, n)).join('')}</div>
+      <div class="row"><span class="lbl">Tid på dygnet</span>${TOD.map(([k, n]) => C('tod', k, n)).join('')}</div>
       <div class="row"><span class="lbl">Varv ${cfg.laps}</span><input type="range" min="1" max="100" step="1" value="${cfg.laps}" data-in="on-laps"></div>
       <div class="row"><span class="lbl">AI-motståndare ${cfg.ai}</span><input type="range" min="0" max="30" step="1" value="${cfg.ai}" data-in="on-ai"></div>
       <div class="row"><span class="lbl">AI-svårighet ${cfg.diff} %</span><input type="range" min="1" max="100" step="1" value="${cfg.diff}" data-in="on-diff"></div>
@@ -979,7 +982,7 @@ const ACT = {
   'on-retry'() { openRoom(ON.room.code, false); },
   'on-leave'() { leaveRoom(); },
   'on-cm'(a) { ON.room?.setCfg({ cm: +a }); return false; },
-  'on-cfg'(a) { const [k, v] = a.split(':'); ON.room?.setCfg({ [k]: k === 'track' || k === 'weather' ? v : +v }); return false; },
+  'on-cfg'(a) { const [k, v] = a.split(':'); ON.room?.setCfg({ [k]: k === 'track' || k === 'weather' || k === 'tod' ? v : +v }); return false; },
   'on-copy'() { const l = roomLink(ON.room.code); try { navigator.clipboard.writeText(l); } catch (e) { } ON.copied = 1; setTimeout(() => { ON.copied = 0; if (U.view === 'online') render(); }, 1800); },
   'on-start'() { hostStart(); return false; },
   'on-next'() { hostNext(); return false; },
@@ -992,7 +995,7 @@ const ACT = {
   'drv-cls'(a) { S.driverCls = a; save(); },
   'do-lippumies'() { S.lippumies = 0; S.warnings = 0; save(); toast('🚩 Du har stått flaggvakt en tävlingsdag (lippumiespesti) – du har nu tävlingsrätt igen!'); },
   'q-track'(a) { U.quick.track = a; }, 'q-laps'(a) { U.quick.laps = +a; }, 'q-opp'(a) { U.quick.opp = +a; },
-  'q-weather'(a) { U.quick.weather = a; }, 'q-cm'(a) { U.quick.cm = +a; },
+  'q-weather'(a) { U.quick.weather = a; }, 'q-tod'(a) { U.quick.tod = a; }, 'q-cm'(a) { U.quick.cm = +a; },
   'cc-cm'(a) { champCfg().cm = +a; save(); },
   'q-joker'() { U.quick.joker = U.quick.joker ? 0 : 1; },
   'quick-race'() {
@@ -1000,13 +1003,13 @@ const ACT = {
     startRace({
       trackId: q.track, laps: q.laps, opps: makeOpps(q.opp, li, q.ai / 100, insp.cls, undefined, q.cm || 0), specLvl: q.cm || 0,
       grid: q.opp, gridRows: insp.rules.gridRows, useJoker: !!q.joker, sideContact: insp.rules.sideContact,
-      title: `${insp.rules.name} – Träningsheat`, mode: 'heat', weather: q.weather, onDone: r => quickDone(r),
+      title: `${insp.rules.name} – Träningsheat`, mode: 'heat', weather: q.weather, tod: q.tod, onDone: r => quickDone(r),
     });
     return false;
   },
   'quick-time'() {
     const q = U.quick;
-    startRace({ trackId: q.track, laps: q.laps, opps: [], specLvl: q.cm || 0, grid: 0, gridRows: 1, useJoker: false, title: 'Tidskörning', mode: 'time', weather: q.weather, onDone: r => quickDone(r, true) });
+    startRace({ trackId: q.track, laps: q.laps, opps: [], specLvl: q.cm || 0, grid: 0, gridRows: 1, useJoker: false, title: 'Tidskörning', mode: 'time', weather: q.weather, tod: q.tod, onDone: r => quickDone(r, true) });
     return false;
   },
   'ev-start'(a) { evStart(a); window.scrollTo(0, 0); },

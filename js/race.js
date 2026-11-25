@@ -633,7 +633,7 @@ export class Race {
     ensureTerrain(trk);
     trk.wetK = { regn: [0.78, 0.9], sno: [0.75, 0.82], dimma: [0.97, 0.98] }[cfg.weather] || null;
     const QL = qualityLevel(cfg.settings?.quality), q = QL.level >= 1 ? 1 : 0; this.q = q; this.QL = QL;
-    this.view = new View3(this.cv, trk, { level: QL.level, auto: QL.auto, res: cfg.settings?.res || 'auto', weather: cfg.weather || 'sol' }); this.R = this.view.ok ? this.view : null;
+    this.view = new View3(this.cv, trk, { level: QL.level, auto: QL.auto, res: cfg.settings?.res || 'auto', weather: cfg.weather || 'sol', tod: cfg.tod || 'dag' }); this.R = this.view.ok ? this.view : null;
     if (this.R) this.view.setCockpit([cockpitMesh(), steerWheelMesh(), pendantMesh(), cockpitMesh({ driverView: true })], cfg.player.paint);
     this.env = trk.winter
       ? { zenith: [0.46, 0.62, 0.82], fog: [0.82, 0.88, 0.94], fd: 0.000014, light: [0.42, 0.78, 0.32] }
