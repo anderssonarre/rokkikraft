@@ -16,6 +16,13 @@ for (const car of D.CARS) {
 console.log('Spec-bilar');
 for (let l = 1; l <= 5; l++) { const k = E.curve(E.specCar(l)); Math.abs(k.hp - E.SPEC_CARS[l].hp) < 2 ? good() : bad(`Spec ${l}: ${k.hp} hk, väntat ${E.SPEC_CARS[l].hp}`); }
 
+console.log('Mjukkropp (BeamNG-läge)');
+{ const { SoftBody } = await import('../js/softbody.js');
+  const crush = v => { const sb = new SoftBody(); sb.impact(1, 0, v); for (let i = 0; i < 480 && sb.awake > 0; i++) sb.step(1 / 240); return sb.state(); };
+  const a = crush(5).front, b = crush(12).front; (a > 0.02 && b > a * 2 && b < 0.8) ? good() : bad(`frontkrock ger orimlig intryckning: 5 m/s ${a.toFixed(2)}, 12 m/s ${b.toFixed(2)}`);
+  const c = (() => { const sb = new SoftBody(); sb.impact(0.7, 0.7, 10); for (let i = 0; i < 480 && sb.awake > 0; i++) sb.step(1 / 240); return sb.state(); })();
+  Math.abs(c.toeF) > 0.01 ? good() : bad('hörnsmäll påverkar inte hjulinställningen');
+  const p = new SoftBody(); p.impact(1, 0, 15); for (let i = 0; i < 2000; i++) p.step(1 / 240); [...p.p].every(Number.isFinite) && p.awake <= 0 ? good() : bad('mjukkroppen blir instabil eller somnar aldrig'); }
 console.log('Banor + AI-varv');
 const G = 9.81;
 for (const tr of D.TRACKS) {

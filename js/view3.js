@@ -811,6 +811,25 @@ export class View3 {
       m.material.color.copy(m.userData.c0).lerp(new THREE.Color(0.35, 0.33, 0.3), k * 0.35); m.material.roughness = Math.min(0.98, 0.48 + k * 0.50);
     });
   }
+  // Mjukkroppsfysik: hela bilens 3D-modell (kaross, lampor, stötfångare, hjulupphängning) följer nod-balk-nätets förskjutning
+  softDeform(G, sb, dmg) {
+    const now = performance.now(), U = G.userData, lvl = Math.round(dmg / 5) * 5;
+    if (U.sbv === sb.ver && U.sbl === lvl) return; if (sb.awake > 0 && now - (U.sbT || 0) < 70) return; U.sbT = now; U.sbv = sb.ver; U.sbl = lvl;
+    const THREE = T(), o = [0, 0, 0], v = new THREE.Vector3(), w = new THREE.Vector3(), k = lvl / 100;
+    G.updateMatrixWorld(true); const inv = new THREE.Matrix4().copy(G.matrixWorld).invert(), wheels = new Set((U.wheels || []).map(x => x.piv));
+    for (const piv of wheels) { const p0 = piv.userData.p0 ||= piv.position.clone(); sb.disp(p0.x, p0.y + 0.3, p0.z, o); piv.position.set(p0.x + o[0], p0.y + o[1] * 0.5, p0.z + o[2]); }
+    const inWheel = m => { for (let q = m; q && q !== G; q = q.parent) if (wheels.has(q)) return true; return false; };
+    G.traverse(m => {
+      if (!m.isMesh || !m.geometry?.attributes?.position || inWheel(m) || m.userData.keep) return;
+      if (!m.userData.sbOrig) { m.geometry = m.geometry.clone(); m.userData.sbOrig = (m.userData.orig || m.geometry.attributes.position.array).slice(); }
+      const pos = m.geometry.attributes.position, a = pos.array, or = m.userData.sbOrig, toCar = new THREE.Matrix4().multiplyMatrices(inv, m.matrixWorld), back = new THREE.Matrix4().copy(toCar).invert();
+      let moved = false;
+      for (let i = 0; i < a.length; i += 3) { v.set(or[i], or[i + 1], or[i + 2]).applyMatrix4(toCar); sb.disp(v.x, v.y, v.z, o);
+        if (o[0] || o[1] || o[2]) { moved = true; w.set(v.x + o[0], v.y + o[1], v.z + o[2]).applyMatrix4(back); a[i] = w.x; a[i + 1] = w.y; a[i + 2] = w.z; } else { a[i] = or[i]; a[i + 1] = or[i + 1]; a[i + 2] = or[i + 2]; } }
+      if (moved) { pos.needsUpdate = true; m.geometry.computeVertexNormals(); m.geometry.computeBoundingSphere(); }
+      if (m.material?.userData?.paint && !Array.isArray(m.material)) { if (!m.userData.c0) m.userData.c0 = m.material.color.clone(); m.material.color.copy(m.userData.c0).lerp(new THREE.Color(0.35, 0.33, 0.3), k * 0.35); m.material.roughness = Math.min(0.98, 0.48 + k * 0.5); }
+    });
+  }
   // roll/pitch = markens lutning (hjulen följer den). bRoll/bPitch/bY = karossens krängning, nickning och vibration ovanpå fjädringen.
   // Valfritt 15:e argument `car` matar in fysikfälten bodyRoll, bodyPitch, airY, steerVis, wheelSpin, brakeGlow och backfire.
   poseCar(G, x, y, z, hdg, roll, pitch, steer, spin, braking, visible, bRoll = 0, bPitch = 0, bY = 0, car = null) {

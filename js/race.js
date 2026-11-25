@@ -1,6 +1,7 @@
 // Heatet: körfysik, AI, kollisioner, lisälenkki, varningskoder (A1–B9), Vi/Li/K/KA,
 // autentisk 3D In-Car kupévy med roterande mockaratt samt Pro Telemetri-HUD inspirerad av referensbilden.
 import { qualityLevel, rememberAuto } from './gfx.js';
+import { SoftBody } from './softbody.js';
 import { getTrack } from './track.js';
 import { M4, cockpitMesh, steerWheelMesh, pendantMesh } from './gl.js';
 import { View3 } from './view3.js';
@@ -357,6 +358,7 @@ export function addDent(c, wx, wz, mag) {
   const near = D.find(d => d.ux * ux + d.uz * uz > 0.93);
   if (near) near.m = Math.min(0.26, near.m + depth * 0.6); else { D.push({ ux, uz, m: depth }); if (D.length > 10) D.shift(); }
   c.dentV = (c.dentV || 0) + 1;
+  if (c.sb) c.sb.impact(ux, uz, mag); // mjukkroppsfysik (BeamNG-läge)
 }
 export function collide(A, B) {
   let hit = 0;
@@ -679,6 +681,7 @@ export class Race {
     for (const c of this.cars) {
       if (this.R) c.obj = this.view.addCar(c.spec.body, c.paint, { model: c.spec.id, bars: c.spec.dmg < 1, mirrors: needMirrors, bw: c.bw, num: c.isPlayer ? (cfg.player.num || '') : c.num || 1 + ((c.slot * 37 + 11) % 98) });
       c.y = trk.heightAt(c.x, c.z); c.wspin = 0;
+      if (cfg.settings?.softBody && !cfg.replay) c.sb = new SoftBody(c.obj?.userData.halfL || 2.2, c.obj?.userData.halfW || 0.86); // BeamNG-läge: nod-balk-kaross
       if (c.ai) {
         // svårighet 1–100 %: 1 % kör ca 4–5 km/h-krypfart med vingliga linjer (≈5 min/varv), 100 % pressar däcken till gränsen
         aiSetup(c, trk);
@@ -760,11 +763,21 @@ export class Race {
     if (this.spectate) { const i = (this.cars.indexOf(this.player) + d + this.cars.length) % this.cars.length; this.player = this.cars[i]; this.camH = this.player.h; this.watchCam(); return; } const c = this.player; if (this.state !== 'run' || c.shiftT > 0) return; const g = c.gear + d; if (g >= 1 && g <= c.spec.gears.length - (c.gearLoss || 0)) { c.gear = g; c.shiftT = ((c.clutch || 0) > 0.5 ? 0.06 : c.spec.shift) * (1 + (c.gearDmg || 0) * 0.015); c.shiftEv = 1; if (c.rpm > 4000) { c.backfire = Math.max(c.backfire || 0, 0.72); c.backfireEv = Math.max(c.backfireEv || 0, 0.72); } } }
   resize() { if (this.R) this.view.resize(); }
   resetCar(c) { const trk = this.trk, hwi = trk.hwAt ? trk.hwAt(c.i) : trk.hw, [x, z, h] = trk.point(c.i, clamp(c.lat, -hwi + 2, hwi - 2) * 0.3); c.x = x; c.z = z; c.h = h; c.vx = c.vy = c.r = 0; c.rev = false; c.gear = 1; c.airY = c.airVy = c.suspY = c.suspVy = c.landImpact = c.landAudio = 0; c.bodyPitch = c.bPitch = c.bodyRoll = c.bRoll = c.pitchVel = c.rollVel = 0; c.brakeGlow = c.backfire = 0; }
+  // BeamNG-läge: hur nätet har deformerats styr mekaniken – sneda hjul drar bilen åt det skadade hållet,
+  // intryckt front ger kylarläcka och motorskada, intryckt bak kan slita loss avgasröret
+  sbEffects(c) {
+    const st = c.sb.state(); c.sbState = st;
+    c.pull = clamp(-st.toeF * 1.0 - st.toeR * 0.4, -0.1, 0.1); c.steerDmg = Math.max(c.steerDmg || 0, Math.min(100, Math.abs(c.pull) / 0.075 * 100)); c.pullSign = Math.sign(c.pull) || c.pullSign;
+    if (st.front > 0.12 && !c.radLeak && !c.spec.radSafe) { c.radLeak = true; this.msg('FRONTEN INTRYCKT – KYLAREN LÄCKER<br><small>Håll koll på temperaturen</small>', 2.6, 'warn'); }
+    if (st.front > 0.3 && !c.sbEng) { c.sbEng = true; c.dmg = Math.min(100, c.dmg + 25); this.msg('MOTORRUMMET INTRYCKT<br><small>Motorn har tagit skada – mindre effekt</small>', 2.6, 'warn'); }
+    if (st.rear > 0.25 && !c.exhaustLoose) { c.exhaustLoose = true; this.msg('BAKVAGNEN INTRYCKT – AVGASRÖRET LOSSNADE<br><small>Måste fästas före nästa heat (110 dB)</small>', 2.6, 'warn'); }
+    if (Math.abs(c.pull) > 0.02 && !c.sbPullMsg) { c.sbPullMsg = true; this.msg(`HJULUPPHÄNGNINGEN SNEDDE<br><small>Bilen drar åt ${c.pull > 0 ? 'höger' : 'vänster'}</small>`, 2.4, 'warn'); }
+  }
   // Mekaniska skador vid smällar: styrning/hjulinställning (bilen drar åt ena hållet) och växellåda (högsta växlarna försvinner)
   partDamage(p, d) {
-    if (Math.random() < 0.55) { const before = p.steerDmg; p.steerDmg = Math.min(100, p.steerDmg + d * (0.5 + Math.random() * 0.8));
+    if (!p.sb && Math.random() < 0.55) { const before = p.steerDmg; p.steerDmg = Math.min(100, p.steerDmg + d * (0.5 + Math.random() * 0.8));
       if (!p.pullSign) p.pullSign = Math.random() < 0.5 ? -1 : 1; p.pull = p.pullSign * 0.075 * p.steerDmg / 100;
-      if (before < 25 && p.steerDmg >= 25) this.msg(`STYRNINGEN SKADAD<br><small>Ett hjul är snett – bilen drar åt ${p.pullSign > 0 ? 'vänster' : 'höger'}</small>`, 2.6, 'warn'); }
+      if (before < 25 && p.steerDmg >= 25) this.msg(`STYRNINGEN SKADAD<br><small>Ett hjul är snett – bilen drar åt ${p.pullSign > 0 ? 'höger' : 'vänster'}</small>`, 2.6, 'warn'); }
     if (Math.random() < 0.3) { const before = p.gearLoss; p.gearDmg = Math.min(100, p.gearDmg + d * (0.4 + Math.random() * 0.7)); p.gearLoss = p.gearDmg >= 80 ? 2 : p.gearDmg >= 45 ? 1 : 0;
       if (p.gearLoss > before) this.msg(`VÄXELLÅDAN SKADAD<br><small>${p.spec.gears.length - p.gearLoss + 1}:an går inte i längre${p.gearLoss > 1 ? ' (inte heller ' + (p.spec.gears.length) + ':an)' : ''}</small>`, 2.6, 'warn'); }
   }
@@ -1038,6 +1051,7 @@ export class Race {
 
   step(dt) {
     const trk = this.trk, n = trk.n, p = this.player;
+    for (const c of this.cars) if (c.sb && c.sb.step(dt) && c.isPlayer) this.sbEffects(c); // mjukkroppen svänger ut efter smällar
     if (this.state === 'grid') {
       this.gridT += dt; this.input(dt);
       if (this.net) { // gemensam start: värden skickar en klocktid, lamporna räknar ner mot den
@@ -1487,7 +1501,7 @@ export class Race {
       at = [p.x + ch * 6, pY + 0.6, p.z + sh * 6];
     }
 
-    for (const c of this.cars) if (c.obj && ((c.dmg || 0) > 4 || c.dentV)) this.view.damageCar(c.obj, c.dmg || 0, c.dents, c.dentV || 0);
+    for (const c of this.cars) if (c.obj) { if (c.sb) { if (c.sb.ver) this.view.softDeform(c.obj, c.sb, c.dmg || 0); } else if ((c.dmg || 0) > 4 || c.dentV) this.view.damageCar(c.obj, c.dmg || 0, c.dents, c.dentV || 0); }
     for (const c of this.cars) this.view.poseCar(c.obj, c.x, c.y, c.z, c.h, c.tRoll || 0, c.tPitch || 0, c.steer, c.wheelSpin ?? c.wspin, c.brk > 0.1, !(c === p && (this.cam === 0 || this.cam === 1 || this.cam === DEFAULT_CAM)), (c.bodyRoll || 0) + (c.vR || 0), (c.bodyPitch || 0) + (c.vP || 0), (c.bY || 0) + (c.suspY || 0), c);
     let cockpit = null;
     if (this.cam === 0) { const sway = clamp((p.ay || 0) * 0.045 + Math.sin(this.t * 6.0) * 0.03, -0.45, 0.45);
