@@ -25,20 +25,39 @@ async function tx(mode, fn) { const d = await db(); return new Promise((res, rej
 export const customModel = id => tx('readonly', s => s.get(id)).catch(() => null);
 export const saveCustomModel = (id, rec) => { cache.delete('custom:' + id); return tx('readwrite', s => s.put(rec, id)); };
 export const deleteCustomModel = id => { cache.delete('custom:' + id); return tx('readwrite', s => s.delete(id)); };
-export async function customModelInfo(id) { const r = await customModel(id); return r ? { name: r.name, size: r.buf.byteLength, rot: r.rot || 0, flip: !!r.flip, paint: r.paint !== false } : null; }
+export async function customModelInfo(id) { const r = await customModel(id); return r ? { name: r.name, size: r.buf.byteLength, rot: r.rot || 0, flip: !!r.flip, paint: r.paint !== false, paintMat: r.paintMat || '', mats: r.mats || [] } : null; }
 
 // Läser en GLB (ArrayBuffer) – används också för att kontrollera en uppladdad fil innan den sparas
 export async function parseGlb(buf) { const l = await gltfLoader(); return new Promise((res, rej) => l.parse(buf, '', g => res(g.scene), e => rej(e))); }
 
 async function sourceFor(modelId) {
   const c = await customModel(modelId);
-  if (c?.buf) { const key = 'custom:' + modelId; if (!cache.has(key)) cache.set(key, parseGlb(c.buf)); return { scene: await cache.get(key), opt: { rot: c.rot || 0, flip: !!c.flip, paint: c.paint !== false } }; }
+  if (c?.buf) { const key = 'custom:' + modelId; if (!cache.has(key)) cache.set(key, parseGlb(c.buf)); return { scene: await cache.get(key), opt: { rot: c.rot || 0, flip: !!c.flip, paint: c.paint !== false, paintMat: c.paintMat || '' } }; }
   const man = await manifest(), def = man.cars?.[modelId]; if (!def) return null;
   if (!cache.has(def.file)) cache.set(def.file, gltfLoader().then(l => new Promise((res, rej) => l.load(BASE + 'assets/models/' + def.file, g => res(g.scene), undefined, rej))));
   return { scene: await cache.get(def.file), opt: { rot: def.rotY ? Math.round(def.rotY / (Math.PI / 2)) : 0, flip: !!def.flip, paint: def.paint !== false, scale: def.scale, offset: def.offset } };
 }
 
 const WHEEL_RE = /wheel|tire|tyre|rim|hjul|rad\b|reifen|rueda|roue/i;
+const GLASS_RE = /glass|glas|window|windshield|lens|lamp|light|lyse|ruta|transparent/i, PAINT_RE = /paint|lack|body|carpaint|car_?colou?r|exterior|kaross|shell|coat/i;
+function fixOpaque(mt) { if (mt.transparent || (mt.opacity ?? 1) < 1 || mt.transmission) { mt.transparent = false; mt.opacity = 1; mt.depthWrite = true; if (mt.transmission) mt.transmission = 0; if (mt.alphaMap || mt.map) mt.alphaTest = Math.max(mt.alphaTest || 0, 0.5); mt.needsUpdate = true; } }
+// Ytarea per material (riktiga trianglar i världsskala) – största färgade ytan är nästan alltid karossen
+export function materialStats(root) {
+  const THREE = T(), M = new Map(), a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3(); root.updateMatrixWorld(true);
+  root.traverse(m => { if (!m.isMesh) return; const g = m.geometry, P = g.attributes.position; if (!P) return; const I = g.index, mats = Array.isArray(m.material) ? m.material : [m.material];
+    const groups = g.groups?.length ? g.groups : [{ start: 0, count: I ? I.count : P.count, materialIndex: 0 }];
+    for (const gr of groups) { const mt = mats[gr.materialIndex] || mats[0]; if (!mt) continue; let area = 0; const step = Math.max(1, Math.floor(gr.count / 3 / 4000)) * 3; // gles provtagning på stora modeller
+      for (let k = gr.start; k + 2 < gr.start + gr.count; k += step) { const i0 = I ? I.getX(k) : k, i1 = I ? I.getX(k + 1) : k + 1, i2 = I ? I.getX(k + 2) : k + 2;
+        a.fromBufferAttribute(P, i0).applyMatrix4(m.matrixWorld); b.fromBufferAttribute(P, i1).applyMatrix4(m.matrixWorld); c.fromBufferAttribute(P, i2).applyMatrix4(m.matrixWorld);
+        area += b.sub(a).cross(c.sub(a)).length() / 2 * (step / 3); }
+      const e = M.get(mt) || { mat: mt, name: mt.name || '(namnlöst)', area: 0 }; e.area += area; M.set(mt, e); } });
+  return [...M.values()].sort((x, y) => y.area - x.area);
+}
+function autoPaint(stats) {
+  const named = stats.find(x => PAINT_RE.test(x.name) && !GLASS_RE.test(x.name)); if (named) return named.mat;
+  const lum = m => m.color ? m.color.r + m.color.g + m.color.b : 1;
+  return stats.find(x => !GLASS_RE.test(x.name) && !WHEEL_RE.test(x.name) && !/interior|seat|dash|chrome|krom|black|svart|rubber|gummi|plastic/i.test(x.name) && lum(x.mat) > 0.25 && (x.mat.metalness ?? 0) < 0.95)?.mat || null;
+}
 // Byter karossen i en bil från View3.addCar mot en GLB-modell. Returnerar true om en modell användes.
 export async function applyVehicleModel(G, modelId, paint) {
   if (!G?.userData?.bodyG) return false; let src;
@@ -56,18 +75,13 @@ export async function applyVehicleModel(G, modelId, paint) {
   const ground = -(U.bodyBase ?? -0.28); // bodyG ligger 0,28 m lägre i loppet (fjädringens nolläge), i garaget 0
   root.position.x -= ctr.x; root.position.z -= ctr.z; root.position.y += ground - box.min.y; if (o.offset) { root.position.x += o.offset[0]; root.position.y += o.offset[1]; root.position.z += o.offset[2]; }
   root.updateMatrixWorld(true);
-  // material: lack + skuggor
+  // material: lack + skuggor. Allt som inte är glas/lampor görs ogenomskinligt (många nedladdade modeller har
+  // karossen felaktigt markerad som genomskinlig, då syns interiören rakt igenom).
   const paintM = new THREE.MeshStandardMaterial({ color: new THREE.Color(...paint), metalness: 0.25, roughness: 0.5 }); paintM.userData.paint = 1;
-  const mats = new Map(); let named = false;
   root.traverse(m => { if (!m.isMesh) return; m.castShadow = true; m.receiveShadow = true; if (!m.geometry.attributes.normal) m.geometry.computeVertexNormals(); // vissa exporter saknar normaler
-    for (const mt of (Array.isArray(m.material) ? m.material : [m.material])) { if (!mt) continue; if (/paint|lack|body|carpaint|exterior/i.test(mt.name)) named = true;
-      const g = m.geometry; g.computeBoundingBox(); const b = g.boundingBox, area = (b.max.x - b.min.x) * (b.max.y - b.min.y) + (b.max.y - b.min.y) * (b.max.z - b.min.z) + (b.max.x - b.min.x) * (b.max.z - b.min.z);
-      mats.set(mt, (mats.get(mt) || 0) + area * m.getWorldScale(new THREE.Vector3()).x ** 2); } });
-  let paintMat = null;
-  if (o.paint && !named) { // inget namngivet lackmaterial: ta det största materialet som inte är svart/glas/krom
-    paintMat = [...mats.entries()].filter(([m]) => !m.transparent && (m.opacity ?? 1) > 0.9 && (m.color ? m.color.r + m.color.g + m.color.b > 0.25 : true) && (m.metalness ?? 0) < 0.9 && !WHEEL_RE.test(m.name)).sort((a, b) => b[1] - a[1])[0]?.[0] || null; }
-  if (o.paint) root.traverse(m => { if (!m.isMesh) return; const sw = mt => (named ? /paint|lack|body|carpaint|exterior/i.test(mt?.name || '') : mt === paintMat) ? paintM : mt;
-    m.material = Array.isArray(m.material) ? m.material.map(sw) : sw(m.material); });
+    for (const mt of (Array.isArray(m.material) ? m.material : [m.material])) if (mt && !GLASS_RE.test(mt.name)) fixOpaque(mt); });
+  const stats = materialStats(root), pick = o.paintMat ? stats.find(x => x.name === o.paintMat)?.mat : autoPaint(stats);
+  if (o.paint && pick) root.traverse(m => { if (!m.isMesh) return; const sw = mt => mt === pick ? paintM : mt; m.material = Array.isArray(m.material) ? m.material.map(sw) : sw(m.material); });
   // hjul: noder med hjulnamn, grupperade i de fyra hörnen
   const cand = []; root.traverse(n => { if (n !== root && WHEEL_RE.test(n.name) && !(n.parent && WHEEL_RE.test(n.parent.name))) cand.push(n); });
   const corners = {}; for (const n of cand) { const b = new THREE.Box3().setFromObject(n); if (b.isEmpty()) continue; const c = b.getCenter(new THREE.Vector3()), k = (c.x > 0 ? 'f' : 'r') + (c.z > 0 ? 'R' : 'L'); (corners[k] ||= []).push({ n, b }); }
