@@ -345,10 +345,19 @@ export function trackStep(c, trk, t, useJoker = true) {
     c.x -= nx * over; c.z -= nz * over;
     const ch = Math.cos(c.h), sh = Math.sin(c.h); let wx = c.vx * ch - c.vy * sh, wz = c.vx * sh + c.vy * ch; const vn = wx * nx + wz * nz;
     if (vn > 0) { wx -= 1.25 * vn * nx; wz -= 1.25 * vn * nz; wx *= 0.93; wz *= 0.93; c.vx = wx * ch + wz * sh; c.vy = -wx * sh + wz * ch; c.r *= 0.6; hit = vn; }
+    if (vn > 2.5) addDent(c, nx, nz, vn);
   }
   return hit;
 }
 
+// Bucklor: sparar var på bilen en smäll träffade (bilens egna koordinater: x framåt, z åt sidan) så att 3D-karossen trycks in just där
+export function addDent(c, wx, wz, mag) {
+  if (!(mag > 1.2)) return; const ch = Math.cos(c.h), sh = Math.sin(c.h), lx = wx * ch + wz * sh, lz = -wx * sh + wz * ch, n = Math.hypot(lx, lz) || 1;
+  const ux = lx / n, uz = lz / n, D = c.dents || (c.dents = []), depth = Math.min(0.2, mag * 0.018);
+  const near = D.find(d => d.ux * ux + d.uz * uz > 0.93);
+  if (near) near.m = Math.min(0.26, near.m + depth * 0.6); else { D.push({ ux, uz, m: depth }); if (D.length > 10) D.shift(); }
+  c.dentV = (c.dentV || 0) + 1;
+}
 export function collide(A, B) {
   let hit = 0;
   collide.front = ''; collide.type = '';
@@ -365,6 +374,7 @@ export function collide(A, B) {
       c.vx = w[0] * ch + w[1] * sh; c.vy = -w[0] * sh + w[1] * ch;
       const side = -sh * dx + ch * dz; c.r += sgn * o * side * J / (mm * c.spec.wb * c.spec.wb * 0.36) * 0.55; };
     ap(A, va, -1, oa, ma); ap(B, vb, 1, ob, mb);
+    if (rel > 1.5) { const ca = Math.cos(A.h), sa = Math.sin(A.h), cb = Math.cos(B.h), sb = Math.sin(B.h); addDent(A, dx + ca * oa * 0.45, dz + sa * oa * 0.45, rel); addDent(B, -dx + cb * ob * 0.45, -dz + sb * ob * 0.45, rel); }
     if (rel > hit) {
       hit = rel;
       if (oa > 0 && ob < 0) { collide.front = 'A'; collide.type = 'rear'; }
@@ -1471,7 +1481,7 @@ export class Race {
       at = [p.x + ch * 6, pY + 0.6, p.z + sh * 6];
     }
 
-    for (const c of this.cars) if (c.obj && (c.dmg || 0) > 4) this.view.damageCar(c.obj, c.dmg);
+    for (const c of this.cars) if (c.obj && ((c.dmg || 0) > 4 || c.dentV)) this.view.damageCar(c.obj, c.dmg || 0, c.dents, c.dentV || 0);
     for (const c of this.cars) this.view.poseCar(c.obj, c.x, c.y, c.z, c.h, c.tRoll || 0, c.tPitch || 0, c.steer, c.wheelSpin ?? c.wspin, c.brk > 0.1, !(c === p && (this.cam === 0 || this.cam === 1 || this.cam === DEFAULT_CAM)), (c.bodyRoll || 0) + (c.vR || 0), (c.bodyPitch || 0) + (c.vP || 0), (c.bY || 0) + (c.suspY || 0), c);
     let cockpit = null;
     if (this.cam === 0) { const sway = clamp((p.ay || 0) * 0.045 + Math.sin(this.t * 6.0) * 0.03, -0.45, 0.45);

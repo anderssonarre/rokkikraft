@@ -781,23 +781,34 @@ export class View3 {
     }
     rollP.add(bodyG); liftG.add(rollP); G.add(liftG);
     G.userData.bodyG = bodyG; G.userData.chassis = bodyG; G.userData.rollP = rollP; G.userData.liftG = liftG; G.userData.halfW = W / 2;
-    this.scene.add(G); this.cars.push(G); return G; }
+    G.userData.halfL = L / 2; G.userData.halfW = W / 2; this.scene.add(G); this.cars.push(G); return G; }
   // Synliga skador: bucklar in lackerade delar (deterministiskt per bil) och gör lacken mattare/repig
-  damageCar(G, dmg) {
-    const lvl = Math.round(dmg / 5) * 5; if (G.userData.dl === lvl) return; G.userData.dl = lvl;
-    const seed = G.userData.seed ??= Math.random() * 100, k = lvl / 100;
+  // Skador på karossen: riktiga bucklor där smällarna träffade (dents från fysiken) + lätt allmän tilltryckning och matt/smutsig lack
+  damageCar(G, dmg, dents, dv = 0) {
+    const lvl = Math.round(dmg / 5) * 5; if (G.userData.dl === lvl && G.userData.dv === dv) return; G.userData.dl = lvl; G.userData.dv = dv;
+    const THREE = T(), seed = G.userData.seed ??= Math.random() * 100, k = lvl / 100, D = dents || [];
+    G.updateMatrixWorld(true); const inv = new THREE.Matrix4().copy(G.matrixWorld).invert(), v = new THREE.Vector3(), w = new THREE.Vector3();
+    const hl = G.userData.halfL || 2.2, hw = G.userData.halfW || 0.86;
+    // varje buckla: träffpunkt på karossens kant i riktningen (ux, uz)
+    const P = D.map(d => { const t = Math.min(hl / Math.max(1e-3, Math.abs(d.ux)), hw / Math.max(1e-3, Math.abs(d.uz))); return { x: d.ux * t, z: d.uz * t, ux: d.ux, uz: d.uz, m: d.m }; });
     G.traverse(m => {
       if (!m.isMesh || !m.material || !m.material.userData?.paint) return; // lackerade delar
       const pos = m.geometry.attributes.position; if (!m.userData.orig) m.userData.orig = pos.array.slice();
       const o = m.userData.orig, a = pos.array;
+      const toCar = new THREE.Matrix4().multiplyMatrices(inv, m.matrixWorld), back = new THREE.Matrix4().copy(toCar).invert();
       for (let i = 0; i < a.length; i += 3) {
         const x = o[i], y = o[i + 1], z = o[i + 2], n = Math.sin(x * 3.1 + seed) * Math.cos(z * 2.7 + seed * 1.7) * Math.sin(y * 4.3 + seed * 0.3);
-        const d = Math.max(0, n) * 0.16 * k;
-        a[i] = x - Math.sign(x) * d * 0.6; a[i + 1] = y - d * 0.5; a[i + 2] = z - Math.sign(z) * d;
+        const d = Math.max(0, n) * 0.06 * k; // lätt allmän tilltryckning
+        let px = x - Math.sign(x) * d * 0.6, py = y - d * 0.5, pz = z - Math.sign(z) * d;
+        if (P.length) { v.set(x, y, z).applyMatrix4(toCar); let ox = 0, oy = 0, oz = 0;
+          for (const q of P) { const dist = Math.hypot(v.x - q.x, v.z - q.z), r = 0.55 + q.m * 3; if (dist >= r) continue; const f = (1 - dist / r) ** 2 * q.m * (0.7 + 0.3 * Math.sin(v.y * 9 + seed));
+            ox -= q.ux * f; oz -= q.uz * f; oy -= f * 0.25; }
+          if (ox || oy || oz) { w.set(v.x + ox, v.y + oy, v.z + oz).applyMatrix4(back); px += w.x - x; py += w.y - y; pz += w.z - z; } }
+        a[i] = px; a[i + 1] = py; a[i + 2] = pz;
       }
       pos.needsUpdate = true; m.geometry.computeVertexNormals();
       if (!m.userData.c0) m.userData.c0 = m.material.color.clone();
-      m.material.color.copy(m.userData.c0).lerp(new (T().Color)(0.35, 0.33, 0.3), k * 0.35); m.material.roughness = Math.min(0.98, 0.48 + k * 0.50);
+      m.material.color.copy(m.userData.c0).lerp(new THREE.Color(0.35, 0.33, 0.3), k * 0.35); m.material.roughness = Math.min(0.98, 0.48 + k * 0.50);
     });
   }
   // roll/pitch = markens lutning (hjulen följer den). bRoll/bPitch/bY = karossens krängning, nickning och vibration ovanpå fjädringen.
