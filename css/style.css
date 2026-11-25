@@ -287,3 +287,7 @@ details{margin:6px 0}details summary{cursor:pointer;font-weight:700;padding:4px 
 .inv-list { display: grid; gap: 6px; }
 .inv-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 6px 10px; background: rgba(255,255,255,.04); border-radius: 10px; }
 .inv-row b { display: block; } .inv-row small { color: var(--dim, #94a3b8); font-size: .75rem; }
+
+.xpbar { height: 12px; border-radius: 6px; background: rgba(255,255,255,.08); overflow: hidden; margin: 4px 0 8px; }
+.xpbar i { display: block; height: 100%; background: linear-gradient(90deg, var(--hi), #ffef9a); border-radius: 6px; }
+.swatch.locked { opacity: .45; font-size: .8rem; display: grid; place-items: center; cursor: not-allowed; }

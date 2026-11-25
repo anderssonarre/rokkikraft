@@ -362,7 +362,22 @@ export const PAINTS = [
   { id: 'orange', name: 'Grävmaskinsorange', rgb: [0.98, 0.45, 0.05] },
   { id: 'rosa', name: 'Tuggummirosa', rgb: [0.95, 0.35, 0.62] },
   { id: 'svart', name: 'Mattsvart', rgb: [0.13, 0.13, 0.15] },
+  // upplåses med erfarenhetsnivå (lvl)
+  { id: 'guld', name: 'Guldmetallic', rgb: [0.83, 0.66, 0.22], lvl: 2 },
+  { id: 'neon', name: 'Neongrön', rgb: [0.45, 1.0, 0.12], lvl: 4 },
+  { id: 'lila', name: 'Kungslila', rgb: [0.42, 0.16, 0.68], lvl: 4 },
+  { id: 'rost', name: 'Rostpatina', rgb: [0.52, 0.27, 0.12], lvl: 6 },
+  { id: 'krom', name: 'Kromsilver', rgb: [0.78, 0.80, 0.84], lvl: 8 },
+  { id: 'natt', name: 'Midnattsblå', rgb: [0.05, 0.08, 0.26], lvl: 10 },
 ];
+
+// Erfarenhet (XP): nivågränser och vad varje nivå låser upp. bonus = extra prispengar i procent.
+export const XP_LEVELS = [0, 150, 400, 800, 1400, 2200, 3300, 4700, 6500, 9000, 12500];
+export const XP_UNLOCKS = {
+  2: { text: 'Lack: Guldmetallic' }, 3: { text: '+3 % prispengar', bonus: 3 }, 4: { text: 'Lack: Neongrön och Kungslila' }, 5: { text: '+6 % prispengar', bonus: 6 },
+  6: { text: 'Lack: Rostpatina' }, 7: { text: '+10 % prispengar', bonus: 10 }, 8: { text: 'Lack: Kromsilver' }, 9: { text: '+12 % prispengar', bonus: 12 },
+  10: { text: 'Lack: Midnattsblå' }, 11: { text: '+15 % prispengar och titeln Veteraani', bonus: 15 },
+};
 
 // Banor. Tammisaari (Grabbskogin Rata) och Rantasalmi (RUA) är exakt modellerade efter de officiella banprofilerna!
 export const TRACKS = [

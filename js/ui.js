@@ -1,5 +1,5 @@
 // Alla menyvyer + tävlingsdagens logik enligt ROKKIRALLI RY SÄÄNTÖKIRJA (21.04.2026).
-import { TYRES, CARS, ENGINES, CLASSES, CLASS_RULES, BUILD, UPG, FUELS, PAINTS, TRACKS, SURF, CAREER, FINALS, calcPoints, PRIZE_SHARE, CODES, MARKS, DRIVERS, KOMP } from './data.js';
+import { TYRES, CARS, ENGINES, CLASSES, CLASS_RULES, BUILD, UPG, FUELS, PAINTS, TRACKS, SURF, CAREER, FINALS, calcPoints, PRIZE_SHARE, CODES, MARKS, DRIVERS, KOMP, XP_LEVELS, XP_UNLOCKS } from './data.js';
 import { buildSpec, engineAt, curve, carById, engById, fuelById, defaultTune, fmt, checkInspection, formatCarNum, SETUP_DEF, SPEC_CARS, specCar } from './engine.js';
 import { S, save, reset, activeCar } from './state.js';
 import { getTrack } from './track.js';
@@ -71,7 +71,7 @@ function menu() {
         <div><span>Moment · Ljud</span><b>${fmt(k.peakT.T)} Nm</b><small>${k.db4500} dB @ 4500 rpm (max 110)</small></div>
         <div class="${k.kgHp < 5 ? 'good' : k.kgHp > 7 ? 'bad' : ''}"><span>Vikt/effekt</span><b>${fmt(k.kgHp, 1)} kg/hk</b><small>${fmt(s.mass)} kg (reg. ${s.regMass} kg)</small></div></div></div>
     <div class="hero-r">${plate(numStr, hex(paintOf(cs.paint).rgb), cs.bw)}</div></section>
-    ${statsPanel()}
+    ${xpPanel()}${statsPanel()}
     <nav class="mgrid">
       ${btn('play', '🏁', 'Snabbstart', 'Spela', 'Välj bana, varv, väder och AI – kör direkt', 'c1')}
       ${btn('online', '🌐', ON.room ? `Rum ${ON.room.code}` : 'Rumskod', 'Online', 'Skapa eller gå med i rum och kör mot kompisar', 'c5')}
@@ -386,7 +386,7 @@ function evEnd() {
   if (ev.cleanDay && S.warnings > 0) { S.warnings = 0; toast('✓ Ren tävling körd – varningslistan är nollställd!'); }
   const sf = ev.rules.saleFrom; if (fin && sf && sf !== 'semi' && FIN.indexOf(fin.letter) <= FIN.indexOf(sf)) ev.saleEligible = true;
   ev.over = { pos: me.pos, prize: me.prize, pts: me.pts, final: fin ? fin.letter : 'out' };
-  S.money += me.prize;
+  me.prize = withBonus(me.prize); S.money += me.prize;
   const old = S.career.res[ev.e.id]; if (!old || me.pts > old.pts) S.career.res[ev.e.id] = { final: ev.over.final, pos: me.pos, pts: me.pts };
   save();
 }
@@ -462,7 +462,25 @@ function statsPanel() { const st = stats(), h = st.sec / 3600, rows = Object.ent
       <div><span>Körda heat</span><b>${st.races}</b><small>${st.wins} segrar</small></div>
       <div><span>Banor körda</span><b>${rows.length} / ${TRACKS.length}</b></div></div>
     ${rows.length ? `<table class="res stat-t"><tr><th>Bana</th><th>Heat</th><th>Körtid</th><th>Bästa varv</th></tr>${rows.map(([id, r]) => `<tr><td>${tname(id)}</td><td>${r.n}</td><td>${fmt(r.sec / 60, 0)} min</td><td>${S.records[id] ? fmtTime(S.records[id]) : '–'}</td></tr>`).join('')}</table>` : '<p class="dim">Kör ditt första heat så börjar listan fyllas.</p>'}</section>`; }
-function countRace(trackId, res) { const st = stats(), d = Math.max(0, res.dur || 0); st.sec += d; st.races++; if (res.pos === 1 && res.finished) st.wins++; const t = st.tracks[trackId] || (st.tracks[trackId] = { n: 0, sec: 0 }); t.n++; t.sec += d; save(); pushBoard(); }
+// ---- erfarenhet (XP), nivåer och upplåsningar ----
+const xpLevel = (xp = S.xp || 0) => { let l = 1; while (l < XP_LEVELS.length && xp >= XP_LEVELS[l]) l++; return l; };
+const xpBonus = () => { let b = 0; for (let l = 2; l <= xpLevel(); l++) if (XP_UNLOCKS[l]?.bonus) b = XP_UNLOCKS[l].bonus; return b; };
+const withBonus = prize => Math.round(prize * (1 + xpBonus() / 100));
+function giveXp(res) {
+  if (!res) return; const fin = !!res.finished, pos = res.pos || 0;
+  let xp = 10 + (fin ? 10 : 0) + (pos ? Math.max(0, 7 - pos) * 5 : 0) + (fin && pos === 1 ? 15 : 0) + (fin && !res.flag ? 5 : 0);
+  const before = xpLevel(); S.xp = (S.xp || 0) + xp; const after = xpLevel();
+  U.toast = after > before ? `⭐ NIVÅ ${after}! ${XP_UNLOCKS[after] ? 'Upplåst: ' + XP_UNLOCKS[after].text : ''}` : `+${xp} XP`;
+}
+function xpPanel() {
+  const xp = S.xp || 0, l = xpLevel(xp), lo = XP_LEVELS[l - 1] || 0, hi = XP_LEVELS[l], pct = hi ? Math.round((xp - lo) / (hi - lo) * 100) : 100;
+  const next = Object.keys(XP_UNLOCKS).map(Number).find(k => k > l);
+  return `<section class="panel"><h2>Erfarenhet – nivå ${l}${l >= 11 ? ' · Veteraani' : ''}</h2>
+    <div class="xpbar"><i style="width:${pct}%"></i></div>
+    <p class="dim">${fmt(xp)} XP${hi ? ` · ${fmt(hi - xp)} XP kvar till nivå ${l + 1}` : ' · högsta nivån'}${xpBonus() ? ` · +${xpBonus()} % prispengar` : ''}${next ? ` · Nästa upplåsning (nivå ${next}): ${XP_UNLOCKS[next].text}` : ''}</p>
+    <p class="dim">XP får du för varje heat: mer för bra placering, vinst, målgång och rent lopp.</p></section>`;
+}
+function countRace(trackId, res) { giveXp(res); const st = stats(), d = Math.max(0, res.dur || 0); st.sec += d; st.races++; if (res.pos === 1 && res.finished) st.wins++; const t = st.tracks[trackId] || (st.tracks[trackId] = { n: 0, sec: 0 }); t.n++; t.sec += d; save(); pushBoard(); }
 function record(track, lap) { if (!S.records[track] || lap < S.records[track]) { S.records[track] = lap; save(); } }
 
 function startRace(o) {
@@ -633,7 +651,7 @@ function online() {
   const cfg = room.cfg, H = room.isHost, cs = room.champ, trk = TRACKS.find(t => t.id === cfg.track) || TRACKS[0];
   // Prispengar online: när heatet/mästerskapet är klart får varje riktig spelare sitt pris (vinnaren mest) – en gång per tävling
   if (cs?.done && cs.overall) { const key = room.code + ':' + cs.overall.map(r => r.id + r.pos).join(','), me = cs.overall.find(r => r.id === room.id); S.onlinePaid = S.onlinePaid || [];
-    if (me && !S.onlinePaid.includes(key)) { S.onlinePaid.push(key); if (S.onlinePaid.length > 40) S.onlinePaid.shift(); if (me.prize > 0) { S.money += me.prize; U.toast = `🏆 ${me.pos === 1 ? 'Du vann' : 'Plats ' + me.pos} – ${eur(me.prize)} insatt!`; } save(); } }
+    if (me && !S.onlinePaid.includes(key)) { S.onlinePaid.push(key); if (S.onlinePaid.length > 40) S.onlinePaid.shift(); if (me.prize > 0) { me.prize = withBonus(me.prize); S.money += me.prize; U.toast = `🏆 ${me.pos === 1 ? 'Du vann' : 'Plats ' + me.pos} – ${eur(me.prize)} insatt!`; } save(); } }
   const running = cs && !cs.all && !cs.done;
   let h = `<section class="panel">${head}
       <div class="row"><input class="on-in link" readonly value="${esc(roomLink(room.code))}" onclick="this.select()"><button class="btn small" data-act="on-copy">${ON.copied ? '✓ Kopierad' : '📋 Kopiera länk'}</button></div>
@@ -770,7 +788,7 @@ function garage() {
   // Lack & Tävlingsnummer (Kilpailunumerot s. 8)
   h += `<section class="panel"><h2>Lack & Kilpailunumerot (Takasivulasi ≥ 20 cm, fram-/bakruta ≥ 10 cm)</h2>
     <p class="dim">Enligt Sääntökirja s. 8 måste siffrorna vara <b>svarta på vit botten</b> eller <b>vita på svart botten</b> (inga undantag!) och placeras i <b>bakre sidorutorna</b> (nummer på dörren är förbjudet!). Super har <b>S</b>, Junior <b>J</b> och Lady <b>L</b> framför numret. På tävlingskontoret kostar stora siffror 2 €/st och små 1 €/st.</p>
-    <div class="row wrap">${PAINTS.map(p => `<button class="swatch ${cs.paint === p.id ? 'on' : ''}" style="--c:${hex(p.rgb)}" data-act="paint" data-arg="${p.id}" title="${p.name}"></button>`).join('')}
+    <div class="row wrap">${PAINTS.map(p => p.lvl && xpLevel() < p.lvl ? `<button class="swatch locked" style="--c:${hex(p.rgb)}" disabled title="${p.name} – låses upp på nivå ${p.lvl}">🔒</button>` : `<button class="swatch ${cs.paint === p.id ? 'on' : ''}" style="--c:${hex(p.rgb)}" data-act="paint" data-arg="${p.id}" title="${p.name}${p.lvl ? ' (nivå ' + p.lvl + ')' : ''}"></button>`).join('')}
     <span class="lbl">Nummer (${ CLASS_RULES[insp.cls]?.prefix || '1–999' })</span><input class="num" type="number" min="1" max="999" value="${cs.num}" data-in="num">
     <button class="chip s ${cs.bw !== 'bw' ? 'on' : ''}" data-act="num-bw" data-arg="wb">Svart på vit botten</button>
     <button class="chip s ${cs.bw === 'bw' ? 'on' : ''}" data-act="num-bw" data-arg="bw">Vit på svart botten</button></div></section>`;
@@ -1167,7 +1185,7 @@ const ACT = {
 
 function quickDone(r, time) {
   if (isFinite(r.bestLap)) record(U.quick.track, r.bestLap);
-  const prize = time || r.flag ? 0 : NORMAL_PRIZE[r.pos - 1] || 0; if (prize && r.finished) S.money += prize; save();
+  const prize = time || r.flag ? 0 : withBonus(NORMAL_PRIZE[r.pos - 1] || 0); if (prize && r.finished) S.money += prize; save();
   U.result = { r, time, prize: r.finished ? prize : 0, title: time ? 'Tidskörning' : 'Träningsheat' }; U.view = 'result'; render();
 }
 // 🎬 Repris av senaste heatet: samma bana, bilar och väder – bilarna följer inspelningen
