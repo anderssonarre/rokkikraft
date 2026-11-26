@@ -144,6 +144,7 @@ export class Room {
       case 's': if (this.race) this.race.netState(m); break;
       case 'end': { const L = this.live[m.h]; if (L && !L.done) { L.done = true; L.order = m.order; if (this.race && this.race.heatId === m.h) this.race.netEnd(m.order); if (this.onHeatEnd) this.onHeatEnd(m.h, m.order); this.onChange(); } } break;
       case 'cs': if (m.f === this.hostId) { this.champ = m.cs; this.onChange(); } break;
+      case 'chat': if (typeof m.t === 'string') { this.addChat(m.f, String(m.nm || 'Förare').slice(0, 20), m.t.slice(0, 80)); } break;
       case 'skip': if (this.isHost && this.onSkip) this.onSkip(m.f); break;
       case 'lobby': if (m.f === this.hostId) { this.status = 'lobby'; this.onChange(); } break;
       case 'bye':
@@ -171,6 +172,9 @@ export class Room {
   }
   end(h, order) { const L = this.live[h]; const m = { k: 'end', h, order }; this.send(m); setTimeout(() => this.send({ k: 'end', h, order }), 600); if (L && !L.done) { L.done = true; L.order = order; if (this.onHeatEnd) this.onHeatEnd(h, order); } }
   toLobby() { if (!this.isHost) return; this.status = 'lobby'; this.live = {}; this.send({ k: 'lobby' }); this.sendRoom(); this.onChange(); }
+  // chatt / snabbmeddelanden i rummet (senaste 30 sparas)
+  say(name, text) { text = String(text || '').trim().slice(0, 80); if (!text) return; this.send({ k: 'chat', nm: name, t: text }); this.addChat(this.id, name, text); }
+  addChat(id, name, text) { (this.chat ||= []).push({ id, name, text, at: Date.now() }); if (this.chat.length > 30) this.chat.shift(); if (this.onChat) this.onChat(this.chat.at(-1)); this.onChange(); }
   sendChamp(cs) { if (!this.isHost) return; this.champ = cs; this.send({ k: 'cs', cs }); this.onChange(); }
   backToLobby() { this.race = null; }
   leave() {

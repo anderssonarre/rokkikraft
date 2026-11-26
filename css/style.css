@@ -297,3 +297,7 @@ details{margin:6px 0}details summary{cursor:pointer;font-weight:700;padding:4px 
 .hud-off small { display: block; font: 800 .95rem var(--mono); letter-spacing: .12em; text-transform: uppercase; color: #fff; margin-top: 4px; }
 .hud-off.pop { animation: offpop .35s ease-out; }
 @keyframes offpop { from { transform: translate(-50%, -50%) scale(1.5); opacity: .3; } to { transform: translate(-50%, -50%) scale(1); opacity: 1; } }
+
+.chat { max-height: 220px; overflow-y: auto; display: grid; gap: 4px; margin-bottom: 8px; }
+.chat .cl { padding: 5px 10px; border-radius: 10px; background: rgba(255,255,255,.05); font-size: .9rem; } .chat .cl.me { background: rgba(255,210,63,.12); }
+.chat .cl b { color: var(--hi); margin-right: 4px; }

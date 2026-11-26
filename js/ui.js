@@ -38,10 +38,13 @@ export function render() {
   if (racing) { MUSIC.stop(); return; } MUSIC.vol = (S.settings.music ?? 40) / 100; MUSIC.play(); // bakgrundsmusik i menyerna
   let V = { menu, karriar, play: karriar, event: eventView, garage, trim, dyno, komp, settings, online, setup, result, name: nameView, top: topView }[U.view] || menu;
   if (!activeCar() && !['menu', 'komp', 'settings', 'name', 'top'].includes(U.view)) V = carShop; // ingen bil → bara bilhandeln
+  const ae = document.activeElement, keep = ae && ae.id && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA') && ae.type !== 'range' && ae.type !== 'file' ? { id: ae.id, v: ae.value, a: ae.selectionStart, b: ae.selectionEnd } : null; // behåll det man skriver när sidan ritas om
   app().innerHTML = `<header class="topbar">${U.view !== 'menu' && U.view !== 'event' ? '<button class="back" data-act="go" data-arg="menu">‹ Meny</button>' : '<span class="brand">ROKKI<b>KRAFT</b></span>'}
     <span class="top-title">${{ karriar: 'Karriär & Banor', event: 'Tävlingsdag', garage: 'Garage & Besiktning', trim: 'Trimning', dyno: 'Räknebänken', komp: 'Kompendium & Sääntökirja', settings: 'Inställningar', setup: 'Bilinställningar', result: 'Resultat', play: 'Spela', name: 'Byt namn', top: 'Global topplista', karriar: 'Karriär', online: 'Online – rumskod' }[U.view] || ''}</span>
     <span class="wallet">${S.warnings > 0 ? `<i style="color:#ff6a3d">⚠ ${S.warnings}/3 varningar</i>` : ''}${S.vouchers > 0 ? `<i style="color:#5ce080">🎟 ${S.vouchers} hyvityskuitti</i>` : ''}<b>${eur(S.money)}</b><i>${CAREER[topLevel()].name}</i></span></header>
     <main class="view v-${U.view}">${V()}</main>${U.toast ? `<div class="toast">${U.toast}</div>` : ''}${inviteBox()}`;
+  { const cb = document.getElementById('chatBox'); if (cb) cb.scrollTop = cb.scrollHeight; }
+  if (keep) { const el = document.getElementById(keep.id); if (el) { el.value = keep.v; el.focus(); try { el.setSelectionRange(keep.a, keep.b); } catch (e) { } } }
   if (U.toast) { clearTimeout(U.toastT); U.toastT = setTimeout(() => { U.toast = ''; document.querySelector('.toast')?.remove(); }, 2800); }
   after();
 }
@@ -481,7 +484,7 @@ function xpPanel() {
     <p class="dim">${fmt(xp)} XP${hi ? ` · ${fmt(hi - xp)} XP kvar till nivå ${l + 1}` : ' · högsta nivån'}${xpBonus() ? ` · +${xpBonus()} % prispengar` : ''}${next ? ` · Nästa upplåsning (nivå ${next}): ${XP_UNLOCKS[next].text}` : ''}</p>
     <p class="dim">XP får du för varje heat: mer för bra placering, vinst, målgång och rent lopp.</p></section>`;
 }
-function countRace(trackId, res) { giveXp(res); const st = stats(), d = Math.max(0, res.dur || 0); st.sec += d; st.races++; if (res.pos === 1 && res.finished) st.wins++; const t = st.tracks[trackId] || (st.tracks[trackId] = { n: 0, sec: 0 }); t.n++; t.sec += d; save(); pushBoard(); }
+function countRace(trackId, res) { giveXp(res); if (res && isFinite(res.bestLap) && res.bestLap > 5 && !res.flag) record(trackId, res.bestLap); /* bästa varv från alla lopp går till topplistan */ const st = stats(), d = Math.max(0, res.dur || 0); st.sec += d; st.races++; if (res.pos === 1 && res.finished) st.wins++; const t = st.tracks[trackId] || (st.tracks[trackId] = { n: 0, sec: 0 }); t.n++; t.sec += d; save(); pushBoard(); }
 function record(track, lap) { if (!S.records[track] || lap < S.records[track]) { S.records[track] = lap; save(); } }
 
 function startRace(o) {
@@ -516,7 +519,7 @@ function topView() {
   return `<section class="panel"><span class="kick">ALLA SPELARE</span><h1>Global topplista</h1>
     <p class="dim">${B && B.connected ? `Ansluten · ${list.length} spelare` : 'Ansluter till topplistan…'} Din statistik skickas automatiskt efter varje lopp.</p>
     <div class="chips">${[['sec', 'Speltid'], ['races', 'Antal lopp'], ['wins', 'Segrar']].map(([k, n]) => `<button class="chip s ${TOP.sort === k ? 'on' : ''}" data-act="top-sort" data-arg="${k}">${n}</button>`).join('')}
-      ${TRACKS.slice(0, 8).map(t => `<button class="chip s ${TOP.sort === 'trk:' + t.id ? 'on' : ''}" data-act="top-sort" data-arg="trk:${t.id}">⏱ ${t.name.split(' – ')[0].split(' (')[0]}</button>`).join('')}</div>
+      ${TRACKS.map(t => `<button class="chip s ${TOP.sort === 'trk:' + t.id ? 'on' : ''}" data-act="top-sort" data-arg="trk:${t.id}">⏱ ${t.name.split(' – ')[0].split(' (')[0]}</button>`).join('')}</div>
     <table class="stats"><tr><th>#</th><th>Förare</th><th>${tk ? 'Bästa varv' : 'Speltid'}</th><th>Lopp</th><th>Segrar</th></tr>
     ${rows.slice(0, 100).map((e, i) => `<tr class="${e.id === me ? 'me' : ''}"><td>${i + 1}</td><td>${esc(e.name)}</td><td>${tk ? fmtTime(e.best[tk]) : hrs(e.sec)}</td><td>${e.races}</td><td>${e.wins}</td></tr>`).join('') || '<tr><td colspan="5">Inga spelare ännu.</td></tr>'}</table></section>`;
 }
@@ -530,6 +533,38 @@ const netName = () => (S.name && S.name !== 'Du' ? S.name : 'Förare').slice(0, 
 function netMe() {
   const cs = activeCar(), insp = currentInsp(), s = insp.spec;
   return { name: netName(), car: { spec: s, paint: paintOf(cs.paint).rgb, bw: cs.bw || 'wb', num: formatCarNum(cs.num, insp.cls), model: carById(S.active).name, hp: Math.round(curve(s).hp), kgHp: curve(s).kgHp, cls: insp.rules.name } };
+}
+// ---- chatt i online-rummet ----
+const QUICK = ['GG', 'En till?', 'Lycka till! 🍀', 'Vänta lite', 'Redo!', 'Haha 😂', 'Bra kört 👏', 'Revansch!'];
+function chatPanel(room) {
+  const C = room.chat || [];
+  return `<section class="panel"><h2>Chatt</h2><div class="chat" id="chatBox">${C.length ? C.slice(-12).map(m => `<div class="cl ${m.id === room.id ? 'me' : ''}"><b>${esc(m.name)}</b> ${esc(m.text)}</div>`).join('') : '<p class="dim">Inga meddelanden än – säg hej!</p>'}</div>
+    <div class="row wrap">${QUICK.map(q => `<button class="chip s" data-act="say" data-arg="${esc(q)}">${esc(q)}</button>`).join('')}</div>
+    <div class="row"><input class="on-in" id="chatIn" maxlength="80" placeholder="Skriv ett meddelande…" autocomplete="off"><button class="btn small" data-act="say-in">Skicka</button></div></section>`;
+}
+// ---- online-säsong: flera tävlingar i rad med sparad poängtabell (värden äger säsongen) ----
+const SEASON_PTS = [25, 20, 16, 13, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1];
+function seasonPanel(room) {
+  const cfg = room.cfg, se = cfg.season, H = room.isHost, mine = Object.values(S.onSeasons || {}).filter(x => x.host === pid() && x.done.length < x.rounds);
+  let h = `<section class="panel"><h2>Säsong</h2>`;
+  if (se) { const rows = Object.entries(se.pts).sort((a, b) => b[1] - a[1]);
+    h += `<p><b>${esc(se.name)}</b> · omgång ${Math.min(se.done.length + 1, se.rounds)} av ${se.rounds}${se.done.length >= se.rounds ? ' · <b>avslutad!</b>' : ''}</p>
+      <table class="stats"><tr><th>#</th><th>Förare</th><th>Poäng</th><th>Segrar</th></tr>${rows.map(([n, p], i) => `<tr class="${n === netName() ? 'me' : ''}"><td>${i + 1}${se.done.length >= se.rounds && !i ? ' 🏆' : ''}</td><td>${esc(n)}</td><td>${p}</td><td>${se.wins[n] || 0}</td></tr>`).join('') || '<tr><td colspan="4">Inga poäng än – kör första tävlingen!</td></tr>'}</table>
+      <p class="dim">Poäng efter slutplacering i varje tävling: ${SEASON_PTS.slice(0, 6).join('-')}… Tabellen sparas och kan fortsätta en annan dag.</p>
+      ${H ? '<div class="row"><button class="btn small ghost" data-act="se-off">Pausa säsongen</button></div>' : ''}`; }
+  else if (H) h += `<p class="dim">Kör flera tävlingar i rad med en gemensam poängtabell som sparas.</p>
+      <div class="row"><span class="lbl">Ny säsong</span>${[3, 5, 8].map(n => `<button class="chip s" data-act="se-new" data-arg="${n}">${n} omgångar</button>`).join('')}</div>
+      ${mine.length ? `<div class="row"><span class="lbl">Fortsätt</span>${mine.map(x => `<button class="chip s" data-act="se-cont" data-arg="${x.id}">${esc(x.name)} (${x.done.length}/${x.rounds})</button>`).join('')}</div>` : ''}`;
+  else h += '<p class="dim">Ingen säsong pågår. Värden kan starta en.</p>';
+  return h + '</section>';
+}
+function seasonTick(room) { // när en tävling är klar: värden delar ut säsongspoäng en gång
+  const cs = room.champ, se = room.cfg.season; if (!se || !cs?.done || !cs.overall) return;
+  const key = room.code + ':' + cs.overall.map(r => r.id + r.pos).join(',');
+  if (room.isHost && !se.done.includes(key) && se.done.length < se.rounds) { const n = { ...se, pts: { ...se.pts }, wins: { ...se.wins }, done: [...se.done, key] };
+    cs.overall.forEach((r, i) => { const nm = r.name || '?'; n.pts[nm] = (n.pts[nm] || 0) + (SEASON_PTS[i] || 0); if (i === 0) n.wins[nm] = (n.wins[nm] || 0) + 1; });
+    (S.onSeasons ||= {})[n.id] = n; save(); room.setCfg({ season: n }); }
+  else if (!room.isHost) { const o = (S.onSeasons ||= {})[se.id]; if (!o || o.done.length < se.done.length) { S.onSeasons[se.id] = se; save(); } }
 }
 // ---- inbjudningar: se vilka som har spelet öppet och bjud in dem till rummet ----
 let PRES = null;
@@ -562,6 +597,7 @@ function setRumParam(code) { try { const q = new URLSearchParams(location.search
 function openRoom(code, host) {
   if (ON.room) ON.room.leave();
   const room = ON.room = new Room({ code, host, me: netMe(), onChange: () => { if (U.view === 'online') render(); } });
+  room.onChat = m => { if (m.id !== room.id && room.race?.msg && !room.race.dead) room.race.msg(`💬 <b>${esc(m.name)}</b>: ${esc(m.text)}`, 3.2); };
   ON.last = null; ON.ch = null; if (host) room.cfg.track = U.quick.track;
   room.onStart = (h, grid, cfg, lead) => netRace(h, grid, cfg, lead, false);
   room.onHeatEnd = (h, order) => { if (room.isHost) hostHeatEnd(h, order); };
@@ -653,6 +689,7 @@ function online() {
   // Prispengar online: när heatet/mästerskapet är klart får varje riktig spelare sitt pris (vinnaren mest) – en gång per tävling
   if (cs?.done && cs.overall) { const key = room.code + ':' + cs.overall.map(r => r.id + r.pos).join(','), me = cs.overall.find(r => r.id === room.id); S.onlinePaid = S.onlinePaid || [];
     if (me && !S.onlinePaid.includes(key)) { S.onlinePaid.push(key); if (S.onlinePaid.length > 40) S.onlinePaid.shift(); if (me.prize > 0) { me.prize = withBonus(me.prize); S.money += me.prize; U.toast = `🏆 ${me.pos === 1 ? 'Du vann' : 'Plats ' + me.pos} – ${eur(me.prize)} insatt!`; } save(); } }
+  seasonTick(room);
   const running = cs && !cs.all && !cs.done;
   let h = `<section class="panel">${head}
       <div class="row"><input class="on-in link" readonly value="${esc(roomLink(room.code))}" onclick="this.select()"><button class="btn small" data-act="on-copy">${ON.copied ? '✓ Kopierad' : '📋 Kopiera länk'}</button></div>
@@ -660,6 +697,7 @@ function online() {
     <section class="panel"><h2>Förare i rummet (${room.members.length}/8)</h2><table class="stats">
       ${room.members.map(m => `<tr><td><span class="dot" style="background:${hex(m.car?.paint || [.5, .5, .5])}"></span><b>${esc(m.name)}</b>${m.host ? ' · värd' : ''}${m.id === room.id ? ' · du' : ''}</td><td>#${esc(m.car?.num)} ${esc(m.car?.model)} · ${esc(m.car?.hp)} hk</td><td>${cs?.where?.[m.id] ? esc(cs.where[m.id]) : ''}</td></tr>`).join('')}</table>
       <div class="row"><button class="btn small ghost" data-act="go" data-arg="garage">Byt bil i garaget</button></div></section>`;
+  h += chatPanel(room) + seasonPanel(room);
   if (room.status === 'lobby' || room.status === 'race') h += invitePanel(room); // bjud in andra som har spelet öppet
   if (U.lastReplay && room.status === 'lobby') h += `<section class="panel"><div class="row">${replayBtn()}</div></section>`;
   if (H && !running) {
@@ -1022,6 +1060,11 @@ const ACT = {
   },
   'bind-reset'() { delete S.settings.binds; save(); },
   go(a) { U.view = a; U.preview = null; if (a === 'komp') U.kompOpen = null; if (a === 'online' && ON.room) ON.room.setMe(netMe()); window.scrollTo(0, 0); },
+  say(a) { ON.room?.say(netName(), a); return false; },
+  'say-in'() { const el = document.getElementById('chatIn'); if (el?.value.trim()) { ON.room?.say(netName(), el.value); el.value = ''; } return false; },
+  'se-new'(a) { const r = ON.room; if (!r?.isHost) return; const id = 's' + Date.now().toString(36), n = (Object.keys(S.onSeasons || {}).length + 1); r.setCfg({ season: { id, host: pid(), name: `Säsong ${n} · ${new Date().toLocaleDateString('sv-FI')}`, rounds: +a, done: [], pts: {}, wins: {} } }); (S.onSeasons ||= {})[id] = r.cfg.season; save(); return false; },
+  'se-cont'(a) { const r = ON.room, x = S.onSeasons?.[a]; if (r?.isHost && x) r.setCfg({ season: x }); return false; },
+  'se-off'() { ON.room?.setCfg({ season: null }); return false; },
   'inv-one'(a) { const r = ON.room; if (!PRES || !r) return; PRES.invite([a], r.code, netName()); (ON.invited ||= new Map()).set(a, Date.now()); toast('📨 Inbjudan skickad'); },
   'inv-all'() { const r = ON.room; if (!PRES || !r) return; const ids = PRES.others().filter(p => p.room !== r.code).map(p => p.id); PRES.invite(ids, r.code, netName()); ids.forEach(id => (ON.invited ||= new Map()).set(id, Date.now())); toast(`📨 Inbjudan skickad till ${ids.length} spelare`); },
   'inv-no'() { U.invite = null; },
@@ -1247,6 +1290,7 @@ const INP = {
 };
 
 export function initUI() {
+  document.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target?.id === 'chatIn') { e.preventDefault(); ACT['say-in']?.(); } });
   setTimeout(startPresence, 1500); // närvaro för inbjudningar online
   document.addEventListener('click', e => { const el = e.target.closest('[data-act]'); if (!el || el.disabled) return; const f = ACT[el.dataset.act]; if (!f) return; if (f(el.dataset.arg, el) !== false) render(); });
   document.addEventListener('change', e => { const gf = e.target.closest?.('[data-glb]'); if (gf) { glbUpload(gf.dataset.glb, gf.files?.[0]); return; } });
