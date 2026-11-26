@@ -726,6 +726,7 @@ export const TRACKS = [
       { name: 'HALLI', x: 0, z: 25, sx: 110, sz: 80, sy: 9.0, col: [0.62, 0.64, 0.66, 1] },
     ],
   },
+  { id: 'karstula', name: 'Karstula', surface: 'grus', width: 12.5, shape: { R: 98, sx: 1.35, sz: 0.95, h: [[3, 0.14, 2.4], [5, 0.07, 0.3], [2, 0.06, 1.0]] } },
   {
     id: 'hyvinkaa',
     name: 'Hyvinkää – Vauhtipuisto (Rata D)',
@@ -950,7 +951,7 @@ export const CAREER = [
     { id: 'd5', track: 'kouvola', name: 'Kouvolas försommarralli' } ] },
   { id: 'kesa', name: 'Kesäpörssi', sub: 'Sommarsäsongens poängjakt', ai: 0.88, prize: 450, need: 60, events: [
     { id: 'k1', track: 'rantasalmi', name: 'Rantasalmis juliheat' },
-    { id: 'k2', track: 'heinola', name: 'Heinolas midsommarrock' },
+    { id: 'k2', track: 'karstula', name: 'Karstulas midsommarrock' },
     { id: 'k3', track: 'pieksamaki', name: 'Pieksämäkis grusdag' },
     { id: 'k4', track: 'pihtipudas', name: 'Pihtipudas augustiralli' },
     { id: 'k5', track: 'hyvinkaa', name: 'Hyvinkään Vauhtipuiston kesäralli' } ] },

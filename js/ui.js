@@ -309,18 +309,25 @@ function carModeRow(act, cur) {
   return `<div class="row"><span class="lbl">Bilar</span>${B(0, 'Egen bil')}${[1, 2, 3, 4, 5].map(l => B(l, `Spec ${l} · ${SPEC_CARS[l].hp} hk`)).join('')}</div>
     ${cur ? `<p class="dim" style="margin:-4px 0 8px">Alla förare kör Mazda 626 Spec ${cur} (${SPEC_CARS[cur].hp} hk). AI:n kör Spec ${aiSpec(cur)} (${SPEC_CARS[aiSpec(cur)].hp} hk).</p>` : ''}`;
 }
-function makeOpps(n, li, diff, cls, boostHp, specLvl) {
-  if (specLvl) { const names = aiNames(n), mine = activeCar()?.paint, sp = specCar(aiSpec(specLvl)); // spec-läge: alla AI kör spec-bilen en nivå över spelarna
-    return names.map(name => { const d = Math.max(0.01, Math.min(1, diff + (Math.random() - 0.5) * 0.08));
-      return { name, paint: pick(PAINTS.filter(p => p.id !== mine)).rgb, bw: Math.random() < 0.35 ? 'bw' : 'wb', diff: d, skill: 0.6 + 0.4 * d, spec: sp, powScale: 1 }; }); }
-  const names = aiNames(n), mine = activeCar().paint, full = { strip: 1, cage: 1, seat: 1, net: 1, switch: 1 };
+// Fast förarfält i en säsong: samma AI-förare (namn, färg, bil, form) i varje tävling med samma nyckel
+function roster(rk, n, pool) {
+  const R = (S.rosters ||= {}), L = (R[rk] ||= []), mine = activeCar()?.paint, used = new Set(L.map(x => x.name));
+  if (L.length < n) aiNames(n * 2).filter(x => !used.has(x)).slice(0, n - L.length).forEach(name => L.push({ name, paint: pick(PAINTS.filter(p => p.id !== mine)).rgb, bw: Math.random() < 0.35 ? 'bw' : 'wb', dOff: (Math.random() - 0.5) * 0.08, cid: pick(pool), r: Math.random() }));
+  L.forEach(x => { if (!pool.includes(x.cid)) x.cid = pick(pool); }); save(); return L.slice(0, n);
+}
+function makeOpps(n, li, diff, cls, boostHp, specLvl, rk) {
+  const fixed = rk ? roster(rk, n, specLvl ? ['spec'] : (() => { const k = cls === 'super' || cls === 'supersenior' ? 'super' : cls === 'kardaani' ? 'kardaani' : 'vetari'; return [...AI_POOL[k][Math.max(0, Math.min(3, li))], 'mazda626', 'passat_rx', 'mondeo_st']; })()) : null;
+  if (specLvl) { const names = fixed ? fixed.map(x => x.name) : aiNames(n), mine = activeCar()?.paint, sp = specCar(aiSpec(specLvl)); // spec-läge: alla AI kör spec-bilen en nivå över spelarna
+    return names.map((name, i) => { const f = fixed?.[i], d = Math.max(0.01, Math.min(1, diff + (f ? f.dOff : (Math.random() - 0.5) * 0.08)));
+      return { name, paint: f ? f.paint : pick(PAINTS.filter(p => p.id !== mine)).rgb, bw: f ? f.bw : Math.random() < 0.35 ? 'bw' : 'wb', diff: d, skill: 0.6 + 0.4 * d, spec: sp, powScale: 1 }; }); }
+  const names = fixed ? fixed.map(x => x.name) : aiNames(n), mine = activeCar().paint, full = { strip: 1, cage: 1, seat: 1, net: 1, switch: 1 };
   const ps = spec(), php = curve(ps).hp; boostHp ??= php + 500; const tune = { ...defaultTune(), ...activeCar().tune, tyre: 'ccplus' }; // alla AI kör på bästa däcken (CrossClimate Plus)
   const poolKey = cls === 'super' || cls === 'supersenior' ? 'super' : cls === 'kardaani' ? 'kardaani' : 'vetari';
   const pool = [...AI_POOL[poolKey][Math.max(0, Math.min(3, li))], 'mazda626', 'passat_rx', 'mondeo_st'];
-  return names.map(name => {
-    const cid = pick(pool), sp = buildSpec(cid, { build: full, upg: poolKey === 'super' ? { superkit: 1, ...(ps.drv === 'awd' ? { awd: 1 } : {}) } : Math.random() < 0.7 ? { rokkivaxel: 1 } : {} }, tune), hp = curve(sp).hp; // Super-AI kör fyrhjulsdrift om spelaren gör det
-    const d = Math.max(0.01, Math.min(1, diff + (Math.random() - 0.5) * 0.08));
-    return { name, paint: pick(PAINTS.filter(p => p.id !== mine)).rgb, bw: Math.random() < 0.35 ? 'bw' : 'wb', diff: d, skill: 0.6 + 0.4 * d, spec: sp,
+  return names.map((name, i) => { const f = fixed?.[i];
+    const cid = f ? f.cid : pick(pool), sp = buildSpec(cid, { build: full, upg: poolKey === 'super' ? { superkit: 1, ...(ps.drv === 'awd' ? { awd: 1 } : {}) } : (f ? f.r : Math.random()) < 0.7 ? { rokkivaxel: 1 } : {} }, tune), hp = curve(sp).hp; // Super-AI kör fyrhjulsdrift om spelaren gör det
+    const d = Math.max(0.01, Math.min(1, diff + (f ? f.dOff : (Math.random() - 0.5) * 0.08)));
+    return { name, paint: f ? f.paint : pick(PAINTS.filter(p => p.id !== mine)).rgb, bw: f ? f.bw : Math.random() < 0.35 ? 'bw' : 'wb', diff: d, skill: 0.6 + 0.4 * d, spec: sp,
       powScale: boostHp ? Math.max(0.4, Math.min(12, boostHp / hp)) : Math.max(0.4, Math.min(3, php / hp * (0.92 + Math.random() * 0.16))) };
   });
 }
@@ -340,7 +347,7 @@ function evStart(arg) {
   save();
   const cc = champCfg(), laps = Math.max(rules.minLaps, L.id === 'mestari' ? 3 : rules.minLaps), trk = getTrack(e.track);
   const diff = Math.max(0.01, Math.min(1, cc.diff / 100 + [-0.08, 0, 0.05, 0.1][+li]));
-  const cm = cc.cm || 0, opps = makeOpps(cc.perStart * cc.heats - 1, +li, diff, insp.cls, curve(spec()).hp + 500, cm), O = {}; if (S.sponsor?.goal === 'beat' && opps[0] && !opps.some(o => o.name === S.sponsor.rival)) opps[0].name = S.sponsor.rival; // sponsorns rival är med // AI: 500 hk mer än du (spec-läge: en spec-nivå högre)
+  const cm = cc.cm || 0, opps = makeOpps(cc.perStart * cc.heats - 1, +li, diff, insp.cls, curve(spec()).hp + 500, cm, 'kar:' + L.id), O = {}; if (S.sponsor?.goal === 'beat' && opps[0] && !opps.some(o => o.name === S.sponsor.rival)) { opps[0].name = S.sponsor.rival; const rl = S.rosters?.['kar:' + L.id]; if (rl?.[0]) { rl[0].name = S.sponsor.rival; save(); } } // sponsorns rival är med // AI: 500 hk mer än du (spec-läge: en spec-nivå högre)
   const ents = [{ id: 'me', name: `${S.name || 'Du'}`, me: 1, kgHp: curve(cm ? specCar(cm) : spec()).kgHp, diff: 1 }];
   opps.forEach((o, i) => { const id = 'ai' + i; O[id] = { ...o, nid: id }; ents.push({ id, name: o.name, diff: o.diff, kgHp: curve(o.spec).kgHp / (o.powScale || 1) }); });
   U.ev = {
@@ -539,7 +546,7 @@ const esc = t => String(t ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': 
 const netName = () => (S.name && S.name !== 'Du' ? S.name : 'Förare').slice(0, 20);
 function netMe() {
   const cs = activeCar(), insp = currentInsp(), s = insp.spec;
-  return { name: netName(), car: { spec: s, paint: paintOf(cs.paint).rgb, bw: cs.bw || 'wb', num: formatCarNum(cs.num, insp.cls), model: carById(S.active).name, hp: Math.round(curve(s).hp), kgHp: curve(s).kgHp, cls: insp.rules.name } };
+  return { name: netName(), car: { spec: s, paint: paintOf(cs.paint).rgb, bw: cs.bw || 'wb', num: formatCarNum(cs.num, insp.cls), model: carById(S.active).name, hp: Math.round(curve(s).hp), kgHp: curve(s).kgHp, cls: insp.rules.name, tune: { ...defaultTune(), ...(cs.tune || {}) } } };
 }
 // ---- chatt i online-rummet ----
 const QUICK = ['GG', 'En till?', 'Lycka till! 🍀', 'Vänta lite', 'Redo!', 'Haha 😂', 'Bra kört 👏', 'Revansch!'];
@@ -630,7 +637,7 @@ function netRace(h, grid, cfg, lead, watch) {
 function hostStart() {
   const room = ON.room, cfg = room.cfg; if (!room || !room.isHost) return;
   const humans = room.members.filter(m => m.car && m.car.spec);
-  const maxHp = Math.max(curve(spec()).hp, ...humans.map(m => m.car.hp || 0)), nAi = Math.max(0, Math.min(30, cfg.ai)), opps = makeOpps(nAi, 1, Math.max(0.01, cfg.diff / 100), currentInsp().cls, maxHp + 500, cfg.cm || 0); // AI: 500 hk mer än starkaste spelaren (spec-läge: en nivå högre)
+  const maxHp = Math.max(curve(spec()).hp, ...humans.map(m => m.car.hp || 0)), nAi = Math.max(0, Math.min(30, cfg.ai)), opps = makeOpps(nAi, 1, Math.max(0.01, cfg.diff / 100), currentInsp().cls, maxHp + 500, cfg.cm || 0, cfg.season ? 'on:' + cfg.season.id : null); // AI: 500 hk mer än starkaste spelaren (spec-läge: en nivå högre)
   if (!cfg.cm) { // egen bil: AI:n kör samma bil som den starkaste spelaren, men med 100 hk mer
     const best = humans.reduce((b, m) => (m.car.hp || 0) > (b?.car.hp || 0) ? m : b, null), bs = best ? best.car.spec : spec(), bh = Math.max(1, curve(bs).hp);
     for (const o of opps) { o.spec = bs; o.powScale = (bh + 100) / bh; }
@@ -678,6 +685,15 @@ function pushChamp() {
     where: Object.fromEntries(room.members.map(m => [m.id, ch.single ? '' : whereIs(ch, m.id)])), skip: room.members.filter(m => !ch.single && canSkip(ch, m.id)).map(m => m.id), cfg: ch.cfgRoom });
 }
 
+// Värdens bilinställningar visas för alla i rummet (och kan kopieras till den egna bilen)
+const FREE_SETUP = ['spring', 'damper', 'press', 'camber', 'toeF', 'toeR', 'rideF', 'rideR', 'rake', 'gearSpread', 'finalScale', 'brakeF', 'bias'];
+function hostCarPanel(hm) {
+  const t = hm?.car?.tune; if (!t) return '';
+  return `<section class="panel"><h2>Värdens bil och inställningar</h2><p><b>${esc(hm.car.model)}</b> · #${esc(hm.car.num)} · ${esc(hm.car.hp)} hk · ${fmt(hm.car.kgHp, 1)} kg/hk · ${esc(hm.car.cls)}</p>
+    <table class="stats"><tr><td>Däck</td><td>${esc(TYRES[t.tyre]?.name || t.tyre)}</td></tr><tr><td>Bränsle</td><td>${esc(fuelById(t.fuel)?.name || t.fuel)} · λ ${fmt(t.lambda, 2)} · tändning ${t.ign > 0 ? '+' : ''}${fmt(t.ign || 0, 1)}°</td></tr>
+    ${SETUP_UI.map(([n, k, , , , f]) => `<tr><td>${n}</td><td>${['spring', 'damper'].includes(k) ? t[k] + ' · ' : ''}${f(t[k])}</td></tr>`).join('')}</table>
+    <div class="row"><button class="btn small" data-act="copy-setup">📋 Använd samma chassiinställningar på min bil</button></div><p class="dim">Kopierar de gratis justeringarna (fjädring, dämpare, tryck, camber, toe, höjder, växlar och bromsar) – inte däck och fälgar.</p></section>`;
+}
 function online() {
   const room = ON.room;
   if (!room) return `<section class="panel"><span class="kick">ONLINE</span><h1>Online</h1>
@@ -722,7 +738,15 @@ function online() {
       ${cs && cs.all && !cs.done ? `<div class="row"><button class="btn" data-act="on-next">▶ Starta nästa omgång</button><button class="btn ghost danger" data-act="on-reset">Avbryt mästerskapet</button></div>`
         : `<div class="row"><button class="btn" data-act="on-start" ${room.connected ? '' : 'disabled'}>🏁 Starta ${room.members.length + cfg.ai > cfg.perStart ? 'mästerskapet' : 'heatet'}</button><button class="btn ghost danger" data-act="on-leave">Stäng rummet</button></div>`}</section>`;
   } else if (!H) {
-    h += `<section class="panel"><h2>Tävlingsinställningar</h2><table class="stats"><tr><td>Bana</td><td>${trk.name}</td></tr><tr><td>Väder</td><td>${(WEATHER.find(w => w[0] === cfg.weather) || WEATHER[0])[1]}</td></tr><tr><td>Varv</td><td>${cfg.laps}</td></tr><tr><td>AI</td><td>${cfg.ai} st · ${cfg.diff} %</td></tr><tr><td>Bilar</td><td>${cfg.cm ? `Alla: Mazda 626 Spec ${cfg.cm} (${SPEC_CARS[cfg.cm].hp} hk) · AI Spec ${aiSpec(cfg.cm)}` : 'Egen bil från garaget'}</td></tr><tr><td>Förare per start</td><td>${cfg.perStart}</td></tr></table>
+    const hm = room.members.find(m => m.host), n = room.members.length + (cfg.ai || 0);
+    h += `<section class="panel"><h2>Värdens tävlingsinställningar</h2><p class="dim">Ställs in av ${esc(hm?.name || 'värden')} – uppdateras direkt när värden ändrar något.</p><table class="stats">
+      <tr><td>Bana</td><td><b>${trk.name}</b> · ${SURF[trk.surface].name}</td></tr><tr><td>Väder</td><td>${(WEATHER.find(w => w[0] === cfg.weather) || WEATHER[0])[1]}</td></tr><tr><td>Tid på dygnet</td><td>${(TOD.find(w => w[0] === (cfg.tod || 'dag')) || TOD[1])[1]}</td></tr>
+      <tr><td>Varv</td><td>${cfg.laps}</td></tr><tr><td>AI-motståndare</td><td>${cfg.ai} st · svårighet ${cfg.diff} %</td></tr>
+      <tr><td>Bilar</td><td>${cfg.cm ? `Alla: Mazda 626 Spec ${cfg.cm} (${SPEC_CARS[cfg.cm].hp} hk) · AI Spec ${aiSpec(cfg.cm)}` : 'Egen bil från garaget'}</td></tr>
+      <tr><td>Förare per start</td><td>${cfg.perStart}</td></tr><tr><td>Jokerlap</td><td>${cfg.joker ? 'PÅ' : 'AV'}</td></tr>
+      <tr><td>Upplägg</td><td>${n} förare → ${n > cfg.perStart ? `mästerskap med ${Math.ceil(n / cfg.perStart)} alkuerä-heat` : 'ett heat'}</td></tr>
+      <tr><td>Säsong</td><td>${cfg.season ? `${esc(cfg.season.name)} · omgång ${Math.min(cfg.season.done.length + 1, cfg.season.rounds)}/${cfg.season.rounds}` : '–'}</td></tr></table></section>
+      ${hostCarPanel(hm)}<section class="panel">
       <p>${running ? '🏁 Omgången pågår.' : cs && cs.all && !cs.done ? '⏳ Väntar på att värden startar nästa omgång…' : '⏳ Väntar på att värden startar…'}</p>
       ${cs?.skip?.includes(room.id) ? `<div class="row"><button class="btn small" data-act="on-skip">KESKÖIDÄ – hoppa över ${cs.round === 'alku' ? 'Alkuerä' : 'Keräilyerä'}</button></div>` : ''}
       <div class="row"><button class="btn ghost danger" data-act="on-leave">Lämna rummet</button></div></section>`;
@@ -1200,6 +1224,7 @@ const ACT = {
   'say-in'() { const el = document.getElementById('chatIn'); if (el?.value.trim()) { ON.room?.say(netName(), el.value); el.value = ''; } return false; },
   'se-new'(a) { const r = ON.room; if (!r?.isHost) return; const id = 's' + Date.now().toString(36), n = (Object.keys(S.onSeasons || {}).length + 1); r.setCfg({ season: { id, host: pid(), name: `Säsong ${n} · ${new Date().toLocaleDateString('sv-FI')}`, rounds: +a, done: [], pts: {}, wins: {} } }); (S.onSeasons ||= {})[id] = r.cfg.season; save(); return false; },
   'se-cont'(a) { const r = ON.room, x = S.onSeasons?.[a]; if (r?.isHost && x) r.setCfg({ season: x }); return false; },
+  'copy-setup'() { const t = ON.room?.members.find(m => m.host)?.car?.tune, cs = activeCar(); if (!t || !cs) return false; cs.tune ||= {}; FREE_SETUP.forEach(k => { if (t[k] != null) cs.tune[k] = t[k]; }); save(); ON.room.setMe(netMe()); U.toast = '✓ Värdens chassiinställningar kopierade till din bil'; },
   'se-off'() { ON.room?.setCfg({ season: null }); return false; },
   'inv-one'(a) { const r = ON.room; if (!PRES || !r) return; PRES.invite([a], r.code, netName()); (ON.invited ||= new Map()).set(a, Date.now()); toast('📨 Inbjudan skickad'); },
   'inv-all'() { const r = ON.room; if (!PRES || !r) return; const ids = PRES.others().filter(p => p.room !== r.code).map(p => p.id); PRES.invite(ids, r.code, netName()); ids.forEach(id => (ON.invited ||= new Map()).set(id, Date.now())); toast(`📨 Inbjudan skickad till ${ids.length} spelare`); },
