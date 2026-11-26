@@ -312,3 +312,14 @@ ol.steps li { margin: 6px 0; line-height: 1.5; }
 .sheet-view{overflow:auto;max-height:78vh;border:1px solid #ffffff22;border-radius:8px;background:#fff;-webkit-overflow-scrolling:touch}
 .sheet-view img{display:block;max-width:none;min-width:100%}
 .chip.ref{margin-top:4px;font-size:.75em;padding:2px 8px}
+/* Motorskola: uppgift till vänster, formelpappret till höger */
+.view.v-skola:has(.split) { max-width: none; }
+.split { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; align-items: start; }
+.split-l { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.split-r { position: sticky; top: 66px; display: flex; flex-direction: column; gap: 8px; height: calc(100vh - 80px); min-width: 0; }
+.side-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.sheet-view.side { flex: 1; max-height: none; }
+@media (max-width: 760px) { /* mobil: uppgiften överst, pappret som nedre halva av skärmen */
+  .split { display: block; } .split-l { padding-bottom: 50vh; }
+  .split-r { position: fixed; left: 0; right: 0; bottom: 0; top: auto; height: 48vh; z-index: 40; background: #0e1218; border-top: 2px solid var(--hi); padding: 6px; }
+}

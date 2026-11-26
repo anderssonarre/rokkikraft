@@ -41,10 +41,12 @@ export function render() {
   let V = { menu, karriar, play: karriar, event: eventView, garage, trim, dyno, skola, formel, komp, settings, online, setup, result, name: nameView, top: topView }[U.view] || menu;
   if (!activeCar() && !['menu', 'komp', 'settings', 'name', 'top'].includes(U.view)) V = carShop; // ingen bil → bara bilhandeln
   const ae = document.activeElement, keep = ae && ae.id && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA') && ae.type !== 'range' && ae.type !== 'file' ? { id: ae.id, v: ae.value, a: ae.selectionStart, b: ae.selectionEnd } : null; // behåll det man skriver när sidan ritas om
+  const ss = document.getElementById('sideSheet'), ssPos = ss && [ss.scrollLeft, ss.scrollTop, U.fPage, U.fZoom];
   app().innerHTML = `<header class="topbar">${U.view !== 'menu' && U.view !== 'event' ? '<button class="back" data-act="go" data-arg="menu">‹ Meny</button>' : '<span class="brand">ROKKI<b>KRAFT</b></span>'}
     <span class="top-title">${{ karriar: 'Karriär & Banor', event: 'Tävlingsdag', garage: 'Garage & Besiktning', trim: 'Trimning', dyno: 'Räknebänken', skola: 'Motorskola', formel: 'Formelpapper', komp: 'Kompendium & Sääntökirja', settings: 'Inställningar', setup: 'Bilinställningar', result: 'Resultat', play: 'Spela', name: 'Byt namn', top: 'Global topplista', karriar: 'Karriär', online: 'Online – rumskod' }[U.view] || ''}</span>
     <span class="wallet">${S.warnings > 0 ? `<i style="color:#ff6a3d">⚠ ${S.warnings}/3 varningar</i>` : ''}${S.vouchers > 0 ? `<i style="color:#5ce080">🎟 ${S.vouchers} hyvityskuitti</i>` : ''}<b>${eur(S.money)}</b><i>${CAREER[topLevel()].name}</i></span></header>
     <main class="view v-${U.view}">${V()}</main>${U.toast ? `<div class="toast">${U.toast}</div>` : ''}${inviteBox()}`;
+  if (ssPos && ssPos[2] === U.fPage && ssPos[3] === U.fZoom) { const n = document.getElementById('sideSheet'); if (n) { n.scrollLeft = ssPos[0]; n.scrollTop = ssPos[1]; } }
   { const cb = document.getElementById('chatBox'); if (cb) cb.scrollTop = cb.scrollHeight; }
   if (keep) { const el = document.getElementById(keep.id); if (el) { el.value = keep.v; el.focus(); try { el.setSelectionRange(keep.a, keep.b); } catch (e) { } } }
   if (U.toast) { clearTimeout(U.toastT); U.toastT = setTimeout(() => { U.toast = ''; document.querySelector('.toast')?.remove(); }, 2800); }
@@ -1012,13 +1014,26 @@ function setup() {
 // ---------- räknebänken ----------
 // ---------- Motorskola: övning 1–4 i motorteknik ----------
 const SK_GOAL = 5;
+/* spara inskrivna svar innan vyn ritas om (byte av sida/zoom i formelpappret) */
+function keepVals() { const t = U.exam ? U.exam.tasks[U.exam.i] : U.skTask; if (t && !t.done) t.vals = t.asks.map((_, i) => document.getElementById('ska' + i)?.value ?? t.vals?.[i] ?? ''); }
 const SHEET = 'assets/motorteknik/';
 function theoryRows(th) { return th.map(([n, f, d, ref]) => { const pg = /sida (\d)/.exec(ref || '')?.[1];
   return `<tr><td><b>${n}</b>${d ? `<br><small class="dim">${d}</small>` : ''}${ref ? `<br><button class="chip s ref" data-act="sk-sheet" data-arg="${pg || 1}" title="Öppna formelpappret">📄 ${ref}</button>` : ''}</td><td class="f">${f}</td></tr>`; }).join(''); }
-const sheetBtn = (pg = 1, txt = '📄 Formelpappret') => `<button class="btn small ghost" data-act="sk-sheet" data-arg="${pg}">${txt}</button>`;
+const sheetBtn = (pg = 1, txt = '📄 Formelpappret') => (U.lesson || U.exam) && U.view === 'skola' ? `<button class="btn small ${U.side ? '' : 'ghost'}" data-act="sk-side" data-arg="${pg}">${U.side ? '📄 Dölj formelpappret' : '📄 Formelpappret bredvid'}</button>` : `<button class="btn small ghost" data-act="sk-sheet" data-arg="${pg}">${txt}</button>`;
 function skCards(ls, K) { return `<div class="cards">${ls.map(l => { const ok = K[l.id]?.ok || 0; return `<button class="card lesson" data-act="sk-open" data-arg="${l.id}"><strong>${l.title}</strong><p class="dim">${l.short}</p>
       <div class="xpbar"><i style="width:${Math.min(100, ok / SK_GOAL * 100)}%"></i></div><small>${ok >= SK_GOAL ? '✓ Klar' : `${ok}/${SK_GOAL} rätt`}</small></button>`; }).join('')}</div>`; }
 function skola() {
+  const inner = skolaInner(); if (!(U.side && (U.lesson || U.exam))) return inner;
+  return `<div class="split"><div class="split-l">${inner}</div><aside class="split-r">${sidePane()}</aside></div>`;
+}
+function sidePane() {
+  const pg = U.fPage || 1, z = U.fZoom || 1;
+  return `<div class="side-bar">${[1, 2, 3].map(i => `<button class="chip s ${pg === i ? 'on' : ''}" data-act="sk-sheet" data-arg="${i}">Sida ${i}</button>`).join('')}
+    <button class="chip s" data-act="sk-zoom" data-arg="-1">−</button><small class="dim">${Math.round(z * 100)} %</small><button class="chip s" data-act="sk-zoom" data-arg="1">+</button>
+    <button class="chip s" data-act="sk-side" title="Stäng formelpappret">✕</button></div>
+    <div class="sheet-view side" id="sideSheet"><img src="${SHEET}sida-${pg}.jpg" alt="Formelpapper sida ${pg}" style="width:${z * 100}%"></div>`;
+}
+function skolaInner() {
   const K = S.skola ||= {}, L = U.lesson ? LESSONS.find(l => l.id === U.lesson) : null;
   if (U.exam) return examView();
   if (!L) return `<section class="panel"><span class="kick">MOTORTEKNIK</span><h1>Motorskola</h1>
@@ -1380,8 +1395,9 @@ const ACT = {
   'sk-exam'() { const tasks = []; const ids = LESSONS.map(l => l.id).sort(() => Math.random() - 0.5); [1, 2, 3, 4].forEach(i => ids.splice(ids.indexOf(i), 1)); const pool = [1, 2, 3, 4, ...ids.slice(0, 2)]; for (const id of pool) tasks.push(lessonTask(id)); U.exam = { tasks: tasks.sort(() => Math.random() - 0.5), i: 0, score: 0, t0: Date.now() }; window.scrollTo(0, 0); },
   'sk-xcheck'() { const E = U.exam, t = E.tasks[E.i]; t.vals = t.asks.map((_, i) => document.getElementById('ska' + i)?.value || ''); if (checkAnswers(t)) { E.score++; S.money += 25; save(); } },
   'sk-xnext'() { U.exam.i++; },
-  'sk-sheet'(a) { U.fPage = +a; U.fFrom = U.view === 'formel' ? U.fFrom : U.view; U.view = 'formel'; window.scrollTo(0, 0); },
-  'sk-zoom'(a) { U.fZoom = Math.max(1, Math.min(3, (U.fZoom || 1) + 0.5 * +a)); },
+  'sk-side'(a) { keepVals(); U.side = !U.side; if (U.side && +a) U.fPage = +a; },
+  'sk-sheet'(a) { keepVals(); if (U.view === 'skola' && (U.lesson || U.exam) && +a) { U.side = true; U.fPage = +a; return; } U.fPage = +a; U.fFrom = U.view === 'formel' ? U.fFrom : U.view; U.view = 'formel'; window.scrollTo(0, 0); },
+  'sk-zoom'(a) { keepVals(); U.fZoom = Math.max(1, Math.min(3, (U.fZoom || 1) + 0.5 * +a)); },
   print() { window.print(); return false; },
   'dyno-check'() {
     const t = U.task; t.vals = [...document.querySelectorAll('[data-ans]')].map(i => i.value); const r = checkTask(t);
