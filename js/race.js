@@ -917,7 +917,7 @@ export class Race {
       lp.type = 'lowpass'; lp.frequency.value = 900; lp.Q.value = 1.4; g.gain.value = 0; lp.connect(lo); lo.connect(g); g.connect(ac.destination); o1.start(); o2.start();
       this.o1 = o1; this.o2 = o2; this.gain = g; this.lp = lp; this.vol = vol;
       // närmaste motståndaren hörs med sin egen motortyp (vågformen byts när en annan bil kommer närmast)
-      { const oo = ac.createOscillator(), og = ac.createGain(), of = ac.createBiquadFilter(); oo.setPeriodicWave(wave); of.type = 'lowpass'; of.frequency.value = 700; og.gain.value = 0; oo.connect(of); of.connect(og); og.connect(ac.destination); oo.start(); this.oo = oo; this.og = og; this.of = of; this.ooKey = sk; }
+      this.voices = this.makeVoices(ac, vol); // de närmaste motståndarnas motorer + grus, i stereo
       // RallyAudioFX: grussmatter, däckljud per underlag, växellåds-vinande, växlingsklonk, avgassmällar, landning & kollisioner
       const fxGain = ac.createGain(); fxGain.gain.value = vol; fxGain.connect(ac.destination);
       this.fxGain = fxGain;
@@ -925,6 +925,37 @@ export class Race {
       // skrammel från skadad motor
       const o3 = ac.createOscillator(), rg = ac.createGain(); o3.type = 'square'; rg.gain.value = 0; o3.connect(rg); rg.connect(lp); o3.start();
       this.o3 = o3; this.rg = rg; } catch (e) { } }
+  // ---- andra bilars ljud: 3 röster som följer de närmaste bilarna (egen motortyp, avstånd, stereo, doppler, grus) ----
+  makeVoices(ac, vol) {
+    const nb = ac.createBuffer(1, ac.sampleRate * 2, ac.sampleRate), nd = nb.getChannelData(0); for (let i = 0; i < nd.length; i++) nd[i] = Math.random() * 2 - 1;
+    return [0, 1, 2].map(() => {
+      const o1 = ac.createOscillator(), o2 = ac.createOscillator(), sh = ac.createWaveShaper(), lp = ac.createBiquadFilter(), eg = ac.createGain(), pan = ac.createStereoPanner ? ac.createStereoPanner() : null, out = ac.createGain();
+      const cv = new Float32Array(512); for (let i = 0; i < 512; i++) cv[i] = Math.tanh((i / 255.5 - 1) * 2.2); sh.curve = cv;
+      o2.detune.value = 9; o1.connect(sh); o2.connect(sh); sh.connect(lp); lp.type = 'lowpass'; lp.Q.value = 1.1; lp.connect(eg); eg.gain.value = 0;
+      const ns = ac.createBufferSource(), bp = ac.createBiquadFilter(), ng = ac.createGain(); ns.buffer = nb; ns.loop = true; ns.playbackRate.value = 0.8 + Math.random() * 0.4;
+      bp.type = 'bandpass'; bp.frequency.value = 2200; bp.Q.value = 0.7; ng.gain.value = 0; ns.connect(bp); bp.connect(ng);
+      if (pan) { eg.connect(pan); ng.connect(pan); pan.connect(out); } else { eg.connect(out); ng.connect(out); } out.gain.value = vol; out.connect(ac.destination);
+      o1.start(); o2.start(); ns.start(); return { o1, o2, lp, eg, ng, bp, pan, key: '', car: null };
+    });
+  }
+  updateVoices(me, t) {
+    const lst = this.camCar && (me.finished || me.retired) ? this.camCar : me, ch = Math.cos(lst.h), sh = Math.sin(lst.h);
+    const near = this.cars.filter(o => o !== lst && !o.retired).map(o => ({ o, d: Math.hypot(o.x - lst.x, o.z - lst.z) })).sort((a, b) => a.d - b.d).slice(0, 3);
+    this.voices.forEach((V, k) => {
+      const n = near[k]; if (!n || n.d > 160) { V.eg.gain.setTargetAtTime(0, t, 0.15); V.ng.gain.setTargetAtTime(0, t, 0.15); return; }
+      const o = n.o, d = n.d, key = soundKey(o.spec); if (V.key !== key) { V.key = key; const w = engineWave(this.ac, key); V.o1.setPeriodicWave(w); V.o2.setPeriodicWave(w); }
+      // doppler: närmar sig = högre ton
+      const dx = (o.x - lst.x) / (d || 1), dz = (o.z - lst.z) / (d || 1), ow = [o.vx * Math.cos(o.h) - o.vy * Math.sin(o.h), o.vx * Math.sin(o.h) + o.vy * Math.cos(o.h)], lw = [lst.vx * ch - lst.vy * sh, lst.vx * sh + lst.vy * ch];
+      const closing = -((ow[0] - lw[0]) * dx + (ow[1] - lw[1]) * dz), dop = clamp(343 / (343 - clamp(closing, -60, 60)), 0.85, 1.18), fc = Math.max(6, (o.rpm || 900) / 120) * dop;
+      V.o1.frequency.setTargetAtTime(fc, t, 0.04); V.o2.frequency.setTargetAtTime(fc, t, 0.04); V.lp.frequency.setTargetAtTime(300 + (o.rpm || 900) * 0.18 + (o.thr || 0) * 600 - Math.min(250, d * 3), t, 0.08);
+      const att = 1 / (1 + d * 0.09), v = Math.hypot(o.vx, o.vy), slide = Math.min(1.5, Math.abs(o.vy) * 0.16);
+      V.eg.gain.setTargetAtTime(0.085 * (0.35 + 0.65 * (o.thr || 0)) * att * (o.exhaustLoose ? 1.3 : 1), t, 0.08);
+      V.ng.gain.setTargetAtTime((o.onSurf === false ? 0.05 : 0.025) * Math.min(1, v / 25) * (0.5 + slide) * att, t, 0.1); V.bp.frequency.setTargetAtTime(1600 + v * 30, t, 0.2);
+      if (V.pan) { const side = -sh * dx + ch * dz; V.pan.pan.setTargetAtTime(clamp(side * 0.85, -0.85, 0.85), t, 0.08); } // höger = +
+    });
+  }
+  // Smällar mellan andra bilar hörs också (svagare ju längre bort)
+  farImpact(A, B, hit) { if (!this.fx?.ok || A.isPlayer || B.isPlayer) return; const me = this.player, d = Math.hypot((A.x + B.x) / 2 - me.x, (A.z + B.z) / 2 - me.z); if (d > 70) return; this.fx.impact(clamp(hit / 12, 0.1, 1) / (1 + d * 0.08)); }
   pop(k) { const ac = this.ac; if (!ac) return; if (this.fx?.ok) { this.fx.backfire(k, !!this.player?.exhaustLoose); return; }
     const n = ac.createBuffer(1, ac.sampleRate * 0.05 | 0, ac.sampleRate), d = n.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * Math.exp(-i / (d.length * 0.18));
     const s = ac.createBufferSource(), bp = ac.createBiquadFilter(), g = ac.createGain(); s.buffer = n; bp.type = 'bandpass'; bp.frequency.value = 500 + Math.random() * 900; bp.Q.value = 0.9; g.gain.value = this.vol * 0.35 * k; s.connect(bp); bp.connect(g); g.connect(ac.destination); s.start(); }
@@ -949,8 +980,7 @@ export class Race {
     const f = c.rpm / 60 * c.spec.cyl / 2, t = this.ac.currentTime, fc = c.rpm / 120; // fc = ett helt motorvarv-par (720°)
     this.o1.frequency.setTargetAtTime(fc, t, 0.025); this.o2.frequency.setTargetAtTime(fc, t, 0.025); const SP = this.snd; this.lp.frequency.setTargetAtTime(SP.lp + c.rpm * SP.lpRpm + c.thr * SP.lpThr, t, 0.05);
     this.gain.gain.setTargetAtTime(this.vol * SP.gain * (0.05 + 0.11 * c.thr) * (c.exhaustLoose ? 1.25 : 1), t, 0.05);
-    if (this.oo) { let best = null, bd = 1e9; for (const o of this.cars) { if (o === c || o.retired) continue; const d = Math.hypot(o.x - c.x, o.z - c.z); if (d < bd) { bd = d; best = o; } }
-      const ga = best ? this.vol * 0.07 * (0.3 + 0.7 * (best.thr || 0)) / (1 + bd * 0.12) : 0; this.og.gain.setTargetAtTime(ga, t, 0.1); if (best) { const bk = soundKey(best.spec); if (bk !== this.ooKey) { this.ooKey = bk; this.oo.setPeriodicWave(engineWave(this.ac, bk)); } this.oo.frequency.setTargetAtTime(Math.max(6, best.rpm / 120), t, 0.05); this.of.frequency.setTargetAtTime(400 + best.rpm * 0.15, t, 0.1); } }
+    if (this.voices) this.updateVoices(c, t);
     if (this.fx?.ok) {
       this.fx.update({
         speed: v, vx: c.vx, vy: c.vy, rpm: c.rpm, redline: c.spec.redline,
@@ -1188,6 +1218,7 @@ export class Race {
         const chA = Math.cos(A.h), shA = Math.sin(A.h), mvx = (A.vx * chA - A.vy * shA) * 0.5, mvz = (A.vx * shA + A.vy * chA) * 0.5;
         this.view.emitSparks(mx, my, mz, Math.min(1.5, hit / 5.5), mvx, mvz);
       }
+      if (hit > 2 && !A.isPlayer && !B.isPlayer) this.farImpact(A, B, hit);
       if (hit > 1.2 && (A.isPlayer || B.isPlayer)) {
         this.damage(hit * hit * 0.09, true); this.crash(hit);
       }
