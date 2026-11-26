@@ -309,3 +309,6 @@ ol.steps li { margin: 6px 0; line-height: 1.5; }
 .formelblad h2 { margin-top: 18px; }
 @media print { body { background: #fff !important; color: #000 !important; } .top, .noprint, nav, .toast { display: none !important; } .panel { background: #fff !important; color: #000 !important; border: 0 !important; box-shadow: none !important; } .formler td.f { color: #000 !important; } .formler small, .dim { color: #333 !important; } }
 @media (max-width: 560px) { .formler tr { display: grid; } .formler td.f { padding-top: 0; } }
+.sheet-view{overflow:auto;max-height:78vh;border:1px solid #ffffff22;border-radius:8px;background:#fff;-webkit-overflow-scrolling:touch}
+.sheet-view img{display:block;max-width:none;min-width:100%}
+.chip.ref{margin-top:4px;font-size:.75em;padding:2px 8px}

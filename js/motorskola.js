@@ -8,15 +8,15 @@ const pick = a => a[Math.floor(Math.random() * a.length)];
 const PI = Math.PI;
 
 // ---------- lektionerna ----------
+// theory-rader: [namn, formel, förklaring, hänvisning till formelpappret]
 export const LESSONS = [
   {
     id: 1, title: 'Övning 1 · Jämförelse av två dieselmotorer', short: 'Slagvolym, BMEP, bsfc och verkningsgrad',
     theory: [
-      ['Slagvolym per cylinder', 'V<sub>d,cyl</sub> = π/4 · D² · s', 'D = cylinderdiameter (m), s = slaglängd (m). 1 m³ = 1000 liter.'],
-      ['Total slagvolym', 'V<sub>d</sub> = z · V<sub>d,cyl</sub>', 'z = antal cylindrar.'],
-      ['Bromsat medeltryck (fyrtakt)', 'BMEP = P · n<sub>R</sub> / (V<sub>d</sub> · n)', 'P i W, V<sub>d</sub> i m³, n i varv/s (rpm/60), n<sub>R</sub> = 2 för fyrtakt (ett arbetsslag varannat varv). 1 bar = 10⁵ Pa.'],
-      ['Specifik bränsleförbrukning', 'bsfc = ṁ<sub>f</sub> / P', 'ṁ<sub>f</sub> i g/h och P i kW ger g/kWh. (kg/h · 1000 = g/h)'],
-      ['Bromsad verkningsgrad', 'η<sub>b</sub> = P / (ṁ<sub>f</sub> · H<sub>u</sub>)', 'ṁ<sub>f</sub> i kg/s (kg/h / 3600), H<sub>u</sub> = undre värmevärde i kJ/kg → P i kW. Även η<sub>b</sub> = 3600 / (bsfc · H<sub>u</sub>) med bsfc i kg/kWh och H<sub>u</sub> i MJ/kg.'],
+      ['Slagvolym', 'V<sub>d</sub> = πB²/4 · L ≈ 0,785·B²·L ;  V<sub>tot</sub> = z·V<sub>d</sub>', 'B = borrning, L = slaglängd i m → m³ (×1000 = l).', '★1 · sida 1'],
+      ['Bromsat medeltryck', 'BMEP = P<sub>b</sub>·f<sub>s</sub> / (V<sub>d</sub>·N)', 'P<sub>b</sub> i W, V<sub>d</sub> = hela motorns slagvolym i m³, N i r/s (n/60), f<sub>s</sub> = 2 för fyrtakt. 10⁵ Pa = 1 bar. I bar direkt: BMEP = 600·P[kW]·f<sub>s</sub> / (V<sub>d</sub>[l]·n[r/min]).', '★6 · sida 1'],
+      ['Specifik bränsleförbrukning', 'bsfc = ṁ<sub>f</sub> / P<sub>b</sub>', 'g/kWh = 1000·(kg/h)/kW.', '★10 · sida 1'],
+      ['Bromsad verkningsgrad', 'η<sub>b</sub> = 3600 / (bsfc·Q<sub>LHV</sub>) = P<sub>b</sub> / (ṁ<sub>f</sub>·Q<sub>LHV</sub>)', 'bsfc i g/kWh och Q<sub>LHV</sub> i MJ/kg.', '★10 · sida 1'],
     ],
     example: {
       text: 'Motor A: 4 cyl, D = 120 mm, s = 140 mm, 1500 rpm, 100 kW, 24 kg/h. Motor B: 6 cyl, D = 110 mm, s = 130 mm, 1800 rpm, 120 kW, 29 kg/h. H<sub>u</sub> = 42,7 MJ/kg.',
@@ -35,9 +35,9 @@ export const LESSONS = [
   {
     id: 2, title: 'Övning 2 · Bränsleeffekt och nyttig effekt', short: 'Tillförd effekt, bromseffekt och förluster',
     theory: [
-      ['Tillförd bränsleeffekt', 'P<sub>f</sub> = ṁ<sub>f</sub> · H<sub>u</sub>', 'ṁ<sub>f</sub> i kg/s (kg/h / 3600) och H<sub>u</sub> i kJ/kg ger kW. 42,7 MJ/kg = 42 700 kJ/kg.'],
-      ['Bromseffekt (nyttig effekt)', 'P<sub>b</sub> = η<sub>b</sub> · P<sub>f</sub>', 'η<sub>b</sub> = bromsad verkningsgrad (som decimaltal).'],
-      ['Förluster', 'P<sub>förlust</sub> = P<sub>f</sub> − P<sub>b</sub>', 'Går till kylvatten, avgaser (värme + kemisk energi), strålning och mekanisk friktion/pumpning. Ungefär en tredjedel vardera till avgaser och kylning i en stor diesel.'],
+      ['Tillförd bränsleeffekt', 'Q̇<sub>fuel</sub> = ṁ<sub>f</sub>·Q<sub>LHV</sub>', 'ṁ<sub>f</sub> i kg/s (kg/h / 3600) och Q<sub>LHV</sub> i kJ/kg ger kW.', '10 Energibalans · sida 3'],
+      ['Bromseffekt', 'P<sub>b</sub> = η<sub>b</sub>·Q̇<sub>fuel</sub>', '', '★9 · sida 1'],
+      ['Energibalans', 'ṁ<sub>f</sub>Q<sub>LHV</sub> = P<sub>b</sub> + Q̇<sub>kyl</sub> + Q̇<sub>avg</sub> + Q̇<sub>övr</sub>', 'Förlusterna = Q̇<sub>fuel</sub> − P<sub>b</sub>. Kursens Sankey (DI-diesel): kylning ≈ 25 %, avgaser ≈ 25 %, friktion 5–10 %, nyttigt ≈ 40 %.', '★16 · sida 1, 10 · sida 3'],
     ],
     example: {
       text: 'Dieselmotor: ṁ<sub>f</sub> = 90 kg/h, H<sub>u</sub> = 42,7 MJ/kg, η<sub>b</sub> = 46,8 %.',
@@ -53,11 +53,11 @@ export const LESSONS = [
   {
     id: 3, title: 'Övning 3 · Diesel och metanol', short: 'Bränsleflöde, volym och tankens räckvidd',
     theory: [
-      ['Nödvändig bränsleeffekt', 'P<sub>f</sub> = P<sub>b</sub> / η<sub>b</sub>', ''],
-      ['Bränsleflöde (massa)', 'ṁ<sub>f</sub> = P<sub>f</sub> / H<sub>u</sub> · 3600', 'P<sub>f</sub> i kW och H<sub>u</sub> i kJ/kg ger kg/s → · 3600 ger kg/h.'],
-      ['Bränsleflöde (volym)', 'V̇<sub>f</sub> = ṁ<sub>f</sub> / ρ', 'ρ = densitet i kg/l ger l/h.'],
-      ['Specifik förbrukning', 'bsfc = ṁ<sub>f</sub> / P<sub>b</sub>', 'kg/h · 1000 / kW = g/kWh. Vid P<sub>b</sub> = 1000 kW blir g/kWh samma siffra som kg/h.'],
-      ['Tankens räckvidd', 't = V<sub>tank</sub> / V̇<sub>f</sub>', '1 m³ = 1000 l. Dygn = h / 24.'],
+      ['Nödvändig bränsleeffekt', 'Q̇<sub>fuel</sub> = P<sub>b</sub> / η<sub>b</sub>', '', 'Övning 3 · sida 1'],
+      ['Bränsleflöde', 'ṁ<sub>f</sub> = Q̇<sub>fuel</sub> / Q<sub>LHV</sub> · 3600', 'Q̇ [kW] / Q<sub>LHV</sub> [kJ/kg] = kg/s → ×3600 = kg/h.', 'Tips · sida 1'],
+      ['Volymflöde', 'V̇ = ṁ<sub>f</sub> / ρ', 'ρ i kg/l ger l/h.', 'Övning 3 · sida 1'],
+      ['Specifik förbrukning', 'bsfc = ṁ<sub>f</sub> / P<sub>b</sub>', 'Vid P<sub>b</sub> = 1000 kW är kg/h = g/kWh.', '★10 · sida 1'],
+      ['Tankens räckvidd', 't = V<sub>tank</sub> / V̇', '1 m³ = 1000 l, dygn = h/24.', 'Övning 3 · sida 1'],
     ],
     example: {
       text: 'P<sub>b</sub> = 1000 kW. Diesel: H<sub>u</sub> 42,7 MJ/kg, ρ 0,84 kg/l, η 45 %. Metanol: H<sub>u</sub> 19,9 MJ/kg, ρ 0,792 kg/l, η 42 %. Tank 90 m³.',
@@ -75,11 +75,9 @@ export const LESSONS = [
   {
     id: 4, title: 'Övning 4 · Stökiometrisk förbränning', short: 'Syrebehov, (A/F)s och λ',
     theory: [
-      ['Syre för kolet', 'C + O₂ → CO₂: 12 kg C behöver 32 kg O₂ → <b>32/12 = 2,667 kg O₂ per kg C</b>', ''],
-      ['Syre för vätet', '2H₂ + O₂ → 2H₂O: 4 kg H behöver 32 kg O₂ → <b>8 kg O₂ per kg H</b>', ''],
-      ['Syrebehov per kg bränsle', 'm<sub>O₂</sub> = c · 32/12 + h · 8', 'c och h = massandelar kol och väte (decimaltal).'],
-      ['Stökiometriskt luft/bränsle', '(A/F)<sub>s</sub> = m<sub>O₂</sub> / 0,232', 'Luft innehåller 23,2 vikt-% syre.'],
-      ['Verkligt luft/bränsle', '(A/F) = λ · (A/F)<sub>s</sub>', 'λ = luftöverskottsfaktor. λ = 1 stökiometriskt, λ > 1 magert (luftöverskott), λ < 1 fett. I spelets Trimning kan du ändra λ på din bensinmotor!'],
+      ['Syrebehov', 'm<sub>O₂</sub> = 2,667·c + 8·h', 'C + O₂ → CO₂: 32/12 = 2,667 kg O₂/kg C · H₂ + ½O₂ → H₂O: 16/2 = 8 kg O₂/kg H. c, h = massandelar.', 'Övning 4 · sida 3'],
+      ['Stökiometriskt A/F', '(A/F)<sub>s</sub> = m<sub>O₂</sub> / 0,232', 'O₂ i luft: 23,2 vikt-%.', 'Övning 4 · sida 3'],
+      ['Luftöverskott', 'λ = (A/F) / (A/F)<sub>s</sub> ⇔ A/F = λ·(A/F)<sub>s</sub>', 'λ < 1 rik (CO, HC↑), λ = 1 stökiometrisk (TWC), λ > 1 mager. Diesel alltid λ ≈ 1,3–4. I spelets Trimning kan du ändra λ!', '★14 · sida 1, 8 · sida 3'],
     ],
     example: {
       text: 'Diesel: 86,5 vikt-% C och 13,5 vikt-% H. Luft 23,2 vikt-% O₂.',
@@ -91,6 +89,65 @@ export const LESSONS = [
     },
     discuss: [['d) Förklara vad luftöverskottsfaktorn λ innebär för en dieselmotor.',
       'λ = verklig luftmängd / stökiometrisk luftmängd. En dieselmotor har ingen trottel – den suger (eller laddas med) i stort sett samma luftmängd hela tiden, och effekten styrs med hur mycket bränsle som sprutas in. Därför går den alltid med luftöverskott, λ ≈ 1,3–1,5 vid full last och λ > 3–5 på tomgång/låg last. Luftöverskottet behövs för att bränslesprayen ska hitta syre och brinna fullständigt innan avgasventilen öppnar; går λ för lågt (för mycket bränsle) blir det sot/svart rök och hög avgastemperatur. Högt λ ger låg förbränningstemperatur per kg luft, bra verkningsgrad och mindre CO/HC, men mer NOx-bildning i heta zoner och syre i avgaserna (därför fungerar inte en vanlig trevägskatalysator, i stället används SCR/AdBlue och partikelfilter).']],
+  },
+  // ---- extra lektioner direkt från formelpappret (tentamenssammanfattningen) ----
+  {
+    id: 5, title: 'Geometri, kolvhastighet och litereffekt', short: 'r<sub>c</sub>, V<sub>c</sub>, S̄<sub>p</sub>, P/V<sub>d</sub>', extra: 1,
+    theory: [
+      ['Kompressionsförhållande', 'r<sub>c</sub> = (V<sub>d</sub> + V<sub>c</sub>) / V<sub>c</sub> ⇔ V<sub>c</sub> = V<sub>d</sub> / (r<sub>c</sub> − 1)', 'Alltid per cylinder! Ex: (403 + 62)/62 = 7,5.', '★2 · sida 1'],
+      ['Medelkolvhastighet', 'S̄<sub>p</sub> = 2·L·N', 'N i r/s. Normalt 8–18 m/s, tävling 25–28 m/s.', '★3 · sida 1'],
+      ['Litereffekt', 'P / V<sub>d</sub> [kW/l]', 'Otto 30–60, tävling 75–150, lastbilsdiesel ≤ 25.', '3 · sida 1'],
+      ['Effekt ur moment', 'P = T·ω = 2π·N·T ;  P[kW] = T·n/9549', 'n i r/min.', '★4 · sida 1'],
+    ],
+    example: { text: 'Sisu 420 DWRIE (kursmotor): 108 × 120 mm, 4 cyl, r<sub>c</sub> 16,5, 95 kW vid 2200 r/min, 500 Nm vid 1400 r/min.', steps: [
+      ['Slagvolym', '0,785·0,108²·0,120 = 1,099 l per cyl → 4,40 l'], ['V<sub>c</sub>', '1,099/(16,5 − 1) = <b>0,0709 l = 70,9 cm³</b>'],
+      ['S̄<sub>p</sub> vid P<sub>max</sub>', '2·0,120·2200/60 = <b>8,8 m/s</b>'], ['Litereffekt', '95/4,40 = <b>21,6 kW/l</b>'], ['Effekt vid T<sub>max</sub>', '500·1400/9549 = <b>73,3 kW</b>']] },
+    discuss: [],
+  },
+  {
+    id: 6, title: 'Ideala cykler och isentrop kompression', short: 'p₂, T₂, η<sub>T,Otto</sub>', extra: 1,
+    theory: [
+      ['Isentrop kompression 1–2', 'p₂ = p₁·r<sub>c</sub><sup>κ</sup> ;  T₂ = T₁·r<sub>c</sub><sup>κ−1</sup>', 'Absolut tryck och kelvin! κ = 1,3–1,4.', '★11 · sida 1, 6 · sida 2'],
+      ['Termisk verkningsgrad Otto', 'η<sub>T,Otto</sub> = 1 − 1 / r<sub>c</sub><sup>κ−1</sup>', 'Ex: r<sub>c</sub> 8, κ 1,4 → 56,5 %.', '★13 · sida 1'],
+      ['Isentrop expansion 3–4', 'p₄ = p₃·(V₃/V₄)<sup>κ</sup> ;  T₄ = T₃·(V₃/V₄)<sup>κ−1</sup>', 'Otto: V₃/V₄ = 1/r<sub>c</sub>.', '6 · sida 2'],
+    ],
+    example: { text: 'Otto: r<sub>c</sub> = 10, p₁ = 1 bar, T₁ = 293 K (20 °C), κ = 1,4.', steps: [
+      ['p₂', '1·10<sup>1,4</sup> = <b>25,1 bar</b>'], ['T₂', '293·10<sup>0,4</sup> = <b>736 K (463 °C)</b>'], ['η<sub>T</sub>', '1 − 1/10<sup>0,4</sup> = <b>60,2 %</b>']] },
+    discuss: [['Varför har en Otto högre ideal verkningsgrad än en diesel vid samma r<sub>c</sub>, men dieseln högre i verkligheten?', 'Vid samma r<sub>c</sub> tillförs värmet i Otto vid konstant volym (allt vid ÖDP) vilket ger störst tryck- och temperaturökning och störst innesluten yta → η<sub>Otto</sub> > η<sub>Seiliger</sub> > η<sub>Diesel</sub>. Men dieseln kan ha mycket högre r<sub>c</sub> (16–22 mot 8–12, otto begränsas av knack), går magert (λ > 1, högre κ), saknar spjäll (små pumpförluster) – därför blir dieselns verkliga η<sub>b</sub> högre (38–45 % mot 28–32 %).']],
+  },
+  {
+    id: 7, title: 'Luft, fyllnadsgrad och bränsle per cylinder', short: 'ρ, m<sub>a,cyl</sub>, η<sub>V</sub>, laddluft', extra: 1,
+    theory: [
+      ['Luftens densitet', 'ρ = p / (R·T)', 'R<sub>luft</sub> = 287 J/(kg·K), p i Pa, T i K. ≈ 1,2 kg/m³ vid 20 °C.', '8 · sida 3'],
+      ['Luft per cylinder', 'm<sub>a,cyl</sub> = η<sub>V</sub>·ρ<sub>a</sub>·V<sub>d</sub>', 'V<sub>d</sub> per cylinder. Sug 80–90 %, turbo η<sub>V</sub> > 1.', '★14 · sida 1, 8 · sida 3'],
+      ['Bränsle per cylinder', 'm<sub>f,cyl</sub> = m<sub>a,cyl</sub> / (λ·(A/F)<sub>s</sub>) ;  ṁ<sub>f</sub> = m<sub>f,cyl</sub>·z·N/f<sub>s</sub>', '', '8 · sida 3'],
+      ['Laddluftens densitet', 'm<sub>a,turbo</sub>/m<sub>a,sug</sub> ≈ (p₂/p₀)·(T₀/T₂)', 'Absolut tryck! 1,5 bar övertryck = 2,5 bar abs.', '9 · sida 3'],
+    ],
+    example: { text: 'Sugmotor 2,0 l, 4 cyl, 20 °C, 1,013 bar, η<sub>V</sub> = 0,90, bensin λ = 1, (A/F)<sub>s</sub> = 14,6, 6000 r/min.', steps: [
+      ['ρ', '101 300/(287·293) = <b>1,205 kg/m³</b>'], ['m<sub>a,cyl</sub>', '0,90·1,205·0,5·10⁻³ = <b>0,542 g</b>'],
+      ['m<sub>f,cyl</sub>', '0,542/14,6 = <b>0,0371 g</b>'], ['ṁ<sub>f</sub>', '0,0371·4·100/2 = 7,42 g/s = <b>26,7 kg/h</b>']] },
+    discuss: [],
+  },
+  {
+    id: 8, title: 'Energibalans – kylvatten och avgaser', short: 'Q̇ = ṁ·c·ΔT, Sankey', extra: 1,
+    theory: [
+      ['Kylvatten', 'Q̇<sub>kyl</sub> = ṁ<sub>w</sub>·c<sub>w</sub>·(T<sub>ut</sub> − T<sub>in</sub>)', 'c<sub>w</sub> = 4,18 kJ/(kg·K), 1 l vatten = 1 kg.', '10 · sida 3'],
+      ['Avgaser', 'Q̇<sub>avg</sub> = ṁ<sub>ex</sub>·c<sub>p,ex</sub>·(T<sub>avg</sub> − T₀) ;  ṁ<sub>ex</sub> = ṁ<sub>f</sub>(1 + A/F)', 'c<sub>p,ex</sub> = 1,05–1,15 kJ/(kg·K).', '10 · sida 3'],
+      ['Energibalans', 'Q̇<sub>fuel</sub> = P<sub>b</sub> + Q̇<sub>kyl</sub> + Q̇<sub>avg</sub> + Q̇<sub>övr</sub>', 'Q̇<sub>övr</sub> = strålning, ofullständig förbränning m.m.', '★16 · sida 1'],
+    ],
+    example: { text: 'Diesel: ṁ<sub>f</sub> = 20 kg/h, A/F = 29,2, T<sub>avg</sub> = 450 °C, T₀ = 25 °C, c<sub>p,ex</sub> = 1,1. Kylvatten 2,0 kg/s, 80 → 88 °C.', steps: [
+      ['ṁ<sub>ex</sub>', '20·(1 + 29,2) = 604 kg/h = <b>0,1678 kg/s</b>'], ['Q̇<sub>avg</sub>', '0,1678·1,1·(450 − 25) = <b>78,4 kW</b>'], ['Q̇<sub>kyl</sub>', '2,0·4,18·8 = <b>66,9 kW</b>']] },
+    discuss: [],
+  },
+  {
+    id: 9, title: 'Förbränningskemi för C<sub>a</sub>H<sub>b</sub>O<sub>c</sub>', short: 'i = a + b/4 − c/2, (A/F)<sub>s</sub>', extra: 1,
+    theory: [
+      ['Syrebehov (mol O₂ per mol bränsle)', 'i = a + b/4 − c/2', 'a = C-atomer, b = H-atomer, c = O-atomer.', '11 · sida 3'],
+      ['Stökiometriskt A/F', '(A/F)<sub>s</sub> = 137,3·i / (12a + b + 16c)', '137,3 = 2·16 + (79/21)·2·14 g luft per mol O₂. Molmassor C 12, H 1, O 16, N 14.', '11 · sida 3'],
+    ],
+    example: { text: 'Oktan C₈H₁₈ och metanol CH₃OH (CH₄O).', steps: [
+      ['Oktan i', '8 + 18/4 − 0 = <b>12,5</b>'], ['Oktan (A/F)<sub>s</sub>', '137,3·12,5/(96 + 18) = <b>15,1</b>'], ['Metanol i', '1 + 4/4 − 1/2 = <b>1,5</b>'], ['Metanol (A/F)<sub>s</sub>', '137,3·1,5/(12 + 4 + 16) = <b>6,44</b>']] },
+    discuss: [],
   },
 ];
 
@@ -130,6 +187,38 @@ const GEN = {
     () => { const AFs = pick([14.6, 14.7, 14.5]), lam = rnd(1.2, 4, 0.1), mf = rnd(10, 60, 1), air = mf * AFs * lam;
       return { title: 'Luftflöde i en dieselmotor', given: [['(A/F)s', v(AFs, 1)], ['λ', v(lam, 1)], ['Bränsleflöde', mf + ' kg/h']],
         asks: [{ label: 'Verkligt A/F', answer: AFs * lam, dec: 2 }, { label: 'Luftflöde (kg/h)', answer: air, dec: 0 }], why: `A/F = λ·(A/F)s = ${v(AFs * lam)} · luft = ṁ_f·A/F = ${v(air, 0)} kg/h` }; },
+  ],
+  5: [
+    () => { const B = rnd(70, 130, 1), L = rnd(70, 140, 1), z = pick([4, 5, 6]), rc = rnd(8, 20, 0.5), n = rnd(1800, 7000, 100), Vd = 0.785398 * (B / 1000) ** 2 * (L / 1000) * 1000, Vc = Vd / (rc - 1);
+      return { title: 'Geometri och kolvhastighet', given: [['Borrning B', B + ' mm'], ['Slaglängd L', L + ' mm'], ['Cylindrar z', z], ['r<sub>c</sub>', v(rc, 1)], ['Varvtal', fmt(n) + ' r/min']],
+        asks: [{ label: 'V<sub>d</sub> per cylinder (l)', answer: Vd, dec: 3 }, { label: 'V<sub>c</sub> (cm³)', answer: Vc * 1000, dec: 1 }, { label: 'S̄<sub>p</sub> (m/s)', answer: 2 * L / 1000 * n / 60, dec: 2 }], why: `Vd = 0,785·B²·L = ${v(Vd, 3)} l · Vc = Vd/(rc−1) = ${v(Vc * 1000, 1)} cm³ · Sp = 2·L·N = ${v(2 * L / 1000 * n / 60)} m/s` }; },
+    () => { const T = rnd(120, 900, 10), n = rnd(1200, 6500, 100), Vd = pick([1.6, 2.0, 2.3, 3.0, 4.4, 7.4]), P = T * n / 9549;
+      return { title: 'Effekt, litereffekt och BMEP i bar', given: [['Moment T', T + ' Nm'], ['Varvtal n', fmt(n) + ' r/min'], ['Slagvolym V<sub>d</sub>', v(Vd, 1) + ' l (4T)']],
+        asks: [{ label: 'P (kW)', answer: P, dec: 1 }, { label: 'Litereffekt (kW/l)', answer: P / Vd, dec: 1 }, { label: 'BMEP (bar)', answer: 600 * P * 2 / (Vd * n), dec: 2 }], why: `P = T·n/9549 = ${v(P, 1)} kW · P/Vd = ${v(P / Vd, 1)} kW/l · BMEP = 600·P·fs/(Vd·n) = ${v(600 * P * 2 / (Vd * n))} bar (= 4πT/Vd)` }; },
+  ],
+  6: [
+    () => { const rc = pick([8, 9, 10, 11, 12, 14, 16, 18]), k = pick([1.3, 1.35, 1.4]), p1 = pick([0.9, 1.0, 1.013]), t1 = rnd(15, 60, 5), T1 = t1 + 273.15;
+      return { title: 'Isentrop kompression', given: [['r<sub>c</sub>', rc], ['κ', v(k, 2)], ['p₁', v(p1, 3) + ' bar'], ['T₁', t1 + ' °C']],
+        asks: [{ label: 'p₂ (bar)', answer: p1 * rc ** k, dec: 2 }, { label: 'T₂ (K)', answer: T1 * rc ** (k - 1), dec: 0 }, { label: 'η<sub>T,Otto</sub> (%)', answer: (1 - rc ** (1 - k)) * 100, dec: 1 }], why: `p₂ = p₁·rc^κ = ${v(p1 * rc ** k)} bar · T₂ = (${v(T1, 2)} K)·rc^(κ−1) = ${v(T1 * rc ** (k - 1), 0)} K · ηT = 1 − 1/rc^(κ−1) = ${v((1 - rc ** (1 - k)) * 100, 1)} %` }; },
+  ],
+  7: [
+    () => { const pb = rnd(0.95, 2.6, 0.05), tc = rnd(15, 60, 5), T = tc + 273.15, rho = pb * 1e5 / (287 * T), Vd = pick([1.6, 1.8, 2.0, 2.5, 3.0]), z = 4, eV = rnd(0.8, 1.1, 0.01), lam = pick([0.9, 1, 1.0, 1.1]), afs = 14.6, n = rnd(3000, 7000, 500);
+      const ma = eV * rho * Vd / z / 1000, mf = ma / (lam * afs), mdot = mf * z * n / 60 / 2 * 3600;
+      return { title: 'Luft och bränsle per cylinder', given: [['Insugstryck (abs)', v(pb, 2) + ' bar'], ['Insugstemp.', tc + ' °C'], ['V<sub>d</sub> (4 cyl, 4T)', v(Vd, 1) + ' l'], ['η<sub>V</sub>', v(eV, 2)], ['λ', v(lam, 1)], ['(A/F)<sub>s</sub>', '14,6'], ['Varvtal', fmt(n) + ' r/min']],
+        asks: [{ label: 'ρ (kg/m³)', answer: rho, dec: 3 }, { label: 'm<sub>a,cyl</sub> (g)', answer: ma * 1000, dec: 3 }, { label: 'ṁ<sub>f</sub> (kg/h)', answer: mdot, dec: 2 }], why: `ρ = p/(RT) = ${v(rho, 3)} · ma = ηV·ρ·Vd,cyl = ${v(ma * 1000, 3)} g · mf,cyl = ma/(λ·14,6) · ṁf = mf·z·N/2 = ${v(mdot)} kg/h` }; },
+    () => { const p2 = rnd(1.5, 3.0, 0.1), T2c = rnd(30, 120, 5), T0c = rnd(10, 30, 5), r = p2 / 1.0 * (T0c + 273.15) / (T2c + 273.15);
+      return { title: 'Laddluftens densitet', given: [['Laddtryck p₂ (abs)', v(p2, 1) + ' bar'], ['Lufttemp. efter kylare T₂', T2c + ' °C'], ['Omgivning p₀ / T₀', `1,0 bar / ${T0c} °C`]],
+        asks: [{ label: 'm<sub>a,turbo</sub>/m<sub>a,sug</sub>', answer: r, dec: 2 }], why: `(p₂/p₀)·(T₀/T₂) = ${v(p2, 1)}·${v(T0c + 273.15, 2)}/${v(T2c + 273.15, 2)} = ${v(r)} – i kelvin!` }; },
+  ],
+  8: [
+    () => { const mf = rnd(8, 60, 1), lam = rnd(1.4, 3, 0.1), AF = 14.6 * lam, Tex = rnd(350, 600, 10), T0 = 25, cp = 1.1, mex = mf * (1 + AF) / 3600, Qav = mex * cp * (Tex - T0), mw = rnd(1, 4, 0.1), dT = rnd(5, 12, 1), Qk = mw * 4.18 * dT;
+      return { title: 'Värmeflöden i avgaser och kylvatten', given: [['ṁ<sub>f</sub>', mf + ' kg/h'], ['A/F', v(AF, 1)], ['T<sub>avg</sub> / T₀', `${Tex} / 25 °C`], ['c<sub>p,ex</sub>', '1,1 kJ/(kg·K)'], ['Kylvatten', `${v(mw, 1)} kg/s, ΔT ${dT} K`]],
+        asks: [{ label: 'ṁ<sub>ex</sub> (kg/s)', answer: mex, dec: 4 }, { label: 'Q̇<sub>avg</sub> (kW)', answer: Qav, dec: 1 }, { label: 'Q̇<sub>kyl</sub> (kW)', answer: Qk, dec: 1 }], why: `ṁex = ṁf(1 + A/F)/3600 = ${v(mex, 4)} kg/s · Q̇avg = ṁex·cp·ΔT = ${v(Qav, 1)} kW · Q̇kyl = ṁw·4,18·ΔT = ${v(Qk, 1)} kW` }; },
+  ],
+  9: [
+    () => { const F = pick([['Metan CH₄', 1, 4, 0], ['Propan C₃H₈', 3, 8, 0], ['Oktan C₈H₁₈', 8, 18, 0], ['Etanol C₂H₅OH', 2, 6, 1], ['Metanol CH₃OH', 1, 4, 1], ['Diesel ≈ C₁₂H₂₃', 12, 23, 0], ['Butan C₄H₁₀', 4, 10, 0]]), i = F[1] + F[2] / 4 - F[3] / 2, AF = 137.3 * i / (12 * F[1] + F[2] + 16 * F[3]);
+      return { title: `Stökiometri för ${F[0]}`, given: [['Bränsle', F[0]], ['a / b / c', `${F[1]} / ${F[2]} / ${F[3]}`]],
+        asks: [{ label: 'i (mol O₂/mol)', answer: i, dec: 2 }, { label: '(A/F)<sub>s</sub>', answer: AF, dec: 2 }], why: `i = a + b/4 − c/2 = ${v(i)} · (A/F)s = 137,3·i/(12a + b + 16c) = ${v(AF)}` }; },
   ],
 };
 
