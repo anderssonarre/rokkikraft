@@ -706,7 +706,7 @@ export class Race {
     this.setCam(cfg.settings?.camera ?? DEFAULT_CAM, false);
     const touchMode = cfg.settings?.touch || 'auto'; const showTouch = touchMode === 'on' || (touchMode === 'auto' && ('ontouchstart' in window || navigator.maxTouchPoints > 0));
     this.$('hTouch').style.display = showTouch ? '' : 'none'; if (showTouch) this.$('hKeys').style.display = 'none';
-    if (cfg.mode === 'time') { this.$('hLbCard').style.display = 'none'; }
+    if (cfg.mode === 'time') { this.$('hLbCard').style.display = 'none'; if (cfg.ghost?.f?.length) { this.ghost = cfg.ghost; this.msg(`👻 Spöket kör ditt bästa varv: ${fmtTime(cfg.ghost.t)}`, 3); } }
     this.audioInit();
     if (this.spectate) { this.msg('👁 ÅSKÅDARLÄGE – ◀ ▶ eller E/Q byter bil, C byter kamera', 4); this.watchCam(); }
     if (cfg.replay) { this.replay = cfg.replay; this.state = 'run'; this.camCar = this.player; this.rt = 0; this.msg('🎬 REPRIS – ◀ ▶ eller E/Q byter bil · C byter kamera · P → Avsluta för att gå tillbaka', 5); this.watchBar(); this.$('hLights').style.display = 'none'; }
@@ -925,6 +925,23 @@ export class Race {
       // skrammel från skadad motor
       const o3 = ac.createOscillator(), rg = ac.createGain(); o3.type = 'square'; rg.gain.value = 0; o3.connect(rg); rg.connect(lp); o3.start();
       this.o3 = o3; this.rg = rg; } catch (e) { } }
+  // ---- spökbil i tidskörning: bästa varvet spelas in och körs bredvid dig som en halvgenomskinlig bil ----
+  ghostRec(c) { const R = this.gRec ||= []; const k = Math.floor((this.t - c.lastLapT) / 0.05); while (R.length / 3 <= k) R.push(+c.x.toFixed(2), +c.z.toFixed(2), +c.h.toFixed(3)); }
+  ghostLap(lt) {
+    const R = this.gRec || []; this.gRec = [];
+    if (this.player.laps.length > 1 || (this.cfg.ghost && lt < this.cfg.ghost.t) || !this.cfg.ghost) { // första varvet har stående start – sparas bara om inget annat finns
+      if (!this.ghost || lt < this.ghost.t) { const prev = this.ghost; this.ghost = { t: lt, f: R, track: this.cfg.trackId, car: this.player.spec.id }; this.newGhost = this.ghost;
+        if (prev) this.msg(`👻 NYTT BÄSTA VARV ${fmtTime(lt)}<br><small>Spöket kör nu ditt nya varv (−${(prev.t - lt).toFixed(2)} s)</small>`, 2.6); } }
+  }
+  ghostPose() {
+    const g = this.ghost, p = this.player; if (!g || !g.f?.length || !this.view || this.state !== 'run' || p.finished) { if (this.gObj) this.gObj.visible = false; return; }
+    if (!this.gObj) { this.gObj = this.view.addCar(p.spec.body, [0.85, 0.9, 1.0], { model: p.spec.id, glb: false, num: '👻' });
+      this.gObj.traverse(m => { if (!m.isMesh) return; m.castShadow = false; const f = mt => { const x = mt.clone(); x.transparent = true; x.opacity = 0.32; x.depthWrite = false; if (x.emissive) x.emissive.setRGB(0.25, 0.35, 0.5); return x; }; m.material = Array.isArray(m.material) ? m.material.map(f) : f(m.material); }); }
+    const F = g.f, k = (this.t - p.lastLapT) / 0.05, n = F.length / 3; if (k >= n - 1) { this.gObj.visible = false; return; }
+    const i = Math.floor(k), a = k - i, o = i * 3, q = o + 3; let dh = F[q + 2] - F[o + 2]; while (dh > Math.PI) dh -= 2 * Math.PI; while (dh < -Math.PI) dh += 2 * Math.PI;
+    const x = F[o] + (F[q] - F[o]) * a, z = F[o + 1] + (F[q + 1] - F[o + 1]) * a, h = F[o + 2] + dh * a;
+    this.gObj.visible = true; this.view.poseCar(this.gObj, x, this.trk.heightAt(x, z), z, h, 0, 0, 0, this.t * 20, false, Math.hypot(x - p.x, z - p.z) > 2.2);
+  }
   // ---- andra bilars ljud: 3 röster som följer de närmaste bilarna (egen motortyp, avstånd, stereo, doppler, grus) ----
   makeVoices(ac, vol) {
     const nb = ac.createBuffer(1, ac.sampleRate * 2, ac.sampleRate), nd = nb.getChannelData(0); for (let i = 0; i < nd.length; i++) nd[i] = Math.random() * 2 - 1;
@@ -1160,9 +1177,11 @@ export class Race {
         const sec = lapFrac < 0.333 ? 0 : lapFrac < 0.666 ? 1 : 2;
         if (sec > c.curSec) { c.sectors[c.curSec] = this.t - c.secT; c.secT = this.t; c.curSec = sec; }
       }
+      if (c.isPlayer && this.cfg.mode === 'time' && this.state === 'run') this.ghostRec(c);
       const lapNow = Math.floor(c.prog / n);
       if (lapNow > lapBefore && lapNow >= 1) {
         const lt = this.t - c.lastLapT; c.lastLapT = this.t; c.laps.push(lt); if (lt < c.bestLap) c.bestLap = lt;
+        if (c.isPlayer && this.cfg.mode === 'time') this.ghostLap(lt);
         if (c.isPlayer) { c.sectors[2] = this.t - c.secT; c.secT = this.t; c.curSec = 0; }
         if (c.isPlayer && lapNow < this.cfg.laps) this.msg(`Varv ${lapNow}: ${fmtTime(lt)}`, 1.8);
         if (lapNow >= this.cfg.laps && !c.finished) { c.finished = true; c.finishT = this.t; if (c.isPlayer) this.flagDown(); }
@@ -1371,7 +1390,7 @@ export class Race {
     if (this.done) return; this.done = true; let rows = this.order(); const p = this.player;
     const pRow = rows.find(r => r.isPlayer);
     if (netOrder && this.net) rows = netOrder.map(o => ({ name: o.name, isPlayer: o.id === this.net.id, flag: o.flag, t: o.time, c: { finished: o.time != null, retired: false, nid: o.id, bestLap: o.best ?? Infinity, jokerLap: o.jokerLap } }));
-    const res = {
+    const res = { ghost: this.newGhost || null,
       order: rows.map((r, i) => { const c = r.c, prev = i > 0 ? rows[i - 1].c : null;
         const dist = !netOrder && prev && prev.behind && this.cars.indexOf(c) >= 0 ? prev.behind[this.cars.indexOf(c)] : null;
         return { id: c.nid, name: r.name, isPlayer: r.isPlayer, flag: r.flag, time: c.finished && !c.retired ? r.t : null, best: isFinite(c.bestLap) ? c.bestLap : null, jokerLap: c.jokerLap ?? null, dist: dist ?? null }; }),
@@ -1550,6 +1569,7 @@ export class Race {
     }
 
     for (const c of this.cars) if (c.obj) { if (c.sb) { if (c.sb.ver) this.view.softDeform(c.obj, c.sb, c.dmg || 0); } else if ((c.dmg || 0) > 4 || c.dentV) this.view.damageCar(c.obj, c.dmg || 0, c.dents, c.dentV || 0); }
+    if (this.cfg.mode === 'time') this.ghostPose();
     for (const c of this.cars) this.view.poseCar(c.obj, c.x, c.y, c.z, c.h, c.tRoll || 0, c.tPitch || 0, c.steer, c.wheelSpin ?? c.wspin, c.brk > 0.1, !(c === p && (this.cam === 0 || this.cam === 1 || this.cam === DEFAULT_CAM)), (c.bodyRoll || 0) + (c.vR || 0), (c.bodyPitch || 0) + (c.vP || 0), (c.bY || 0) + (c.suspY || 0), c);
     let cockpit = null;
     if (this.cam === 0) { const sway = clamp((p.ay || 0) * 0.045 + Math.sin(this.t * 6.0) * 0.03, -0.45, 0.45);

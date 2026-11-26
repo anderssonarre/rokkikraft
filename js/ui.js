@@ -1065,7 +1065,7 @@ const ACT = {
   },
   'quick-time'() {
     const q = U.quick;
-    startRace({ trackId: q.track, laps: q.laps, opps: [], specLvl: q.cm || 0, grid: 0, gridRows: 1, useJoker: false, title: 'Tidskörning', mode: 'time', weather: q.weather, tod: q.tod, onDone: r => quickDone(r, true) });
+    const gk = q.track + '|' + (q.cm ? 'spec' + q.cm : S.active); startRace({ trackId: q.track, laps: q.laps, opps: [], specLvl: q.cm || 0, grid: 0, gridRows: 1, useJoker: false, title: 'Tidskörning', mode: 'time', ghost: S.ghosts?.[gk] || null, ghostKey: (U.lastGhostKey = gk), weather: q.weather, tod: q.tod, onDone: r => quickDone(r, true) });
     return false;
   },
   'ev-start'(a) { evStart(a); window.scrollTo(0, 0); },
@@ -1218,6 +1218,7 @@ const ACT = {
 };
 
 function quickDone(r, time) {
+  if (time && r?.ghost && U.lastGhostKey) { const G = S.ghosts ||= {}, old = G[U.lastGhostKey]; if (!old || r.ghost.t < old.t) { G[U.lastGhostKey] = { t: r.ghost.t, f: r.ghost.f }; save(); } }
   if (isFinite(r.bestLap)) record(U.quick.track, r.bestLap);
   const prize = time || r.flag ? 0 : withBonus(NORMAL_PRIZE[r.pos - 1] || 0); if (prize && r.finished) S.money += prize; save();
   U.result = { r, time, prize: r.finished ? prize : 0, title: time ? 'Tidskörning' : 'Träningsheat' }; U.view = 'result'; render();
