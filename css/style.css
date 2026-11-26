@@ -291,3 +291,9 @@ details{margin:6px 0}details summary{cursor:pointer;font-weight:700;padding:4px 
 .xpbar { height: 12px; border-radius: 6px; background: rgba(255,255,255,.08); overflow: hidden; margin: 4px 0 8px; }
 .xpbar i { display: block; height: 100%; background: linear-gradient(90deg, var(--hi), #ffef9a); border-radius: 6px; }
 .swatch.locked { opacity: .45; font-size: .8rem; display: grid; place-items: center; cursor: not-allowed; }
+
+.hud-off { position: fixed; left: 50%; top: 32%; transform: translate(-50%, -50%); z-index: 32; text-align: center; font: 900 6.5rem/1 var(--cond); color: #ffd23f; text-shadow: 0 4px 18px rgba(0,0,0,.7), 0 0 2px #000; pointer-events: none; }
+.hud-off[hidden] { display: none; }
+.hud-off small { display: block; font: 800 .95rem var(--mono); letter-spacing: .12em; text-transform: uppercase; color: #fff; margin-top: 4px; }
+.hud-off.pop { animation: offpop .35s ease-out; }
+@keyframes offpop { from { transform: translate(-50%, -50%) scale(1.5); opacity: .3; } to { transform: translate(-50%, -50%) scale(1); opacity: 1; } }

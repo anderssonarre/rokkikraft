@@ -339,13 +339,20 @@ export function trackStep(c, trk, t, useJoker = true) {
       else if (crossed(gOut)) { c.gateChecked = true; if (!inside(gOut)) { c.coneDown = true; c.coneEvent = 'outside'; } }
     }
   }
-  const [l, r] = trk.limits(loc.i), lo = l - trk.verge + 0.9, hi = r + trk.verge - 0.9;
+  const [l, r] = trk.limits(loc.i), lo = l - trk.verge + 0.9, hi = r + trk.verge - 0.9, OUT = 9; // OUT m utanför kanten finns en hård gräns
   let hit = 0;
-  if (loc.lat > hi || loc.lat < lo) {
-    const sgn = loc.lat > hi ? 1 : -1, over = sgn > 0 ? loc.lat - hi : lo - loc.lat, nx = trk.NX[loc.i] * sgn, nz = trk.NZ[loc.i] * sgn;
+  // Mjuk kant: bilen tar sig över vallen och ut i terrängen (bromsas av gräs/grus) – efter 3 s utanför återställs den till vägens mitt
+  const out = loc.lat > hi ? loc.lat - hi : loc.lat < lo ? lo - loc.lat : 0, sgn0 = loc.lat > hi ? 1 : -1;
+  if (out > 0) {
+    const ch = Math.cos(c.h), sh = Math.sin(c.h), nx = trk.NX[loc.i] * sgn0, nz = trk.NZ[loc.i] * sgn0, vn = (c.vx * ch - c.vy * sh) * nx + (c.vx * sh + c.vy * ch) * nz;
+    if (!c.offRoad && vn > 4) { hit = vn; c.offHit = true; } else c.offHit = false; // fart in i vallen (används för kaato i över 150 km/h)
+    c.offRoad = true; const drag = 1 - Math.min(0.0025, out * 0.0004); c.vx *= drag; c.vy *= drag; // terrängen bromsar
+  } else { c.offRoad = false; c.offHit = false; }
+  if (out > OUT) {
+    const sgn = sgn0, over = out - OUT, nx = trk.NX[loc.i] * sgn, nz = trk.NZ[loc.i] * sgn;
     c.x -= nx * over; c.z -= nz * over;
     const ch = Math.cos(c.h), sh = Math.sin(c.h); let wx = c.vx * ch - c.vy * sh, wz = c.vx * sh + c.vy * ch; const vn = wx * nx + wz * nz;
-    if (vn > 0) { wx -= 1.25 * vn * nx; wz -= 1.25 * vn * nz; wx *= 0.93; wz *= 0.93; c.vx = wx * ch + wz * sh; c.vy = -wx * sh + wz * ch; c.r *= 0.6; hit = vn; }
+    if (vn > 0) { wx -= 1.25 * vn * nx; wz -= 1.25 * vn * nz; wx *= 0.93; wz *= 0.93; c.vx = wx * ch + wz * sh; c.vy = -wx * sh + wz * ch; c.r *= 0.6; hit = vn; c.offHit = false; }
     if (vn > 2.5) addDent(c, nx, nz, vn);
   }
   return hit;
@@ -550,6 +557,7 @@ export class Race {
         <!-- MITTEN: Meddelandebanner + 360° Närhetsradar -->
         <div class="hud-center-wrap">
           <div class="hud-msg" id="hMsg"></div>
+          <div class="hud-off" id="hOff" hidden></div>
           <div class="hud-watch" id="hWatch" hidden><button type="button" id="hWPrev">◀</button><span>👁 TITTAR PÅ<b id="hWName"></b></span><button type="button" id="hWNext">▶</button></div>
           <canvas id="hRadar" width="120" height="120"></canvas>
         </div>
@@ -762,7 +770,7 @@ export class Race {
       const cur = this.camCar || this.player, i = (this.cars.indexOf(cur) + d + this.cars.length) % this.cars.length; this.camCar = this.cars[i]; this.camH = this.camCar.h; this.watchCam(); return; }
     if (this.spectate) { const i = (this.cars.indexOf(this.player) + d + this.cars.length) % this.cars.length; this.player = this.cars[i]; this.camH = this.player.h; this.watchCam(); return; } const c = this.player; if (this.state !== 'run' || c.shiftT > 0) return; const g = c.gear + d; if (g >= 1 && g <= c.spec.gears.length - (c.gearLoss || 0)) { c.gear = g; c.shiftT = ((c.clutch || 0) > 0.5 ? 0.06 : c.spec.shift) * (1 + (c.gearDmg || 0) * 0.015); c.shiftEv = 1; if (c.rpm > 4000) { c.backfire = Math.max(c.backfire || 0, 0.72); c.backfireEv = Math.max(c.backfireEv || 0, 0.72); } } }
   resize() { if (this.R) this.view.resize(); }
-  resetCar(c) { const trk = this.trk, hwi = trk.hwAt ? trk.hwAt(c.i) : trk.hw, [x, z, h] = trk.point(c.i, clamp(c.lat, -hwi + 2, hwi - 2) * 0.3); c.x = x; c.z = z; c.h = h; c.vx = c.vy = c.r = 0; c.rev = false; c.gear = 1; c.airY = c.airVy = c.suspY = c.suspVy = c.landImpact = c.landAudio = 0; c.bodyPitch = c.bPitch = c.bodyRoll = c.bRoll = c.pitchVel = c.rollVel = 0; c.brakeGlow = c.backfire = 0; }
+  resetCar(c, centre) { const trk = this.trk, hwi = trk.hwAt ? trk.hwAt(c.i) : trk.hw, [x, z, h] = trk.point(c.i, centre ? 0 : clamp(c.lat, -hwi + 2, hwi - 2) * 0.3); c.offT = 0; c.offRoad = false; c.x = x; c.z = z; c.h = h; c.vx = c.vy = c.r = 0; c.rev = false; c.gear = 1; c.airY = c.airVy = c.suspY = c.suspVy = c.landImpact = c.landAudio = 0; c.bodyPitch = c.bPitch = c.bodyRoll = c.bRoll = c.pitchVel = c.rollVel = 0; c.brakeGlow = c.backfire = 0; }
   // BeamNG-läge: hur nätet har deformerats styr mekaniken – sneda hjul drar bilen åt det skadade hållet,
   // intryckt front ger kylarläcka och motorskada, intryckt bak kan slita loss avgasröret
   sbEffects(c) {
@@ -1086,7 +1094,7 @@ export class Race {
       c.gripF = 1 - (c.tireWearF + c.tireWearR) * 0.0011;
       const lapBefore = Math.floor(c.prog / n);
       const vIn = Math.hypot(c.vx, c.vy); // farten precis innan en eventuell träff i vallen
-      const hit = trackStep(c, trk, this.t, this.useJoker);
+      let hit = trackStep(c, trk, this.t, this.useJoker);
 
       if (c.coneEvent === 'down') {
         c.coneEvent = '';
@@ -1096,6 +1104,15 @@ export class Race {
         this.msg('Li – KÖRDE UTANFÖR KONEN!<br><small>Lisälenkkin ska köras mellan konerna i början och slutet → flyttas sist av målgångna</small>', 3.2, 'warn');
       }
 
+      // utanför vägen: räkna ner 3 → 0 och flytta sedan bilen till mitten av vägen
+      if (this.state === 'run' && !c.finished && !c.retired && !c.remote && !c.kaato) {
+        if (c.offRoad) { if (c.offProg == null) { c.offProg = c.prog; c.offDist = 0; } c.offDist += Math.hypot(c.vx, c.vy) * dt;
+          c.offT = (c.offT || 0) + dt; if (c.offT >= 3) { c.offT = 0; c.offProg = null; this.resetCar(c, true); if (c.isPlayer) this.msg('Tillbaka på vägens mitt', 1.4); } }
+        else { if (c.offProg != null && (c.prog - c.offProg) * trk.ds > c.offDist + 6) { // genväg genom terrängen: kom längre fram än man körde → stoppas
+            c.vx = c.vy = c.r = 0; if (c.isPlayer) this.msg('GENVÄG!<br><small>Du kortade banan utanför vägen – bilen stoppas</small>', 2.4, 'warn'); }
+          c.offT = 0; c.offProg = null; }
+      }
+      if (c.offHit && !(vIn > 150 / 3.6 && hit > 4)) hit = 0; // mjuk kant: ingen smäll – bara in i vallen i över 150 km/h ger kaato
       if (hit > 2.5 && c.isPlayer) {
         this.damage(hit * hit * 0.11, true);
         this.crash(hit * 0.85);
@@ -1515,6 +1532,7 @@ export class Race {
 
   hud(dt) {
     const p = this.watched() || this.player, $ = this.$;
+    { const el = $('hOff'), on = p.offRoad && p.offT > 0.05 && this.state === 'run' && !p.finished; el.hidden = !on; if (on) { const n = Math.max(1, Math.ceil(3 - p.offT)); if (el.dataset.n !== String(n)) { el.dataset.n = n; el.innerHTML = `${n}<small>utanför vägen</small>`; el.classList.remove('pop'); void el.offsetWidth; el.classList.add('pop'); } } else el.dataset.n = ''; }
     if (this.msgT > 0) { this.msgT -= dt; if (this.msgT <= 0) $('hMsg').className = 'hud-msg'; }
     this.hudT -= dt; if (this.hudT > 0) return; this.hudT = 0.07; this.yellowHud();
 
