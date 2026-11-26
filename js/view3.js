@@ -833,6 +833,24 @@ export class View3 {
       if (m.material?.userData?.paint && !Array.isArray(m.material)) { if (!m.userData.c0) m.userData.c0 = m.material.color.clone(); m.material.color.copy(m.userData.c0).lerp(new THREE.Color(0.35, 0.33, 0.3), k * 0.35); m.material.roughness = Math.min(0.98, 0.48 + k * 0.5); }
     });
   }
+  // Lera och smuts som byggs upp under loppet (k 0–1): mest längst ner på karossen, fläckigt, och mer i regn.
+  // Läggs in i lackens shader (onBeforeCompile) så att den följer bucklor, GLB-modeller och skador.
+  setMud(G, k) {
+    const U = G.userData; if (Math.abs((U.mudK ?? -1) - k) < 0.01 && U.mudY === Math.round(G.position.y * 20)) return; U.mudK = k; U.mudY = Math.round(G.position.y * 20);
+    G.traverse(m => { if (!m.isMesh) return; for (const mt of (Array.isArray(m.material) ? m.material : [m.material])) {
+      if (!mt?.userData?.paint || !mt.isMeshStandardMaterial) continue;
+      if (!mt.userData.mudU) { const uni = mt.userData.mudU = { uMud: { value: 0 }, uGround: { value: 0 }, uWet: { value: this.weather === 'regn' ? 1 : 0 } };
+        mt.onBeforeCompile = sh => { Object.assign(sh.uniforms, uni);
+          sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vMudW;').replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\nvMudW = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+          sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec3 vMudW; uniform float uMud, uGround, uWet;\nfloat mudH(vec3 p){ return fract(sin(dot(p, vec3(12.9898, 78.233, 37.719))) * 43758.5453); }\nfloat mudN(vec3 p){ vec3 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f); return mix(mix(mix(mudH(i), mudH(i + vec3(1,0,0)), f.x), mix(mudH(i + vec3(0,1,0)), mudH(i + vec3(1,1,0)), f.x), f.y), mix(mix(mudH(i + vec3(0,0,1)), mudH(i + vec3(1,0,1)), f.x), mix(mudH(i + vec3(0,1,1)), mudH(i + vec3(1,1,1)), f.x), f.y), f.z); }')
+            .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
+            float hMud = vMudW.y - uGround, nM = mudN(vMudW * 3.0) * 0.6 + mudN(vMudW * 9.0) * 0.4;
+            float mM = clamp(uMud * (1.5 - hMud * 1.25) + (nM - 0.5) * 0.9 * uMud, 0.0, 0.92);
+            diffuseColor.rgb = mix(diffuseColor.rgb, mix(vec3(0.33, 0.26, 0.18), vec3(0.22, 0.17, 0.11), uWet), mM);
+            roughnessFactor = mix(roughnessFactor, mix(0.95, 0.55, uWet), mM);`);
+        }; mt.customProgramCacheKey = () => 'mud'; mt.needsUpdate = true; }
+      mt.userData.mudU.uMud.value = k; mt.userData.mudU.uGround.value = G.position.y; } });
+  }
   // roll/pitch = markens lutning (hjulen följer den). bRoll/bPitch/bY = karossens krängning, nickning och vibration ovanpå fjädringen.
   // Valfritt 15:e argument `car` matar in fysikfälten bodyRoll, bodyPitch, airY, steerVis, wheelSpin, brakeGlow och backfire.
   poseCar(G, x, y, z, hdg, roll, pitch, steer, spin, braking, visible, bRoll = 0, bPitch = 0, bY = 0, car = null) {

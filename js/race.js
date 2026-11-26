@@ -706,6 +706,7 @@ export class Race {
     this.setCam(cfg.settings?.camera ?? DEFAULT_CAM, false);
     const touchMode = cfg.settings?.touch || 'auto'; const showTouch = touchMode === 'on' || (touchMode === 'auto' && ('ontouchstart' in window || navigator.maxTouchPoints > 0));
     this.$('hTouch').style.display = showTouch ? '' : 'none'; if (showTouch) this.$('hKeys').style.display = 'none';
+    this.wet = cfg.weather === 'regn'; for (const c of this.cars) c.mud = c.isPlayer ? (cfg.mud0 || 0) : Math.random() * 0.12;
     if (cfg.mode === 'time') { this.$('hLbCard').style.display = 'none'; if (cfg.ghost?.f?.length) { this.ghost = cfg.ghost; this.msg(`👻 Spöket kör ditt bästa varv: ${fmtTime(cfg.ghost.t)}`, 3); } }
     this.audioInit();
     if (this.spectate) { this.msg('👁 ÅSKÅDARLÄGE – ◀ ▶ eller E/Q byter bil, C byter kamera', 4); this.watchCam(); }
@@ -1151,6 +1152,8 @@ export class Race {
         this.msg('Li – KÖRDE UTANFÖR KONEN!<br><small>Lisälenkkin ska köras mellan konerna i början och slutet → flyttas sist av målgångna</small>', 3.2, 'warn');
       }
 
+      { const v = Math.hypot(c.vx, c.vy), st = trk.surfTypeAt ? trk.surfTypeAt(c.i) : trk.surface; // lera/smuts byggs upp: grus, regn och terräng ger mest
+        c.mud = Math.min(1, (c.mud || 0) + Math.min(1, v / 28) * (st === 'asfalt' ? 0.15 : st === 'is' ? 0.25 : 1) * (this.wet ? 3.2 : 1) * (c.offRoad ? 2.5 : 1) * (1 + Math.abs(c.vy) * 0.08) * dt * 0.0045); }
       // utanför vägen: räkna ner 3 → 0 och flytta sedan bilen till mitten av vägen
       if (this.state === 'run' && !c.finished && !c.retired && !c.remote && !c.kaato) {
         if (c.offRoad) { if (c.offProg == null) { c.offProg = c.prog; c.offDist = 0; } c.offDist += Math.hypot(c.vx, c.vy) * dt;
@@ -1390,7 +1393,7 @@ export class Race {
     if (this.done) return; this.done = true; let rows = this.order(); const p = this.player;
     const pRow = rows.find(r => r.isPlayer);
     if (netOrder && this.net) rows = netOrder.map(o => ({ name: o.name, isPlayer: o.id === this.net.id, flag: o.flag, t: o.time, c: { finished: o.time != null, retired: false, nid: o.id, bestLap: o.best ?? Infinity, jokerLap: o.jokerLap } }));
-    const res = { ghost: this.newGhost || null,
+    const res = { ghost: this.newGhost || null, mud: this.player.mud || 0,
       order: rows.map((r, i) => { const c = r.c, prev = i > 0 ? rows[i - 1].c : null;
         const dist = !netOrder && prev && prev.behind && this.cars.indexOf(c) >= 0 ? prev.behind[this.cars.indexOf(c)] : null;
         return { id: c.nid, name: r.name, isPlayer: r.isPlayer, flag: r.flag, time: c.finished && !c.retired ? r.t : null, best: isFinite(c.bestLap) ? c.bestLap : null, jokerLap: c.jokerLap ?? null, dist: dist ?? null }; }),
@@ -1570,6 +1573,7 @@ export class Race {
 
     for (const c of this.cars) if (c.obj) { if (c.sb) { if (c.sb.ver) this.view.softDeform(c.obj, c.sb, c.dmg || 0); } else if ((c.dmg || 0) > 4 || c.dentV) this.view.damageCar(c.obj, c.dmg || 0, c.dents, c.dentV || 0); }
     if (this.cfg.mode === 'time') this.ghostPose();
+    if (this.view.setMud && (this.mudT = (this.mudT || 0) + 1) % 6 === 0) for (const c of this.cars) if (c.obj) this.view.setMud(c.obj, Math.min(1, (c.mud || 0) * 1.1));
     for (const c of this.cars) this.view.poseCar(c.obj, c.x, c.y, c.z, c.h, c.tRoll || 0, c.tPitch || 0, c.steer, c.wheelSpin ?? c.wspin, c.brk > 0.1, !(c === p && (this.cam === 0 || this.cam === 1 || this.cam === DEFAULT_CAM)), (c.bodyRoll || 0) + (c.vR || 0), (c.bodyPitch || 0) + (c.vP || 0), (c.bY || 0) + (c.suspY || 0), c);
     let cockpit = null;
     if (this.cam === 0) { const sway = clamp((p.ay || 0) * 0.045 + Math.sin(this.t * 6.0) * 0.03, -0.45, 0.45);

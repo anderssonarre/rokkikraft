@@ -363,13 +363,13 @@ function evRun(heatId, watch) {
   if (watch) { if (!defs.length) return; startRace({ trackId: ev.e.track, laps: ev.laps, opps: defs.slice(1), player: defs[0], spectate: true, grid: 0, gridRows: ev.rules.gridRows, useJoker: ev.rules.joker, sideContact: true, title: '👁 ' + title, mode: 'heat', onDone: done }); return; }
   startRace({
     trackId: ev.e.track, laps: ev.laps, opps: defs, grid: h.ids.indexOf('me'), gridRows: ev.rules.gridRows, useJoker: ev.rules.joker, sideContact: ev.rules.sideContact,
-    title, dmg0: ev.dmg, radLeak0: ev.radLeak, parts0: ev.parts, wear0: ev.wear, mode: 'heat', onDone: done, specLvl: ev.cm || 0,
+    title, dmg0: ev.dmg, radLeak0: ev.radLeak, parts0: ev.parts, wear0: ev.wear, mud0: ev.mud || 0, mode: 'heat', onDone: done, specLvl: ev.cm || 0,
   });
 }
 
 function evAfter(res, h) {
   const ev = U.ev;
-  ev.maxDmg = Math.max(ev.maxDmg || 0, res.dmg || 0); if (res.pos === 1 && res.finished) ev.heatWins = (ev.heatWins || 0) + 1; if (!res.finished) ev.dnf = true;
+  ev.mud = res.mud || 0;   ev.maxDmg = Math.max(ev.maxDmg || 0, res.dmg || 0); if (res.pos === 1 && res.finished) ev.heatWins = (ev.heatWins || 0) + 1; if (!res.finished) ev.dnf = true;
   ev.dmg = res.dmg; ev.parts = res.parts || ev.parts; ev.wear = res.wear || ev.wear; ev.radLeak = res.radLeak; ev.exhaustLoose = !!res.exhaustLoose; ev.needKaatoInsp = !!res.kaato;
   ev.last = res; ev.protestable = !!res.sanction;
   ev.hist.push({ stage: heatName(h), pos: res.pos, flag: res.flag });
