@@ -301,3 +301,11 @@ details{margin:6px 0}details summary{cursor:pointer;font-weight:700;padding:4px 
 .chat { max-height: 220px; overflow-y: auto; display: grid; gap: 4px; margin-bottom: 8px; }
 .chat .cl { padding: 5px 10px; border-radius: 10px; background: rgba(255,255,255,.05); font-size: .9rem; } .chat .cl.me { background: rgba(255,210,63,.12); }
 .chat .cl b { color: var(--hi); margin-right: 4px; }
+
+.card.lesson { text-align: left; cursor: pointer; }
+.formler td.f { font: 600 1rem var(--mono); color: #ffe9a6; white-space: normal; }
+.formler td { vertical-align: top; padding: 8px 10px; }
+ol.steps li { margin: 6px 0; line-height: 1.5; }
+.formelblad h2 { margin-top: 18px; }
+@media print { body { background: #fff !important; color: #000 !important; } .top, .noprint, nav, .toast { display: none !important; } .panel { background: #fff !important; color: #000 !important; border: 0 !important; box-shadow: none !important; } .formler td.f { color: #000 !important; } .formler small, .dim { color: #333 !important; } }
+@media (max-width: 560px) { .formler tr { display: grid; } .formler td.f { padding-top: 0; } }
