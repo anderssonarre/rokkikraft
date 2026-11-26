@@ -304,9 +304,11 @@ function aiNames(n) { const set = new Set(), out = shuffle(DRIVERS).slice(0, Mat
 // boostHp: ALLA AI får exakt så många hk – starkaste riktiga spelarens hk + 500 (snabblopp: dina hk + 500)
 // Bilval för tävlingen: 0 = alla kör egen bil från garaget, 1–5 = alla kör samma spec-bil (AI:n en nivå högre, max 5)
 const aiSpec = lvl => Math.min(5, lvl + 1);
-function carModeRow(act, cur) {
+function carModeRow(act, cur, host) {
   cur = cur || 0; const B = (v, n, sm) => `<button class="chip s ${cur === v ? 'on' : ''}" data-act="${act}" data-arg="${v}">${n}${sm ? `<small>${sm}</small>` : ''}</button>`;
-  return `<div class="row"><span class="lbl">Bilar</span>${B(0, 'Egen bil')}${[1, 2, 3, 4, 5].map(l => B(l, `Spec ${l} · ${SPEC_CARS[l].hp} hk`)).join('')}</div>
+  if (cur === 'hc') return `<div class="row"><span class="lbl">Bilar</span>${B(0, 'Egen bil')}${B('hc', 'Alla har värdens bil', host ? `${host.model} · ${host.hp} hk` : '')}${[1, 2, 3, 4, 5].map(l => B(l, `Spec ${l} · ${SPEC_CARS[l].hp} hk`)).join('')}</div>
+    <p class="dim" style="margin:-4px 0 8px">Alla förare kör värdens bil${host ? ` (${esc(host.model)}, ${host.hp} hk)` : ''} med värdens inställningar. AI:n kör samma bil med 100 hk mer.</p>`;
+  return `<div class="row"><span class="lbl">Bilar</span>${B(0, 'Egen bil')}${host ? B('hc', 'Alla har värdens bil', `${host.model} · ${host.hp} hk`) : ''}${[1, 2, 3, 4, 5].map(l => B(l, `Spec ${l} · ${SPEC_CARS[l].hp} hk`)).join('')}</div>
     ${cur ? `<p class="dim" style="margin:-4px 0 8px">Alla förare kör Mazda 626 Spec ${cur} (${SPEC_CARS[cur].hp} hk). AI:n kör Spec ${aiSpec(cur)} (${SPEC_CARS[aiSpec(cur)].hp} hk).</p>` : ''}`;
 }
 // Fast förarfält i en säsong: samma AI-förare (namn, färg, bil, form) i varje tävling med samma nyckel
@@ -502,7 +504,7 @@ function countRace(trackId, res) { giveXp(res); { const cs = activeCar(); if (cs
 function record(track, lap) { if (!S.records[track] || lap < S.records[track]) { S.records[track] = lap; save(); } }
 
 function startRace(o) {
-  const cs = activeCar(), insp = currentInsp(), s = o.specLvl ? specCar(o.specLvl) : insp.spec; // spec-läge: alla kör samma bil
+  const cs = activeCar(), insp = currentInsp(), s = o.playerSpec || (o.specLvl ? specCar(o.specLvl) : insp.spec); // spec-läge: alla kör samma bil
   const numStr = formatCarNum(cs.num, insp.cls);
   U.view = 'race'; document.body.classList.add('racing'); app().innerHTML = ''; MUSIC.stop();
   const done = o.onDone;
@@ -563,7 +565,9 @@ function seasonPanel(room) {
   let h = `<section class="panel"><h2>Säsong</h2>`;
   if (se) { const rows = Object.entries(se.pts).sort((a, b) => b[1] - a[1]);
     h += `<p><b>${esc(se.name)}</b> · omgång ${Math.min(se.done.length + 1, se.rounds)} av ${se.rounds}${se.done.length >= se.rounds ? ' · <b>avslutad!</b>' : ''}</p>
-      <table class="stats"><tr><th>#</th><th>Förare</th><th>Poäng</th><th>Segrar</th></tr>${rows.map(([n, p], i) => `<tr class="${n === netName() ? 'me' : ''}"><td>${i + 1}${se.done.length >= se.rounds && !i ? ' 🏆' : ''}</td><td>${esc(n)}</td><td>${p}</td><td>${se.wins[n] || 0}</td></tr>`).join('') || '<tr><td colspan="4">Inga poäng än – kör första tävlingen!</td></tr>'}</table>
+      <div class="se-wrap"><table class="stats se-tab"><tr><th>#</th><th>Förare</th>${Array.from({ length: se.rounds }, (_, r) => { const x = se.res?.[r], t = x && TRACKS.find(k => k.id === x.trk); return `<th title="${t ? esc(t.name) : 'Ej körd än'}">R${r + 1}${t ? `<small>${esc(t.name.split(/\s[–-]\s/)[0])}</small>` : ''}</th>`; }).join('')}<th>Poäng</th><th>Segrar</th></tr>
+      ${rows.map(([n, p], i) => `<tr class="${n === netName() ? 'me' : ''}"><td>${i + 1}${se.done.length >= se.rounds && !i ? ' 🏆' : ''}</td><td>${esc(n)}</td>${Array.from({ length: se.rounds }, (_, r) => { const x = se.res?.[r]; if (!x) return '<td class="dim">·</td>'; const q = x.ord.indexOf(n) + 1; return `<td class="pl${q && q <= 3 ? ' p' + q : ''}">${q ? q + '.' : '–'}</td>`; }).join('')}<td><b>${p}</b></td><td>${se.wins[n] || 0}</td></tr>`).join('') || `<tr><td colspan="${se.rounds + 4}">Inga poäng än – kör första tävlingen!</td></tr>`}</table></div>
+      ${se.done.length > (se.res || []).filter(Boolean).length ? '<p class="dim">Omgångar som kördes före uppdateringen visas bara som poäng (·).</p>' : ''}
       <p class="dim">Poäng efter slutplacering i varje tävling: ${SEASON_PTS.slice(0, 6).join('-')}… Tabellen sparas och kan fortsätta en annan dag.</p>
       ${H ? '<div class="row"><button class="btn small ghost" data-act="se-off">Pausa säsongen</button></div>' : ''}`; }
   else if (H) h += `<p class="dim">Kör flera tävlingar i rad med en gemensam poängtabell som sparas.</p>
@@ -575,7 +579,7 @@ function seasonPanel(room) {
 function seasonTick(room) { // när en tävling är klar: värden delar ut säsongspoäng en gång
   const cs = room.champ, se = room.cfg.season; if (!se || !cs?.done || !cs.overall) return;
   const key = room.code + ':' + cs.overall.map(r => r.id + r.pos).join(',');
-  if (room.isHost && !se.done.includes(key) && se.done.length < se.rounds) { const n = { ...se, pts: { ...se.pts }, wins: { ...se.wins }, done: [...se.done, key] };
+  if (room.isHost && !se.done.includes(key) && se.done.length < se.rounds) { const n = { ...se, pts: { ...se.pts }, wins: { ...se.wins }, done: [...se.done, key], res: [...(se.res || []), ...Array(Math.max(0, se.done.length - (se.res?.length || 0))).fill(null), { trk: room.cfg.track, ord: cs.overall.map(r => r.name || '?') }] };
     cs.overall.forEach((r, i) => { const nm = r.name || '?'; n.pts[nm] = (n.pts[nm] || 0) + (SEASON_PTS[i] || 0); if (i === 0) n.wins[nm] = (n.wins[nm] || 0) + 1; });
     (S.onSeasons ||= {})[n.id] = n; save(); room.setCfg({ season: n }); }
   else if (!room.isHost) { const o = (S.onSeasons ||= {})[se.id]; if (!o || o.done.length < se.done.length) { S.onSeasons[se.id] = se; save(); } }
@@ -625,8 +629,8 @@ function netRace(h, grid, cfg, lead, watch) {
   const amLead = lead === room.id;
   const defs = grid.filter(g => watch || g.id !== room.id).map(g => g.ai
     ? { name: g.name, paint: g.paint, bw: g.bw, diff: g.diff, powScale: g.powScale, spec: g.spec, nid: g.id, remote: watch || !amLead }
-    : { name: g.name, paint: g.car.paint, bw: g.car.bw, num: g.car.num, skill: 1, spec: cfg.cm ? specCar(cfg.cm) : g.car.spec, nid: g.id, remote: true });
-  const base = { trackId: cfg.track, laps: cfg.laps, gridRows: 2, useJoker: !!cfg.joker, sideContact: true, mode: 'heat', weather: cfg.weather, tod: cfg.tod || 'dag', net: room, heatId: h, netLead: lead, specLvl: cfg.cm || 0 };
+    : { name: g.name, paint: g.car.paint, bw: g.car.bw, num: g.car.num, skill: 1, spec: cfg.cm ? specCar(cfg.cm) : cfg.hc && cfg.hcSpec ? cfg.hcSpec : g.car.spec, nid: g.id, remote: true });
+  const base = { trackId: cfg.track, laps: cfg.laps, gridRows: 2, useJoker: !!cfg.joker, sideContact: true, mode: 'heat', weather: cfg.weather, tod: cfg.tod || 'dag', net: room, heatId: h, netLead: lead, specLvl: cfg.cm || 0, playerSpec: !cfg.cm && cfg.hc && cfg.hcSpec ? cfg.hcSpec : null };
   if (watch) { const hum = defs.filter(d => grid.find(g => g.id === d.nid && !g.ai)), first = hum.find(d => d.nid !== room.id) || hum[0] || defs[0], rest = defs.filter(d => d !== first); // börja på en kompis, inte en AI
     startRace({ ...base, opps: rest, player: first, spectate: true, grid: 0, title: '👁 Online', onDone: () => { room.backToLobby(); U.view = 'online'; render(); } }); return; }
   startRace({ ...base, opps: defs, grid: my, title: 'Online – ' + (ON.champ?.heats?.find(x => x.id === h)?.name || 'heat'),
@@ -636,13 +640,14 @@ function netRace(h, grid, cfg, lead, watch) {
 // ---- värdens mästerskapsmotor ----
 function hostStart() {
   const room = ON.room, cfg = room.cfg; if (!room || !room.isHost) return;
+  if (cfg.hc && !cfg.cm) room.setCfg({ hcSpec: spec() }); // alla kör värdens bil – med värdens senaste inställningar
   const humans = room.members.filter(m => m.car && m.car.spec);
   const maxHp = Math.max(curve(spec()).hp, ...humans.map(m => m.car.hp || 0)), nAi = Math.max(0, Math.min(30, cfg.ai)), opps = makeOpps(nAi, 1, Math.max(0.01, cfg.diff / 100), currentInsp().cls, maxHp + 500, cfg.cm || 0, cfg.season ? 'on:' + cfg.season.id : null); // AI: 500 hk mer än starkaste spelaren (spec-läge: en nivå högre)
   if (!cfg.cm) { // egen bil: AI:n kör samma bil som den starkaste spelaren, men med 100 hk mer
-    const best = humans.reduce((b, m) => (m.car.hp || 0) > (b?.car.hp || 0) ? m : b, null), bs = best ? best.car.spec : spec(), bh = Math.max(1, curve(bs).hp);
+    const best = cfg.hc ? null : humans.reduce((b, m) => (m.car.hp || 0) > (b?.car.hp || 0) ? m : b, null), bs = cfg.hc ? cfg.hcSpec : best ? best.car.spec : spec(), bh = Math.max(1, curve(bs).hp);
     for (const o of opps) { o.spec = bs; o.powScale = (bh + 100) / bh; }
   }
-  ON.O = {}; const ents = humans.map(m => ({ id: m.id, name: m.name, human: 1, kgHp: cfg.cm ? curve(specCar(cfg.cm)).kgHp : m.car.kgHp || 7 }));
+  ON.O = {}; const ents = humans.map(m => ({ id: m.id, name: m.name, human: 1, kgHp: cfg.cm ? curve(specCar(cfg.cm)).kgHp : cfg.hc ? curve(cfg.hcSpec).kgHp : m.car.kgHp || 7 }));
   opps.forEach((o, i) => { const id = 'ai' + i; ON.O[id] = { id, ai: 1, ...o }; ents.push({ id, name: o.name, diff: o.diff, kgHp: curve(o.spec).kgHp / (o.powScale || 1) }); });
   const trkLen = getTrack(cfg.track).len;
   ON.ch = ents.length <= cfg.perStart
@@ -732,7 +737,7 @@ function online() {
       <div class="row"><span class="lbl">Varv ${cfg.laps}</span><input type="range" min="1" max="100" step="1" value="${cfg.laps}" data-in="on-laps"></div>
       <div class="row"><span class="lbl">AI-motståndare ${cfg.ai}</span><input type="range" min="0" max="30" step="1" value="${cfg.ai}" data-in="on-ai"></div>
       <div class="row"><span class="lbl">AI-svårighet ${cfg.diff} %</span><input type="range" min="1" max="100" step="1" value="${cfg.diff}" data-in="on-diff"></div>
-      ${carModeRow('on-cm', cfg.cm || 0)}
+      ${carModeRow('on-cm', cfg.hc ? 'hc' : cfg.cm || 0, netMe().car)}
       <div class="row"><span class="lbl">Förare per start</span>${[4, 5, 6, 7, 8].map(n => C('perStart', n)).join('')}<span class="lbl">Jokerlap</span>${C('joker', cfg.joker ? 0 : 1, cfg.joker ? 'PÅ' : 'AV')}</div>
       <p class="dim">${room.members.length + cfg.ai} förare totalt → ${room.members.length + cfg.ai > cfg.perStart ? `mästerskap med ${Math.ceil((room.members.length + cfg.ai) / cfg.perStart)} alkuerä-heat` : 'ett heat'}.</p>`}
       ${cs && cs.all && !cs.done ? `<div class="row"><button class="btn" data-act="on-next">▶ Starta nästa omgång</button><button class="btn ghost danger" data-act="on-reset">Avbryt mästerskapet</button></div>`
@@ -742,7 +747,7 @@ function online() {
     h += `<section class="panel"><h2>Värdens tävlingsinställningar</h2><p class="dim">Ställs in av ${esc(hm?.name || 'värden')} – uppdateras direkt när värden ändrar något.</p><table class="stats">
       <tr><td>Bana</td><td><b>${trk.name}</b> · ${SURF[trk.surface].name}</td></tr><tr><td>Väder</td><td>${(WEATHER.find(w => w[0] === cfg.weather) || WEATHER[0])[1]}</td></tr><tr><td>Tid på dygnet</td><td>${(TOD.find(w => w[0] === (cfg.tod || 'dag')) || TOD[1])[1]}</td></tr>
       <tr><td>Varv</td><td>${cfg.laps}</td></tr><tr><td>AI-motståndare</td><td>${cfg.ai} st · svårighet ${cfg.diff} %</td></tr>
-      <tr><td>Bilar</td><td>${cfg.cm ? `Alla: Mazda 626 Spec ${cfg.cm} (${SPEC_CARS[cfg.cm].hp} hk) · AI Spec ${aiSpec(cfg.cm)}` : 'Egen bil från garaget'}</td></tr>
+      <tr><td>Bilar</td><td>${cfg.cm ? `Alla: Mazda 626 Spec ${cfg.cm} (${SPEC_CARS[cfg.cm].hp} hk) · AI Spec ${aiSpec(cfg.cm)}` : cfg.hc ? `<b>Alla har värdens bil</b>${hm?.car ? ` – ${esc(hm.car.model)}, ${esc(hm.car.hp)} hk, med värdens inställningar` : ''} · AI +100 hk` : 'Egen bil från garaget'}</td></tr>
       <tr><td>Förare per start</td><td>${cfg.perStart}</td></tr><tr><td>Jokerlap</td><td>${cfg.joker ? 'PÅ' : 'AV'}</td></tr>
       <tr><td>Upplägg</td><td>${n} förare → ${n > cfg.perStart ? `mästerskap med ${Math.ceil(n / cfg.perStart)} alkuerä-heat` : 'ett heat'}</td></tr>
       <tr><td>Säsong</td><td>${cfg.season ? `${esc(cfg.season.name)} · omgång ${Math.min(cfg.season.done.length + 1, cfg.season.rounds)}/${cfg.season.rounds}` : '–'}</td></tr></table></section>
@@ -1241,7 +1246,7 @@ const ACT = {
   },
   'on-retry'() { openRoom(ON.room.code, false); },
   'on-leave'() { leaveRoom(); },
-  'on-cm'(a) { ON.room?.setCfg({ cm: +a }); return false; },
+  'on-cm'(a) { if (a === 'hc') ON.room?.setCfg({ cm: 0, hc: 1, hcSpec: spec() }); else ON.room?.setCfg({ cm: +a, hc: 0 }); return false; },
   'on-cfg'(a) { const [k, v] = a.split(':'); ON.room?.setCfg({ [k]: k === 'track' || k === 'weather' || k === 'tod' ? v : +v }); return false; },
   'on-copy'() { const l = roomLink(ON.room.code); try { navigator.clipboard.writeText(l); } catch (e) { } ON.copied = 1; setTimeout(() => { ON.copied = 0; if (U.view === 'online') render(); }, 1800); },
   'on-start'() { hostStart(); return false; },

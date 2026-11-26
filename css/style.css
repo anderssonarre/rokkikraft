@@ -330,3 +330,9 @@ ol.steps li { margin: 6px 0; line-height: 1.5; }
 .scr-in, .scr-out { font: 15px/1.6 var(--mono); padding: 10px 12px; margin: 0; }
 .scr-in { width: 100%; min-height: 6.6em; resize: vertical; background: transparent; color: #e8ece9; border: 0; outline: none; overflow-x: auto; }
 .scr-out { color: var(--hi); text-align: right; min-width: 9ch; border-left: 1px solid #ffffff1a; background: #ffffff06; white-space: pre; overflow: hidden; }
+/* säsongstabell med placering per race */
+.se-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.se-tab th small { display: block; font-size: .65rem; opacity: .7; font-weight: 400; white-space: nowrap; }
+.se-tab td.pl { text-align: center; font-family: var(--mono); }
+.se-tab td.p1 { color: #ffd23f; font-weight: 700; } .se-tab td.p2 { color: #d9dee3; font-weight: 700; } .se-tab td.p3 { color: #e0a060; font-weight: 700; }
+.se-tab th:first-child, .se-tab td:first-child { width: 2.5em; } .se-tab td:nth-child(2) { width: auto; white-space: nowrap; }
