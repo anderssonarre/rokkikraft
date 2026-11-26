@@ -1057,8 +1057,21 @@ function skolaInner() {
     ${U.skMsg ? `<p class="${U.skMsg.startsWith('✓') ? 'okbox' : 'warnbox'}">${U.skMsg}</p>` : ''}${t.done && t.why ? `<p class="dim">Lösning: ${t.why}</p>` : ''}
     <p class="dim">${K[L.id]?.ok || 0}/${SK_GOAL} rätt i den här övningen. Tolerans 1,5 %. Decimaler med komma eller punkt.</p></section>`;
 }
+/* klottruta: varje rad räknas ut som på en miniräknare (komma som decimal, ^, π, √(), ln(), log()) */
+function calcLine(line) {
+  let x = line.split(/[=:]/).pop().trim(); if (!x) return '';
+  x = x.replace(/(\d),(\d)/g, '$1.$2').replace(/(\d)\s+(?=\d)/g, '$1').replace(/[·×]/g, '*').replace(/÷/g, '/').replace(/[−–]/g, '-').replace(/\^/g, '**')
+    .replace(/π|pi/gi, '(P)').replace(/sqrt|√/gi, 'S').replace(/ln/gi, 'L').replace(/log/gi, 'G');
+  if (!/^[0-9.+\-*/()\sPSLGe]*$/.test(x) || !/\d|P/.test(x)) return '';
+  try { const r = Function('P', 'S', 'L', 'G', `"use strict";return (${x})`)(Math.PI, Math.sqrt, Math.log, Math.log10); return typeof r === 'number' && isFinite(r) ? '= ' + String(+r.toPrecision(6)).replace('.', ',') : ''; } catch (e) { return ''; }
+}
+const calcOut = txt => txt.split('\n').map(calcLine).join('\n');
+const curTask = () => U.exam ? U.exam.tasks[U.exam.i] : U.skTask;
 function taskHtml(t) {
+  const sc = t.scratch || '';
   return `<h3>${t.title}</h3><table class="stats given">${t.given.map(g => `<tr><td>${g[0]}</td><td>${g[1]}</td></tr>`).join('')}</table>
+    <div class="scratch"><small class="dim">✏️ Klottruta – räkna här. Varje rad räknas ut till höger, t.ex. <code>ṁf = 1600/0,43/42700*3600</code> (komma eller punkt, ^ för potens, π, √( ), ln( ))</small>
+      <div class="scr-wrap"><textarea id="skscr" class="scr-in" rows="${Math.max(4, sc.split('\n').length + 1)}" wrap="off" spellcheck="false" autocomplete="off" placeholder="Skriv dina uträkningar…">${esc(sc)}</textarea><pre class="scr-out" id="skscrOut" aria-live="polite">${esc(calcOut(sc))}</pre></div></div>
     <div class="asks">${t.asks.map((a, i) => `<label class="${t.marks ? (t.marks[i] ? 'right' : 'wrong') : ''}"><span>${a.label}</span><input type="text" inputmode="decimal" id="ska${i}" data-ans="${i}" value="${t.vals?.[i] ?? ''}" ${t.done ? 'disabled' : ''}>${t.done && !t.marks[i] ? `<small>Rätt: ${fmt(a.answer, a.dec ?? 2)}</small>` : ''}</label>`).join('')}</div>`;
 }
 function myEngineTask(lesson) { const s = spec(), rpm = Math.round((3000 + Math.random() * (s.redline - 3500)) / 250) * 250, e = engineAt(s, rpm); /* olika varvtal varje gång */ return ownTask(lesson, s, e, s.fuel); }
@@ -1450,6 +1463,9 @@ export function initUI() {
       const cost = key === 'rim' && v !== cs.tune.rim ? 220 : key === 'width' && v !== cs.tune.width ? TYRES[cs.tune.tyre || 'std'].price : 0;
       if (cost) { if (S.money < cost) { toast(`${key === 'rim' ? 'Nya fälgar' : 'Nya däck i den bredden'} kostar ${eur(cost)}.`); render(); return; } S.money -= cost; toast(`${key === 'rim' ? 'Nya fälgar' : 'Nya däck'} köpta (${eur(cost)}).`); if (key === 'width') cs.tyres = [cs.tune.tyre || 'std']; }
       cs.tune[key] = v; save(); render(); return; } const f = INP[el.dataset.in]; if (f && f(el.value) !== false) render(); });
+  document.addEventListener('input', e => { if (e.target.id !== 'skscr') return; const t = curTask(), el = e.target; if (t) t.scratch = el.value;
+    const o = document.getElementById('skscrOut'); if (o) o.textContent = calcOut(el.value); el.rows = Math.max(4, el.value.split('\n').length + 1); o && (o.scrollTop = el.scrollTop); });
+  document.addEventListener('scroll', e => { if (e.target.id === 'skscr') { const o = document.getElementById('skscrOut'); if (o) o.scrollTop = e.target.scrollTop; } }, true);
   document.addEventListener('input', e => { const el = e.target.closest('input[type=range][data-in]'); if (!el) return; const b = el.closest('label')?.querySelector('span b'); if (b && ['lambda', 'finalScale'].includes(el.dataset.in)) b.textContent = (+el.value).toFixed(2).replace('.', ','); });
   if (S.econReset) { delete S.econReset; save(); toast('Ny ekonomi: du börjar om med 5 000 € och en Mazda 626 i originalskick. Namn, statistik och rekord är kvar.'); }
   try { const c = cleanCode(new URLSearchParams(location.search).get('rum')); if (c.length === 4) { ON.code = c; U.view = 'online'; } } catch (e) { }

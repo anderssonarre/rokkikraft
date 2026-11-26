@@ -323,3 +323,10 @@ ol.steps li { margin: 6px 0; line-height: 1.5; }
   .split { display: block; } .split-l { padding-bottom: 50vh; }
   .split-r { position: fixed; left: 0; right: 0; bottom: 0; top: auto; height: 48vh; z-index: 40; background: #0e1218; border-top: 2px solid var(--hi); padding: 6px; }
 }
+/* klottruta ovanför svarsfälten */
+.scratch { display: flex; flex-direction: column; gap: 6px; margin: 4px 0 10px; }
+.scratch code { font-family: var(--mono); color: var(--hi); }
+.scr-wrap { display: grid; grid-template-columns: minmax(0, 1fr) auto; border: 1px dashed #ffffff40; border-radius: 10px; background: #0b0f14; overflow: hidden; }
+.scr-in, .scr-out { font: 15px/1.6 var(--mono); padding: 10px 12px; margin: 0; }
+.scr-in { width: 100%; min-height: 6.6em; resize: vertical; background: transparent; color: #e8ece9; border: 0; outline: none; overflow-x: auto; }
+.scr-out { color: var(--hi); text-align: right; min-width: 9ch; border-left: 1px solid #ffffff1a; background: #ffffff06; white-space: pre; overflow: hidden; }
