@@ -63,7 +63,8 @@ export function makeCar(def, trk, slot, isPlayer, gridRows = 2, totalCars = 6) {
 // Bakhjulsdrift: hur mycket sidogrepp bakaxeln behåller vid hjulspinn / fullt drivmoment / svetsad diff
 // Stabilitetshjälp (dämpning av överskottsgirning, 1/s): base = alltid, slide = under sladd (minskas av gas → går att hålla brett), center = extra när ratten är rak
 export const ASSIST = { base: 0.3, slide: 2.5, holdK: 1, center: 3, kb: 2.0 };
-export const RW = { sp: 0.3, fl: 0.7, wd: 0.5 }; // mildare: sladden går att fånga med motstyrning
+export const RW = { sp: 0.3, fl: 0.7, wd: 0.5 };
+export const DRIFT = { keep: 0.85, loss: 0.3 }; // driftfart: andel av sladdbromsningen som tas bort med fullgas / drivkraft som går förlorad i sladd // mildare: sladden går att fånga med motstyrning
 export function phys(c, dt, trk) {
   const s = c.spec, surf = trk.surfAt ? trk.surfAt(c.i) : trk.surf;
   const L = s.wb, a = L * (1 - s.front), b = L * s.front, m = s.mass, fwd = s.drv === 'fwd', awd = s.drv === 'awd';
@@ -236,7 +237,16 @@ export function phys(c, dt, trk) {
       ? 0.20 * FzTot * Math.sin(Math.min(1.2, betaNow)) ** 2 * sg : 0;
     const drag = 0.6 * s.CdA * c.vx * Math.abs(c.vx) + (Math.abs(c.vx) > 0.2 ? crr * FzTot * sg : 0) + plowDrag;
     const cd = Math.cos(delta), sd = Math.sin(delta);
-    const axn = (Fxf * cd - Fyf * sd + Fxr - drag) / m, ayn = (Fyf * cd + Fxf * sd + Fyr) / m;
+    let axn = (Fxf * cd - Fyf * sd + Fxr - drag) / m, ayn = (Fyf * cd + Fxf * sd + Fyr) / m;
+    // Driftfart: med gasen i botten under en sladd behåller bilen farten och accelererar (bara lite sämre än rakt fram).
+    // Däckens sidokraft och grusplogen bromsar annars bilen kraftigt i färdriktningen när den går snett; med gas tas
+    // största delen av det bort. Svängkraften (vinkelrätt mot färdriktningen) och girningen är oförändrade.
+    { const vv = Math.hypot(c.vx, c.vy);
+      if (!c.ai && vv > 5 && groundContact > 0.3 && c.thr > 0.1 && c.brk < 0.1 && !c.hb && c.vx > 0) { // spelare (AI:n kör som förut)
+        const bd = Math.abs(Math.atan2(c.vy, c.vx)), dW = clamp((bd - 0.08) / 0.18, 0, 1); // från ca 5° snett (vanlig kurvtagning påverkas inte)
+        if (dW > 0) { const ux = c.vx / vv, uy = c.vy / vv, along = axn * ux + ayn * uy, drive = Math.max(0, ((Fxf * cd + Fxr) * ux + Fxf * sd * uy) / m), scrub = Math.min(0, along - drive);
+          const keep = 1 - DRIFT.keep * dW * Math.min(1, c.thr * 1.25), nA = drive * (1 - DRIFT.loss * dW) + scrub * keep, d = nA - along;
+          axn += ux * d; ayn += uy * d; } } }
     let Mz = a * (Fyf * cd + Fxf * sd) - b * Fyr;
     if (welded && !fwd && !awd && groundContact > 0.3) { // låst axel motverkar girning så länge hjulen greppar (understyr in i kurvan) – sedan släpper det
       const tw = 0.74, need = Math.abs(c.r) * tw / Math.max(3, Math.abs(c.vx)), grip = Math.max(0, capR - Math.abs(Fxr)) * 0.5;
