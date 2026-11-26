@@ -1,5 +1,5 @@
 // Alla menyvyer + tävlingsdagens logik enligt ROKKIRALLI RY SÄÄNTÖKIRJA (21.04.2026).
-import { TYRES, CARS, ENGINES, CLASSES, CLASS_RULES, BUILD, UPG, FUELS, PAINTS, TRACKS, SURF, CAREER, FINALS, calcPoints, PRIZE_SHARE, CODES, MARKS, DRIVERS, KOMP, XP_LEVELS, XP_UNLOCKS } from './data.js';
+import { TYRES, CARS, ENGINES, CLASSES, CLASS_RULES, BUILD, UPG, FUELS, PAINTS, TRACKS, SURF, CAREER, FINALS, calcPoints, PRIZE_SHARE, CODES, MARKS, DRIVERS, KOMP, XP_LEVELS, XP_UNLOCKS, FAULTS, USED_ADS, USED_SELLERS, SPONSORS } from './data.js';
 import { buildSpec, engineAt, curve, carById, engById, fuelById, defaultTune, fmt, checkInspection, formatCarNum, SETUP_DEF, SPEC_CARS, specCar } from './engine.js';
 import { S, save, reset, activeCar } from './state.js';
 import { getTrack } from './track.js';
@@ -10,6 +10,7 @@ import { Room, Board, Presence, makeCode, cleanCode } from './net.js';
 import { parseGlb, saveCustomModel, deleteCustomModel, customModelInfo, customModel, materialStats } from '../graphics/assets/ModelLoader.js';
 import { newChamp, simHeat, setResult, advance, roundDone, myHeat, canSkip, skip as chSkip, heatName, whereIs, sortRows, ROUND, FIN, A_TABLE, NORMAL_PRIZE } from './champ.js';
 import { Showroom } from './view3.js';
+import { hash, mulberry } from './gl.js';
 import { MUSIC } from './music.js';
 import { ACTIONS, binds, getPad, padName, isWheel, captureNext } from './input.js';
 
@@ -141,7 +142,7 @@ function karriar() {
     ${aid('tc', 'Antispinn', 'Drivhjulen spinner inte loss.', 'Fullgas ger hjulspinn; bakhjulsdrivare sladdar på gasen.')}
     ${aid('auto', 'Automatväxling', 'Bilen växlar själv vid effekttoppen.', 'Växla själv med E / Q.')}</div></section>`;
 
-  if (U.view !== 'play') return h + careerLevels(insp, rules);
+  if (U.view !== 'play') return h + sponsorPanel() + careerLevels(insp, rules);
   h += `<section class="panel"><h2>Spela – välj bana</h2>
     <div class="chips">${TRACKS.map(t => {
       const gt = getTrack(t.id);
@@ -335,7 +336,7 @@ function evStart(arg) {
   save();
   const cc = champCfg(), laps = Math.max(rules.minLaps, L.id === 'mestari' ? 3 : rules.minLaps), trk = getTrack(e.track);
   const diff = Math.max(0.01, Math.min(1, cc.diff / 100 + [-0.08, 0, 0.05, 0.1][+li]));
-  const cm = cc.cm || 0, opps = makeOpps(cc.perStart * cc.heats - 1, +li, diff, insp.cls, curve(spec()).hp + 500, cm), O = {}; // AI: 500 hk mer än du (spec-läge: en spec-nivå högre)
+  const cm = cc.cm || 0, opps = makeOpps(cc.perStart * cc.heats - 1, +li, diff, insp.cls, curve(spec()).hp + 500, cm), O = {}; if (S.sponsor?.goal === 'beat' && opps[0] && !opps.some(o => o.name === S.sponsor.rival)) opps[0].name = S.sponsor.rival; // sponsorns rival är med // AI: 500 hk mer än du (spec-läge: en spec-nivå högre)
   const ents = [{ id: 'me', name: `${S.name || 'Du'}`, me: 1, kgHp: curve(cm ? specCar(cm) : spec()).kgHp, diff: 1 }];
   opps.forEach((o, i) => { const id = 'ai' + i; O[id] = { ...o, nid: id }; ents.push({ id, name: o.name, diff: o.diff, kgHp: curve(o.spec).kgHp / (o.powScale || 1) }); });
   U.ev = {
@@ -368,6 +369,7 @@ function evRun(heatId, watch) {
 
 function evAfter(res, h) {
   const ev = U.ev;
+  ev.maxDmg = Math.max(ev.maxDmg || 0, res.dmg || 0); if (res.pos === 1 && res.finished) ev.heatWins = (ev.heatWins || 0) + 1; if (!res.finished) ev.dnf = true;
   ev.dmg = res.dmg; ev.parts = res.parts || ev.parts; ev.wear = res.wear || ev.wear; ev.radLeak = res.radLeak; ev.exhaustLoose = !!res.exhaustLoose; ev.needKaatoInsp = !!res.kaato;
   ev.last = res; ev.protestable = !!res.sanction;
   ev.hist.push({ stage: heatName(h), pos: res.pos, flag: res.flag });
@@ -391,6 +393,7 @@ function evEnd() {
   const sf = ev.rules.saleFrom; if (fin && sf && sf !== 'semi' && FIN.indexOf(fin.letter) <= FIN.indexOf(sf)) ev.saleEligible = true;
   ev.over = { pos: me.pos, prize: me.prize, pts: me.pts, final: fin ? fin.letter : 'out' };
   me.prize = withBonus(me.prize); S.money += me.prize;
+  ev.spTxt = sponsorEval(ev, me); if (ev.spTxt) U.toast = ev.spTxt;
   const old = S.career.res[ev.e.id]; if (!old || me.pts > old.pts) S.career.res[ev.e.id] = { final: ev.over.final, pos: me.pos, pts: me.pts };
   save();
 }
@@ -484,7 +487,7 @@ function xpPanel() {
     <p class="dim">${fmt(xp)} XP${hi ? ` · ${fmt(hi - xp)} XP kvar till nivå ${l + 1}` : ' · högsta nivån'}${xpBonus() ? ` · +${xpBonus()} % prispengar` : ''}${next ? ` · Nästa upplåsning (nivå ${next}): ${XP_UNLOCKS[next].text}` : ''}</p>
     <p class="dim">XP får du för varje heat: mer för bra placering, vinst, målgång och rent lopp.</p></section>`;
 }
-function countRace(trackId, res) { giveXp(res); if (res && isFinite(res.bestLap) && res.bestLap > 5 && !res.flag) record(trackId, res.bestLap); /* bästa varv från alla lopp går till topplistan */ const st = stats(), d = Math.max(0, res.dur || 0); st.sec += d; st.races++; if (res.pos === 1 && res.finished) st.wins++; const t = st.tracks[trackId] || (st.tracks[trackId] = { n: 0, sec: 0 }); t.n++; t.sec += d; save(); pushBoard(); }
+function countRace(trackId, res) { giveXp(res); { const cs = activeCar(); if (cs?.faults && Object.values(cs.faults).some(f => !f.found)) revealFaults(cs, 'Efter loppet märkte du'); } if (res && isFinite(res.bestLap) && res.bestLap > 5 && !res.flag) record(trackId, res.bestLap); /* bästa varv från alla lopp går till topplistan */ const st = stats(), d = Math.max(0, res.dur || 0); st.sec += d; st.races++; if (res.pos === 1 && res.finished) st.wins++; const t = st.tracks[trackId] || (st.tracks[trackId] = { n: 0, sec: 0 }); t.n++; t.sec += d; save(); pushBoard(); }
 function record(track, lap) { if (!S.records[track] || lap < S.records[track]) { S.records[track] = lap; save(); } }
 
 function startRace(o) {
@@ -753,8 +756,53 @@ function statRows(s, k, k0) {
 }
 
 // Bilhandeln: alla bilmodeller med köp/välj (används i garaget och när man saknar bil)
+// ---- begagnatmarknaden: billiga bilar med dolda fel (My Summer Car-stil) ----
+function usedOffers() {
+  const st = stats(), key = Math.floor((st.races || 0) / 3); // nya annonser var 3:e lopp
+  if (S.used?.key === key && S.used.offers) return S.used.offers;
+  const pool = CARS.filter(c => !S.cars[c.id] && c.price > 0), r = mulberry(hash(String(key) + pid())), offers = [];
+  for (let i = 0; i < 3 && pool.length; i++) { const c = pool.splice(Math.floor(r() * pool.length), 1)[0], fk = Object.keys(FAULTS).filter(() => r() < 0.45);
+    if (!fk.length) fk.push(Object.keys(FAULTS)[Math.floor(r() * 5)]);
+    const pr = Math.round(c.price * (0.42 + r() * 0.18) / 10) * 10;
+    offers.push({ id: 'u' + key + i, car: c.id, price: pr, km: Math.round(180 + r() * 260) * 1000, year: 1984 + Math.floor(r() * 20), ad: USED_ADS[Math.floor(r() * USED_ADS.length)], seller: USED_SELLERS[Math.floor(r() * USED_SELLERS.length)], faults: fk, sold: false }); }
+  S.used = { key, offers }; save(); return offers;
+}
+function usedMarket() {
+  const O = usedOffers();
+  return `<section class="panel"><span class="kick">BEGAGNAT · NETTIAUTO</span><h2>Begagnade bilar</h2>
+    <p class="dim">Mycket billigare än nya – men du vet inte vad som är fel förrän du kört bilen eller låtit undersöka den. Nya annonser var 3:e lopp.</p>
+    <div class="cards">${O.map(o => { const c = carById(o.car), own = !!S.cars[o.car];
+      return `<div class="card car"><div class="c-top"><span>${o.year} · ${fmt(o.km)} km</span><b>${o.sold ? 'SÅLD' : eur(o.price)}</b></div><strong>${c.name}</strong><em>”${esc(o.ad)}” – ${esc(o.seller)}</em>
+        <p class="dim">Ny: ${eur(c.price)}. Okänt skick.</p>${o.sold ? '' : own ? '<p class="dim">Du äger redan en sådan.</p>' : `<button class="btn small" data-act="used-buy" data-arg="${o.id}" ${S.money >= o.price ? '' : 'disabled'}>Köp begagnad (${eur(o.price)})</button>`}</div>`; }).join('')}</div></section>`;
+}
+// bilens skick i garaget: kända fel + laga på verkstad eller själv
+function conditionPanel() {
+  const cs = activeCar(), F = cs?.faults; if (!F || !Object.keys(F).length) return '';
+  const known = Object.entries(F).filter(([, f]) => f.found), open = known.filter(([, f]) => !f.fixed), hidden = Object.values(F).some(f => !f.found);
+  return `<section class="panel"><h2>Bilens skick (begagnad)</h2>
+    ${known.length ? `<table class="stats">${known.map(([k, f]) => `<tr><td><b>${f.fixed ? '✓' : '⚠'} ${FAULTS[k].name}</b><br><small class="dim">${f.fixed ? 'Lagad' : FAULTS[k].desc}</small></td><td>${f.fixed ? '' : `<button class="btn small" data-act="fault-fix" data-arg="${k}" ${S.money >= FAULTS[k].fix ? '' : 'disabled'}>Verkstad ${eur(FAULTS[k].fix)}</button> <button class="btn small ghost" data-act="fault-diy" data-arg="${k}" ${S.money >= FAULTS[k].diy ? '' : 'disabled'}>Själv ${eur(FAULTS[k].diy)}</button>`}</td></tr>`).join('')}</table>
+      <p class="dim">Verkstaden lagar alltid. Laga själv är billigare (bara delar) men lyckas inte alltid – då är delarna slut och du får försöka igen.</p>` : ''}
+    ${hidden ? `<p>Bilen har inte undersökts ordentligt. Fel visar sig efter första loppet – eller låt en mekaniker kolla.</p><div class="row"><button class="btn small" data-act="fault-inspect" ${S.money >= 40 ? '' : 'disabled'}>🔍 Undersök bilen (40 €)</button></div>` : !open.length ? '<p class="okbox">Alla kända fel är lagade – bilen är i fint skick.</p>' : ''}</section>`;
+}
+function revealFaults(cs, why) { if (!cs?.faults) return; const nw = Object.entries(cs.faults).filter(([, f]) => !f.found); nw.forEach(([, f]) => f.found = true); if (nw.length) U.toast = `🔧 ${why}: ${nw.map(([k]) => FAULTS[k].name).join(', ')}`; }
+// ---- sponsorer ----
+function sponsorOffers() { const st = stats(), key = Math.floor((st.races || 0) / 5); if (S.spOffers?.key === key) return S.spOffers.list; const r = mulberry(hash('sp' + key + pid())), L = [...SPONSORS].sort(() => r() - 0.5).slice(0, 3).map(x => ({ ...x, rival: DRIVERS[Math.floor(r() * DRIVERS.length)] || 'Pena Rämäkkö' })); S.spOffers = { key, list: L }; save(); return L; }
+function sponsorPanel() {
+  const sp = S.sponsor;
+  if (sp) return `<section class="panel"><span class="kick">SPONSOR</span><h2>${esc(sp.name)}</h2><p>${eur(sp.base)} per tävling · bonus ${eur(sp.bonus)} om du klarar: <b>${esc(sp.text)}${sp.goal === 'beat' ? ` (${esc(sp.rival)})` : ''}</b></p>
+    <p class="dim">Tävlingar kvar på kontraktet: ${sp.left} · klarade mål hittills: ${sp.hits || 0}</p><div class="row"><button class="btn small ghost" data-act="sp-quit">Säg upp kontraktet</button></div></section>`;
+  return `<section class="panel"><span class="kick">SPONSORER</span><h2>Sponsorerbjudanden</h2><p class="dim">En sponsor betalar för varje tävling i karriären och ger en bonus varje gång du klarar deras mål. Kontraktet gäller 3 tävlingar.</p>
+    <div class="cards">${sponsorOffers().map((o, i) => `<div class="card"><strong>${esc(o.name)}</strong><p>${eur(o.base)} / tävling<br>Bonus <b>${eur(o.bonus)}</b>: ${esc(o.text)}${o.goal === 'beat' ? ` (${esc(o.rival)})` : ''}</p><button class="btn small" data-act="sp-take" data-arg="${i}">Skriv på</button></div>`).join('')}</div></section>`;
+}
+function sponsorEval(ev, me) {
+  const sp = S.sponsor; if (!sp) return ''; const ch = ev.ch, fin = ev.over?.final;
+  const ok = { top3: me.pos <= 3, clean: (ev.maxDmg || 0) <= 25, heatwin: (ev.heatWins || 0) > 0, final: fin === 'A', finish: !ev.dnf,
+    beat: (() => { const r = ch.overall.find(o => o.name === sp.rival); return !r || me.pos < r.pos; })() }[sp.goal];
+  const pay = sp.base + (ok ? sp.bonus : 0); S.money += pay; sp.left--; if (ok) sp.hits = (sp.hits || 0) + 1;
+  const txt = `💼 ${sp.name}: ${eur(sp.base)}${ok ? ` + bonus ${eur(sp.bonus)} (målet klarat!)` : ' (målet missat)'}`; if (sp.left <= 0) { S.sponsor = null; } return txt + (sp.left <= 0 ? ' · kontraktet är slut' : '');
+}
 function carList() {
-  return `<section class="panel"><h2>Bilmodeller (${CARS.length} dokumenterade Rokkirallibilar)</h2><p class="dim"><b>Vetari (etuveto)</b>: Volvo S40/V40, Mazda 3/6, Opel Astra/Vectra, VW Passat B5, Volvo 850/S70/V70 & Ford Mondeo. <b>Kardaani (takaveto)</b>: Opel Kadett/Ascona, Ford Sierra, Volvo 240/740/940, RWD-ombyggd Passat B5/Audi A4 2,8 V6 & BMW E36/E46. <b>Super</b>: Toyota Starlet, Opel Ascona (med Volvo-motor & BMW-låda), Ford Escort, BMW/Sierra Turbo & V8-Volvo!</p><div class="cards cars">${CARS.map(c => {
+  return usedMarket() + `<section class="panel"><h2>Bilmodeller (${CARS.length} dokumenterade Rokkirallibilar)</h2><p class="dim"><b>Vetari (etuveto)</b>: Volvo S40/V40, Mazda 3/6, Opel Astra/Vectra, VW Passat B5, Volvo 850/S70/V70 & Ford Mondeo. <b>Kardaani (takaveto)</b>: Opel Kadett/Ascona, Ford Sierra, Volvo 240/740/940, RWD-ombyggd Passat B5/Audi A4 2,8 V6 & BMW E36/E46. <b>Super</b>: Toyota Starlet, Opel Ascona (med Volvo-motor & BMW-låda), Ford Escort, BMW/Sierra Turbo & V8-Volvo!</p><div class="cards cars">${CARS.map(c => {
     const own = S.cars[c.id], ss = own ? spec(c.id) : stockSpec(c.id), kk = curve(ss);
     return `<div class="card car ${S.active === c.id ? 'sel' : ''} ${own ? 'own' : ''}"><div class="c-top"><span>${CLASSES[c.cls].toUpperCase()} · ${fmt(ss.Vd, 1)} L ${ss.cyl}-CYL</span><b>${own ? (S.active === c.id ? 'VALD' : 'ÄGD') : eur(c.price)}</b></div>
       <strong>${c.name}</strong><em>”${c.nick}” – ${c.tag}</em><p>${c.desc}</p>
@@ -855,7 +903,7 @@ function garage() {
     <span class="lbl">Nummer (${ CLASS_RULES[insp.cls]?.prefix || '1–999' })</span><input class="num" type="number" min="1" max="999" value="${cs.num}" data-in="num">
     <button class="chip s ${cs.bw !== 'bw' ? 'on' : ''}" data-act="num-bw" data-arg="wb">Svart på vit botten</button>
     <button class="chip s ${cs.bw === 'bw' ? 'on' : ''}" data-act="num-bw" data-arg="bw">Vit på svart botten</button></div></section>
-  ${glbPanel(S.active, car.name)}`;
+  ${conditionPanel()}${glbPanel(S.active, car.name)}`;
 
   // Delar
   for (const u of UPG) {
@@ -1180,6 +1228,17 @@ const ACT = {
       toast(currentInsp().ok ? '✓ Bilen går nu igenom alkukatsastus!' : `${b.name} klar.`);
     }
   },
+  'used-buy'(a) { const o = (S.used?.offers || []).find(x => x.id === a); if (!o || o.sold || S.cars[o.car] || S.money < o.price) return; const c = carById(o.car);
+    S.money -= o.price; o.sold = true;
+    S.cars[o.car] = { build: { strip: 1, cage: 1, seat: 1, net: 1, switch: 1 }, tyres: ['std'], upg: c.cls === 'super' ? { superkit: 1 } : {}, paint: pick(PAINTS.filter(p => !p.lvl)).id, num: 1 + Math.floor(Math.random() * 99), bw: 'wb', katsastusNo: 100 + Math.floor(Math.random() * 890), tune: defaultTune(),
+      used: { year: o.year, km: o.km }, faults: Object.fromEntries(o.faults.map(k => [k, { found: false, fixed: false, sign: Math.random() < 0.5 ? -1 : 1 }])) };
+    S.active = o.car; save(); toast(`${c.name} (${o.year}) köpt begagnad för ${eur(o.price)}. Kör ett lopp eller låt undersöka den för att se vad som är fel.`); window.scrollTo(0, 0); },
+  'fault-inspect'() { const cs = activeCar(); if (S.money < 40) return; S.money -= 40; revealFaults(cs, 'Mekanikern hittade'); if (!U.toast) U.toast = 'Mekanikern hittade inga fler fel.'; save(); },
+  'fault-fix'(a) { const cs = activeCar(), f = cs?.faults?.[a], F = FAULTS[a]; if (!f || f.fixed || S.money < F.fix) return; S.money -= F.fix; f.fixed = true; save(); toast(`✓ ${F.name} lagat på verkstaden (${eur(F.fix)}).`); },
+  'fault-diy'(a) { const cs = activeCar(), f = cs?.faults?.[a], F = FAULTS[a]; if (!f || f.fixed || S.money < F.diy) return; S.money -= F.diy;
+    if (Math.random() < F.diyOk) { f.fixed = true; toast(`🔧 Du lagade det själv! ${F.name} är fixat för ${eur(F.diy)}.`); } else toast(`😬 Det gick inte – ${F.name.toLowerCase()} är kvar och delarna (${eur(F.diy)}) är förbrukade. Försök igen eller ta den till verkstaden.`); save(); },
+  'sp-take'(a) { const o = sponsorOffers()[+a]; if (!o || S.sponsor) return; S.sponsor = { ...o, left: 3, hits: 0 }; save(); toast(`💼 Kontrakt med ${o.name} – 3 tävlingar.`); },
+  'sp-quit'() { S.sponsor = null; save(); },
   'car-buy'(a) {
     const c = carById(a);
     if (S.money >= c.price && !S.cars[a]) {

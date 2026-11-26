@@ -46,7 +46,7 @@ export function makeCar(def, trk, slot, isPlayer, gridRows = 2, totalCars = 6) {
     i: trk.w(Math.round(trk.n - back)), pf: trk.n - back, lat, prog: -back, onSurf: true,
     jokerDone: false, coneDown: false, jump: false, retired: false, kaato: false,
     sanction: '', sanctionT: Infinity, warnCount: 0,
-    finished: false, finishT: 0, flag: '', dmg: 0, temp: 82, exhaustLoose: false, steerDmg: 0, gearDmg: 0, pull: 0, gearLoss: 0,
+    finished: false, finishT: 0, flag: '', dmg: 0, temp: 82, exhaustLoose: false, steerDmg: 0, gearDmg: 0, pull: s.pull0 || 0, gearLoss: s.gearLoss0 || 0,
     fuelKg: 18.5, tireWearF: 0, tireWearR: 0, tireTemp: [55, 55, 52, 52], brakeTemp: 60,
     secT: 0, curSec: 0, sectors: [null, null, null],
     pow: isPlayer ? 1 : Math.max(0.7, Math.min(1.04, 0.4 + 0.6 * (def.skill || 1))),

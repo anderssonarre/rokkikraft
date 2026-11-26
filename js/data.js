@@ -1050,3 +1050,24 @@ export const TYRES = {
   cc: { id: 'cc', name: 'CrossClimate', price: 380, grip: 1.10, wear: 0.9, desc: 'Mycket högt grepp på alla underlag.' },
   ccplus: { id: 'ccplus', name: 'CrossClimate Plus', price: 420, grip: 1.13, wear: 0.85, desc: 'Ännu lite mer grepp och längre livslängd än CrossClimate.' },
 };
+
+// ---- Begagnade bilar: dolda fel (upptäcks efter första loppet eller vid undersökning, lagas på verkstad eller själv) ----
+export const FAULTS = {
+  rost: { name: 'Rost i trösklar och balkar', desc: 'Karossen är svag – bilen tar mer skada vid smällar och väger lite mer av all spackel.', fix: 420, diy: 160, diyOk: 0.7 },
+  motor: { name: 'Trött motor (låg kompression)', desc: 'Slitna kolvringar och ventiler – ungefär 20 % mindre effekt och den går varmare.', fix: 650, diy: 260, diyOk: 0.6 },
+  vaxel: { name: 'Sliten växellåda', desc: 'Högsta växeln hoppar ur och växlingarna är sega.', fix: 380, diy: 140, diyOk: 0.65 },
+  hjul: { name: 'Böjd länkarm', desc: 'Hjulinställningen är fel – bilen drar åt ena hållet.', fix: 220, diy: 70, diyOk: 0.8 },
+  kylare: { name: 'Igensatt kylare', desc: 'Kyler sämre – motorn blir varm i långa heat.', fix: 180, diy: 60, diyOk: 0.85 },
+};
+export const USED_ADS = ['Säljs i befintligt skick. Startar och går.', 'Bra bil, lite rost men inget farligt.', 'Har stått ett tag, nybesiktad 2019.', 'Ägd av pensionär, bara kört till kyrkan.', 'Byte mot moped kan diskuteras.', 'Gick bra förra säsongen, säljs pga flytt.', 'Motorn renoverad (enligt förra ägaren).', 'Snabb affär = bra pris!'];
+export const USED_SELLERS = ['Pena från Joutsa', 'Bilfirma Mäkinen', 'Raili, 78 år', 'Tuning-Tero', 'Ojalan Auto', 'Kalle i Kuopio', 'Romu-Ripa', 'Jussin Pajat'];
+
+// ---- Sponsorer: betalar per tävling och en bonus om målet klaras ----
+export const SPONSORS = [
+  { id: 'konepaja', name: 'Kiviniemen Konepaja', base: 120, bonus: 450, goal: 'top3', text: 'Sluta topp 3 i tävlingen' },
+  { id: 'lakka', name: 'Lahden Lakka & Lack', base: 90, bonus: 380, goal: 'clean', text: 'Kör utan att skadan någon gång går över 25 %' },
+  { id: 'teboil', name: 'Turbo-Teboil', base: 140, bonus: 300, goal: 'heatwin', text: 'Vinn minst ett heat' },
+  { id: 'rengas', name: 'Rengas-Rauno', base: 100, bonus: 420, goal: 'beat', text: 'Placera dig före sponsorns rival' },
+  { id: 'sauna', name: 'Saunamaailma Oy', base: 160, bonus: 600, goal: 'final', text: 'Kör A-finalen' },
+  { id: 'grilli', name: 'Grilli-Kioski Nakki', base: 70, bonus: 250, goal: 'finish', text: 'Gå i mål i alla dina heat' },
+];

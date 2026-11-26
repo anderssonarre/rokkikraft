@@ -82,6 +82,13 @@ export function buildSpec(carId, cs, tune) {
   // specialkod-bil: exakt 3000 hk, 250 kW kylare, dubbelt grepp
   if (cs?.perks?.cool250) s.cool = Math.max(s.cool, 250);
   if (cs?.perks?.grip2) s.gripX = Math.max(s.gripX || 1, 2);
+  // dolda/kända fel på begagnade bilar (se FAULTS i data.js) – påverkar bilen tills de lagas
+  const F = cs?.faults || {};
+  if (F.motor && !F.motor.fixed) { s.tqS *= 0.8; s.cool = (s.cool || 0) * 0.9; }
+  if (F.rost && !F.rost.fixed) { s.dmg *= 1.4; s.mass += 18; }
+  if (F.vaxel && !F.vaxel.fixed) { s.shift *= 1.7; s.gearLoss0 = 1; }
+  if (F.hjul && !F.hjul.fixed) s.pull0 = F.hjul.sign * 0.035 || 0.035;
+  if (F.kylare && !F.kylare.fixed) s.cool = (s.cool || 0) * 0.78;
   if (cs?.perks?.hpT) { const h0 = curve(s).hp; if (h0 > 0) s.tqS *= cs.perks.hpT / h0; if (cs.perks.hpT > 200) s.cool = Math.max(s.cool, 40 + cs.perks.hpT * 0.12); } // spec-bil: exakt effekt + kylning som räcker
   if (cs?.perks?.hp3000) { const h0 = curve(s).hp; if (h0 > 0) s.tqS *= 3000 / h0; }
   return s;
