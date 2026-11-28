@@ -12,6 +12,7 @@ import { revealFaults, sponsorEval } from './garage.js';
 import { karriar } from './karriar.js';
 import { pushBoard } from './top.js';
 import { after, render } from '../ui.js';
+import { achieve, achRace } from './prestationer.js';
 
 // ---------- tävlingsdag ----------
 export const AI_UPG_STD = [{}, { insug: 1, avgas: 1, dack: 1, vikt: 1 }, { insug: 2, avgas: 1, kam: 1, dack: 2, vikt: 2, vaxel: 1 }, { insug: 2, avgas: 2, kam: 2, dack: 2, vikt: 3, vaxel: 1, fjad: 2 }];
@@ -148,7 +149,7 @@ export function svDo(ev, id) {
   const sv = ev.service, j = svJobs(ev).find(x => x.id === id); if (!j || !svOpen(sv)) return false;
   if (j.min > sv.left) { toast(`⏱ ${j.n.slice(2).trim()} tar ${j.min} min – bara ${sv.left} min kvar av servicen.`); return false; }
   if (S.money < j.cost) { toast(`Du har inte råd (${eur(j.cost)}).`); return false; }
-  S.money -= j.cost; sv.left -= j.min; sv.log.push(j.n);
+  S.money -= j.cost; sv.left -= j.min; sv.log.push(j.n); if (sv.log.length >= 3) achieve('service');
   if (id === 'body') ev.dmg = Math.max(0, ev.dmg - 30); else if (id === 'rad') ev.radLeak = false; else if (id === 'exh') ev.exhaustLoose = false;
   else if (id === 'steer') ev.parts = { ...ev.parts, steer: 0 }; else if (id === 'gear') ev.parts = { ...ev.parts, gear: 0 }; else if (id === 'tyres') ev.wear = [0, 0];
   save(); return true;
@@ -186,7 +187,7 @@ export function evEnd() {
   const fin = ch.history.filter(r => r.round === 'final').find(r => r.heats[0].ids.includes('me'));
   if (ev.cleanDay && S.warnings > 0) { S.warnings = 0; toast('✓ Ren tävling körd – varningslistan är nollställd!'); }
   const sf = ev.rules.saleFrom; if (fin && sf && sf !== 'semi' && FIN.indexOf(fin.letter) <= FIN.indexOf(sf)) ev.saleEligible = true;
-  ev.over = { pos: me.pos, prize: me.prize, pts: me.pts, final: fin ? fin.letter : 'out' };
+  ev.over = { pos: me.pos, prize: me.prize, pts: me.pts, final: fin ? fin.letter : 'out' }; if (me.pos === 1) achieve('champ');
   me.prize = withBonus(me.prize); S.money += me.prize;
   ev.spTxt = sponsorEval(ev, me); if (ev.spTxt) U.toast = ev.spTxt;
   const old = S.career.res[ev.e.id]; if (!old || me.pts > old.pts) S.career.res[ev.e.id] = { final: ev.over.final, pos: me.pos, pts: me.pts };
@@ -278,7 +279,7 @@ export function xpPanel() {
     <p class="dim">${fmt(xp)} XP${hi ? ` · ${fmt(hi - xp)} XP kvar till nivå ${l + 1}` : ' · högsta nivån'}${xpBonus() ? ` · +${xpBonus()} % prispengar` : ''}${next ? ` · Nästa upplåsning (nivå ${next}): ${XP_UNLOCKS[next].text}` : ''}</p>
     <p class="dim">XP får du för varje heat: mer för bra placering, vinst, målgång och rent lopp.</p></section>`;
 }
-export function countRace(trackId, res) { giveXp(res); { const cs = activeCar(); if (cs?.faults && Object.values(cs.faults).some(f => !f.found)) revealFaults(cs, 'Efter loppet märkte du'); } if (res && isFinite(res.bestLap) && res.bestLap > 5 && !res.flag) record(trackId, res.bestLap); /* bästa varv från alla lopp går till topplistan */ const st = stats(), d = Math.max(0, res.dur || 0); st.sec += d; st.races++; if (res.pos === 1 && res.finished) st.wins++; const t = st.tracks[trackId] || (st.tracks[trackId] = { n: 0, sec: 0 }); t.n++; t.sec += d; save(); pushBoard(); }
+export function countRace(trackId, res) { giveXp(res); achRace(res); { const cs = activeCar(); if (cs?.faults && Object.values(cs.faults).some(f => !f.found)) revealFaults(cs, 'Efter loppet märkte du'); } if (res && isFinite(res.bestLap) && res.bestLap > 5 && !res.flag) record(trackId, res.bestLap); /* bästa varv från alla lopp går till topplistan */ const st = stats(), d = Math.max(0, res.dur || 0); st.sec += d; st.races++; if (res.pos === 1 && res.finished) st.wins++; const t = st.tracks[trackId] || (st.tracks[trackId] = { n: 0, sec: 0 }); t.n++; t.sec += d; save(); pushBoard(); }
 export function record(track, lap) { if (!S.records[track] || lap < S.records[track]) { S.records[track] = lap; save(); } }
 export function startRace(o) {
   const cs = activeCar(), insp = currentInsp(), s = o.playerSpec || (o.specLvl ? specCar(o.specLvl) : insp.spec); // spec-läge: alla kör samma bil
@@ -287,7 +288,7 @@ export function startRace(o) {
   const done = o.onDone;
   U.race = new Race(app(), {
     ...o, onDone: res => { if (o.replay) return done(res); if (res?.replay && !o.spectate) U.lastReplay = { o: { ...o, net: null, netLead: false, heatId: null }, rec: res.replay }; if (!o.spectate) countRace(o.trackId, res); done(res); }, record: S.records[o.trackId], settings: S.settings,
-    onCameraChange: camera => { S.settings.camera = camera; save(); },
+    onCameraChange: camera => { S.settings.camera = camera; save(); }, onPhoto: () => { if (achieve('photo')) render(); },
     player: o.spectate ? o.player : { nid: 'me', name: o.net ? `${netName()} #${numStr}` : `${S.name || 'Du'} (#${numStr})`, num: numStr, spec: s, paint: paintOf(cs.paint).rgb, bw: cs.bw || 'wb', aids: { ...S.aids } },
   });
 }

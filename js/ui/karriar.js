@@ -70,7 +70,7 @@ export function karriar() {
         <div class="row"><span class="lbl">Tid på dygnet</span>${TOD.map(([k, n]) => `<button class="chip s ${(q.tod || 'dag') === k ? 'on' : ''}" data-act="q-tod" data-arg="${k}">${n}</button>`).join('')}</div>
         <div class="row"><span class="lbl">AI-svårighet ${q.ai} %</span><input type="range" min="1" max="100" step="1" value="${q.ai}" data-in="q-ai"></div>
         ${carModeRow('q-cm', q.cm)}
-        <div class="row"><button class="btn" data-act="quick-race" ${ok ? '' : 'disabled'}>🏁 Starta träningsheat</button><button class="btn ghost" data-act="quick-time" ${ok ? '' : 'disabled'}>⏱ Tidskörning</button></div>
+        <div class="row"><button class="btn" data-act="quick-race" ${ok ? '' : 'disabled'}>🏁 Starta träningsheat</button><button class="btn ghost" data-act="quick-time" ${ok ? '' : 'disabled'}>⏱ Tidskörning</button><button class="btn ghost" data-act="intro-run">🪪 Introduktion</button></div>
       </div>
       <div class="g-curve" style="display:flex;flex-direction:column;align-items:center">
         <canvas id="trkPreview" width="380" height="300" data-trk="${q.track}" style="background:#141a20;border-radius:10px;border:1px solid rgba(255,255,255,.1)"></canvas>

@@ -480,6 +480,17 @@ export function aiDrive(c, race, dt) {
 export const CAM_NAMES = ['IN-CAR KUPÉ', 'HUVKAMERA', 'BAKOM NÄRA', 'BAKOM HÖG', 'FÖRSTAPERSON · FÖRARPLATS'];
 export const DEFAULT_CAM = 4;
 
+// Introduktionens steg: t = rubrik, k = tangentbord, m = mobil, ok() = när steget är klart
+const INTRO = [
+  { t: 'Gasa', k: 'Håll inne <kbd>↑</kbd> eller <kbd>W</kbd> och kör upp i 50 km/h.', m: 'Håll inne <b>GAS</b> och kör upp i 50 km/h.', ok: (p, v) => v > 50 },
+  { t: 'Bromsa', k: 'Tryck <kbd>↓</kbd> eller <kbd>S</kbd> och bromsa ner under 20 km/h.', m: 'Tryck <b>BROMS</b> och bromsa ner under 20 km/h.', ok: (p, v, I) => { if (v > 35) I.a = 1; return I.a && v < 20 && p.brk > 0.2; } },
+  { t: 'Styr', k: 'Styr med <kbd>←</kbd> <kbd>→</kbd> eller <kbd>A</kbd> <kbd>D</kbd> och följ vägen genom kurvorna.', m: 'Styr med <b>◀ ▶</b> och följ vägen genom kurvorna.', ok: (p, v, I, r, dt) => { if (Math.abs(p.steer) > 0.25 && v > 20 && !p.offRoad) I.a += dt; return I.a > 2.5; } },
+  { t: 'Handbroms', k: 'Dra i handbromsen med <kbd>Mellanslag</kbd> i en kurva – bakvagnen svänger ut.', m: 'Tryck <b>HAND</b> i en kurva – bakvagnen svänger ut.', ok: (p, v, I, r, dt) => { if (p.hb && v > 15) I.a += dt; return I.a > 0.3; } },
+  { t: 'Kamera', k: 'Byt kamera med <kbd>C</kbd> (eller 🎥-knappen) och välj den du gillar.', m: 'Byt kamera med 🎥-knappen uppe på skärmen.', ok: (p, v, I, r) => r.cam !== I.cam0 },
+  { t: 'Jokern (lisälenkki)', k: 'Varje heat ska du köra den längre slingan <b>en gång</b>. Ta den nu – håll dig mellan konerna där vägen delar sig.', m: 'Varje heat ska du köra den längre slingan <b>en gång</b>. Ta den nu – håll dig mellan konerna där vägen delar sig.', ok: p => p.jokerDone },
+  { t: 'Utanför vägen', k: 'Hamnar du utanför vägen räknar en klocka ner från 3 och bilen sätts tillbaka. <kbd>R</kbd> återställer direkt. <kbd>E</kbd>/<kbd>Q</kbd> växlar manuellt.', m: 'Hamnar du utanför vägen räknar en klocka ner från 3 och bilen sätts tillbaka på vägen.', ok: (p, v, I) => I.t > 6 },
+  { t: 'Kör i mål', k: 'Kör runt och passera mållinjen – då har du klarat introduktionen!', m: 'Kör runt och passera mållinjen – då har du klarat introduktionen!', ok: p => p.finished },
+];
 export class Race {
   constructor(host, cfg) {
     this.host = host; this.cfg = cfg; this.trk = getTrack(cfg.trackId); const trk = this.trk;
@@ -566,7 +577,7 @@ export class Race {
 
         <!-- MITTEN: Meddelandebanner + 360° Närhetsradar -->
         <div class="hud-center-wrap">
-          <div class="hud-msg" id="hMsg"></div>
+          <div class="hud-msg" id="hMsg"></div><div class="intro-box" id="hIntro" hidden></div>
           <div class="hud-off" id="hOff" hidden></div>
           <div class="photo-ui" id="hPhoto" hidden><div class="ph-row"><button type="button" data-ph="back" title="Bakåt 0,5 s">⏪</button><button type="button" data-ph="fwd" title="Framåt 0,5 s">⏩</button><button type="button" data-ph="zin" title="Närmare">＋</button><button type="button" data-ph="zout" title="Längre bort">－</button>
           <label>Brännvidd<input type="range" id="hPhFov" min="0.25" max="1.4" step="0.01" value="0.8"></label><label>Höjd<input type="range" id="hPhH" min="0.1" max="2.5" step="0.05" value="0.65"></label></div>
@@ -724,6 +735,7 @@ export class Race {
     if (cfg.mode === 'time') { this.$('hLbCard').style.display = 'none'; if (cfg.ghost?.f?.length) { this.ghost = cfg.ghost; this.msg(`👻 Spöket kör ditt bästa varv: ${fmtTime(cfg.ghost.t)}`, 3); } }
     this.audioInit();
     if (this.spectate) { this.msg('👁 ÅSKÅDARLÄGE – ◀ ▶ eller E/Q byter bil, C byter kamera', 4); this.watchCam(); }
+    if (cfg.intro) { this.intro = { i: 0, t: 0, a: 0, cam0: this.cam }; this.introShow(); }
     if (cfg.replay) { this.replay = cfg.replay; this.state = 'run'; this.camCar = this.player; this.rt = 0; this.msg('🎬 REPRIS – ◀ ▶ eller E/Q byter bil · C byter kamera · P → Avsluta för att gå tillbaka', 5); this.watchBar(); this.$('hLights').style.display = 'none'; }
     if (this.net) { this.heatId = cfg.heatId || 'h1'; this.netLead = cfg.netLead === this.net.id; this.goAt = Infinity; this.net.race = this; if (!this.spectate) this.net.imReady(this.heatId); this.msg(this.spectate ? '👁 Väntar på start…' : 'Väntar på övriga förare…', 60); }
     this.last = performance.now(); this.raf = requestAnimationFrame(t => this.frame(t));
@@ -780,6 +792,18 @@ export class Race {
     };
   }
 
+  // ---------- introduktion för nya förare: ett guidat övningsvarv steg för steg ----------
+  introTick(dt) {
+    const I = this.intro, p = this.player, S = INTRO[I.i]; if (!S) return;
+    const kmh = Math.hypot(p.vx, p.vy) * 3.6; I.t += dt;
+    if (S.ok(p, kmh, I, this, dt)) { I.i++; I.t = 0; I.a = 0; this.cfg.onIntro?.(I.i, INTRO.length); this.msg(INTRO[I.i] ? '✓ Bra!' : '✓ Klart!', 1, 'go'); this.introShow(); }
+  }
+  introShow() {
+    const I = this.intro, el = this.$('hIntro'); if (!el) return; const S = INTRO[I.i];
+    el.hidden = !S; if (!S) return; const touch = matchMedia('(pointer: coarse)').matches;
+    if (this.state === 'grid') { el.innerHTML = `<span>INTRODUKTION</span><b>Vänta på startljusen</b><p>När de röda lamporna slocknar är det din tur. I introduktionen får du ingen tjuvstart.</p><i style="width:0"></i>`; return; }
+    el.innerHTML = `<span>INTRODUKTION · STEG ${I.i + 1}/${INTRO.length}</span><b>${S.t}</b><p>${touch ? S.m : S.k}</p><i style="width:${I.i / INTRO.length * 100}%"></i>`;
+  }
   // ---------- fotoläge (i repriset): frys bilden, kretsa fritt runt bilen och spara en bild ----------
   bindPhoto() {
     const btn = this.$('hPhotoBtn'), box = this.$('hPhoto'); if (!btn || !box) return;
@@ -813,9 +837,9 @@ export class Race {
   snap() {
     this.snapReq = false; const name = `rokkikraft-${new Date().toISOString().slice(0, 19).replace(/[T:]/g, '-')}.png`;
     try { this.cv.toBlob(async b => { if (!b) return this.msg('Kunde inte spara bilden', 2, 'warn'); const f = new File([b], name, { type: 'image/png' });
-      try { if (navigator.canShare?.({ files: [f] }) && matchMedia('(pointer: coarse)').matches) { await navigator.share({ files: [f], title: 'Rokkikraft' }); return; } } catch (e) { if (e?.name === 'AbortError') return; }
+      try { if (navigator.canShare?.({ files: [f] }) && matchMedia('(pointer: coarse)').matches) { await navigator.share({ files: [f], title: 'Rokkikraft' }); this.cfg.onPhoto?.(); return; } } catch (e) { if (e?.name === 'AbortError') return; }
       const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000);
-      this.msg('📸 Bilden sparad!', 1.6); }, 'image/png'); } catch (e) { this.msg('Kunde inte spara bilden', 2, 'warn'); }
+      this.msg('📸 Bilden sparad!', 1.6); this.cfg.onPhoto?.(); }, 'image/png'); } catch (e) { this.msg('Kunde inte spara bilden', 2, 'warn'); }
   }
   togglePause() { if (this.done) return; this.paused = !this.paused; this.$('hPauseBox').hidden = !this.paused; this.last = performance.now(); if (this.gain) this.gain.gain.value = 0; if (this.fxGain) this.fxGain.gain.value = this.paused ? 0 : (this.vol || 0); if (this.paused) this.ctl?.stopRumble?.(); }
   shift(d) { if (this.replay) { const i = (this.cars.indexOf(this.camCar || this.player) + d + this.cars.length) % this.cars.length; this.camCar = this.cars[i]; this.camH = this.camCar.h; this.watchCam(); return; }
@@ -1159,6 +1183,7 @@ export class Race {
 
   step(dt) {
     const trk = this.trk, n = trk.n, p = this.player;
+    if (this.intro && this.state !== 'grid') this.introTick(dt);
     for (const c of this.cars) if (c.sb && c.sb.step(dt) && c.isPlayer) this.sbEffects(c); // mjukkroppen svänger ut efter smällar
     if (this.state === 'grid') {
       this.gridT += dt; this.input(dt);
@@ -1167,11 +1192,11 @@ export class Race {
         if (g && !this.goWall) { this.goWall = g; this.gridT = 0; this.goAt = Math.max(0.9, (g - this.net.now()) / 1000); this.msg('Alla klara – se på startljusen!', 1.4); }
         if (this.goWall) this.gridT = this.goAt - (this.goWall - this.net.now()) / 1000;
       }
-      if (this.gridT >= this.goAt) { this.state = 'run'; this.msg('KÖR! 🏁', 1.2, 'go'); }
+      if (this.gridT >= this.goAt) { this.state = 'run'; this.msg('KÖR! 🏁', 1.2, 'go'); if (this.intro) this.introShow(); }
       else {
         for (const c of this.cars) if (!c.isPlayer) { c.thr = 0; c.brk = 1; }
         if (p.auto) { p.thr = 0; return; }
-        if (!p.jump && Math.hypot(p.x - this.startPos[0], p.z - this.startPos[1]) > 0.35) {
+        if (!p.jump && !this.intro && Math.hypot(p.x - this.startPos[0], p.z - this.startPos[1]) > 0.35) {
           p.jump = true;
           this.msg('LI – TJUVSTART!<br><small>Bilen rörde sig före startljuset → straff, placeras efter förare utan straff</small>', 3.4, 'warn');
         }

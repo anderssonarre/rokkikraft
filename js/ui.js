@@ -15,23 +15,27 @@ import { ACT_ONLINE, ON, inviteBox, netMe, online, startPresence } from './ui/on
 import { ACT_SKOLA, calcOut, curTask, dyno, formel, skola } from './ui/skola.js';
 import { ACT_TAVLING, champCfg, eventView, result } from './ui/tavling.js';
 import { ACT_TOP, nameView, topView } from './ui/top.js';
+import { ACT_DAG, dagView } from './ui/dag.js';
+import { checkAch, prestView } from './ui/prestationer.js';
+import { ACT_INTRO } from './ui/intro.js';
 
 // ---------- ram ----------
 export function render() {
   const racing = U.view === 'race'; document.body.classList.toggle('racing', racing);
-  if (racing) { MUSIC.stop(); return; } MUSIC.vol = (S.settings.music ?? 40) / 100; MUSIC.play(); // bakgrundsmusik i menyerna
-  let V = { menu, karriar, play: karriar, event: eventView, garage, trim, dyno, skola, formel, komp, settings, online, setup, result, name: nameView, top: topView }[U.view] || menu;
+  if (racing) { MUSIC.stop(); return; } try { checkAch(); } catch (e) { } MUSIC.vol = (S.settings.music ?? 40) / 100; MUSIC.play(); // bakgrundsmusik i menyerna
+  let V = { menu, karriar, play: karriar, event: eventView, garage, trim, dyno, skola, formel, komp, settings, online, setup, result, name: nameView, top: topView, dag: dagView, prest: prestView }[U.view] || menu;
   if (!activeCar() && !['menu', 'komp', 'settings', 'name', 'top'].includes(U.view)) V = carShop; // ingen bil → bara bilhandeln
   const ae = document.activeElement, keep = ae && ae.id && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA') && ae.type !== 'range' && ae.type !== 'file' ? { id: ae.id, v: ae.value, a: ae.selectionStart, b: ae.selectionEnd } : null; // behåll det man skriver när sidan ritas om
   const ss = document.getElementById('sideSheet'), ssPos = ss && [ss.scrollLeft, ss.scrollTop, U.fPage, U.fZoom];
   app().innerHTML = `<header class="topbar">${U.view !== 'menu' && U.view !== 'event' ? '<button class="back" data-act="go" data-arg="menu">‹ Meny</button>' : '<span class="brand">ROKKI<b>KRAFT</b></span>'}
-    <span class="top-title">${{ karriar: 'Karriär & Banor', event: 'Tävlingsdag', garage: 'Garage & Besiktning', trim: 'Trimning', dyno: 'Räknebänken', skola: 'Motorskola', formel: 'Formelpapper', komp: 'Kompendium & Sääntökirja', settings: 'Inställningar', setup: 'Bilinställningar', result: 'Resultat', play: 'Spela', name: 'Byt namn', top: 'Global topplista', karriar: 'Karriär', online: 'Online – rumskod' }[U.view] || ''}</span>
+    <span class="top-title">${{ karriar: 'Karriär & Banor', event: 'Tävlingsdag', garage: 'Garage & Besiktning', trim: 'Trimning', dyno: 'Räknebänken', skola: 'Motorskola', formel: 'Formelpapper', komp: 'Kompendium & Sääntökirja', dag: 'Dagens utmaning', prest: 'Prestationer', settings: 'Inställningar', setup: 'Bilinställningar', result: 'Resultat', play: 'Spela', name: 'Byt namn', top: 'Global topplista', karriar: 'Karriär', online: 'Online – rumskod' }[U.view] || ''}</span>
     <span class="wallet">${S.warnings > 0 ? `<i style="color:#ff6a3d">⚠ ${S.warnings}/3 varningar</i>` : ''}${S.vouchers > 0 ? `<i style="color:#5ce080">🎟 ${S.vouchers} hyvityskuitti</i>` : ''}<b>${eur(S.money)}</b><i>${CAREER[topLevel()].name}</i></span></header>
-    <main class="view v-${U.view}">${V()}</main>${U.toast ? `<div class="toast">${U.toast}</div>` : ''}${inviteBox()}`;
+    <main class="view v-${U.view}">${V()}</main>${U.toast ? `<div class="toast">${U.toast}</div>` : ''}${U.achQ?.length ? `<div class="toast achtoast"><span>🏆 PRESTATION UPPLÅST${U.achQ.length > 1 ? ` (+${U.achQ.length - 1} till)` : ''}</span>${U.achQ[0]}</div>` : ''}${inviteBox()}`;
   if (ssPos && ssPos[2] === U.fPage && ssPos[3] === U.fZoom) { const n = document.getElementById('sideSheet'); if (n) { n.scrollLeft = ssPos[0]; n.scrollTop = ssPos[1]; } }
   { const cb = document.getElementById('chatBox'); if (cb) cb.scrollTop = cb.scrollHeight; }
   if (keep) { const el = document.getElementById(keep.id); if (el) { el.value = keep.v; el.focus(); try { el.setSelectionRange(keep.a, keep.b); } catch (e) { } } }
-  if (U.toast) { clearTimeout(U.toastT); U.toastT = setTimeout(() => { U.toast = ''; document.querySelector('.toast')?.remove(); }, 2800); }
+  if (U.toast) { clearTimeout(U.toastT); U.toastT = setTimeout(() => { U.toast = ''; document.querySelector('.toast:not(.achtoast)')?.remove(); }, 2800); }
+  if (U.achQ?.length && !U.achT) U.achT = setTimeout(() => { U.achT = 0; U.achQ.shift(); if (U.view !== 'race') render(); }, 3200);
   after();
 }
 export function after() {
@@ -46,7 +50,7 @@ export let SR = null;
 // Knapparnas åtgärder: allmänna här, resten i respektive vy-modul (js/ui/*.js)
 export const ACT = {
   go(a) { U.view = a; U.preview = null; if (a === 'komp') U.kompOpen = null; if (a === 'online' && ON.room) ON.room.setMe(netMe()); window.scrollTo(0, 0); },
-  ...ACT_KOMP, ...ACT_ONLINE, ...ACT_TAVLING, ...ACT_TOP, ...ACT_GARAGE, ...ACT_SKOLA,
+  ...ACT_KOMP, ...ACT_ONLINE, ...ACT_TAVLING, ...ACT_TOP, ...ACT_GARAGE, ...ACT_SKOLA, ...ACT_DAG, ...ACT_INTRO,
 };
 export const INP = {
   'on-laps'(v) { ON.room?.setCfg({ laps: +v }); }, 'on-ai'(v) { ON.room?.setCfg({ ai: +v }); }, 'on-diff'(v) { ON.room?.setCfg({ diff: +v }); },

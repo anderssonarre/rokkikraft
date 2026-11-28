@@ -208,6 +208,28 @@ export class Board {
   close() { this.links.forEach(l => l.close()); }
 }
 
+// ---------- dagens utmaning: topplista per dag (retained) på rokkikraft/day1/<datum>/<id> ----------
+export class DayBoard {
+  constructor(day, onUpdate) {
+    this.day = String(day).replace(/[^0-9-]/g, ''); this.list = new Map(); this.onUpdate = onUpdate || (() => { });
+    this.links = brokers().map(u => new Mqtt(u, `rokkikraft/day1/${this.day}/+`, m => this.recv(m), () => this.onUpdate()));
+  }
+  get connected() { return this.links.filter(l => l.open).length; }
+  recv(m) {
+    if (!m || typeof m.id !== 'string' || typeof m.name !== 'string' || m.day !== this.day || !(+m.time > 5 && +m.time < 3600)) return;
+    const old = this.list.get(m.id); if (old && old.time <= +m.time) return;
+    this.list.set(m.id, { id: m.id.slice(0, 24), name: m.name.slice(0, 24), time: +m.time, best: +m.best || 0, tries: +m.tries || 1, car: String(m.car || '').slice(0, 30) });
+    clearTimeout(this.ut); this.ut = setTimeout(() => this.onUpdate(), 150);
+  }
+  publish(e) {
+    e = { ...e, day: this.day }; const bytes = packet(0x31, str(`rokkikraft/day1/${this.day}/${e.id}`), enc.encode(JSON.stringify(e)));
+    this.recv(e); const go = () => { let n = 0; for (const l of this.links) if (l.open) { l.send(bytes); n++; } return n; };
+    if (!go()) { let n = 0; const iv = setInterval(() => { if (go() || ++n > 20) clearInterval(iv); }, 500); }
+  }
+  sorted() { return [...this.list.values()].sort((a, b) => a.time - b.time); }
+  close() { this.links.forEach(l => l.close()); }
+}
+
 // ---------- närvaro & inbjudningar ----------
 // Alla som har spelet öppet skickar ett livstecken var 15:e s på rokkikraft/pres1/<id> och prenumererar på rokkikraft/pres1/+.
 // Inbjudningar går på rokkikraft/pres1/inv: { to: [id…], code, from, name } – mottagarna får en "Gå med"-ruta.

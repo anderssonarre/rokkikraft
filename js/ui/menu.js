@@ -7,6 +7,10 @@ import { LESSONS } from '../motorskola.js';
 import { currentInsp, esc, eur, hex, paintOf, plate, topLevel } from './core.js';
 import { ON } from './online.js';
 import { statsPanel, xpPanel } from './tavling.js';
+import { introBanner } from './intro.js';
+import { today } from './dag.js';
+import { ACH, hasAch } from './prestationer.js';
+import { fmtTime } from '../race.js';
 
 // ---------- meny ----------
 export function menu() {
@@ -23,10 +27,12 @@ export function menu() {
         <div><span>Moment · Ljud</span><b>${fmt(k.peakT.T)} Nm</b><small>${k.db4500} dB @ 4500 rpm (max 110)</small></div>
         <div class="${k.kgHp < 5 ? 'good' : k.kgHp > 7 ? 'bad' : ''}"><span>Vikt/effekt</span><b>${fmt(k.kgHp, 1)} kg/hk</b><small>${fmt(s.mass)} kg (reg. ${s.regMass} kg)</small></div></div></div>
     <div class="hero-r">${plate(numStr, hex(paintOf(cs.paint).rgb), cs.bw)}</div></section>
-    ${xpPanel()}${statsPanel()}
+    ${introBanner()}${xpPanel()}${statsPanel()}
     <nav class="mgrid">
       ${btn('play', '🏁', 'Snabbstart', 'Spela', 'Välj bana, varv, väder och AI – kör direkt', 'c1')}
       ${btn('online', '🌐', ON.room ? `Rum ${ON.room.code}` : 'Rumskod', 'Online', 'Skapa eller gå med i rum och kör mot kompisar', 'c5')}
+      ${btn('dag', '📅', S.daily?.day === today() && S.daily.best ? '✓ ' + fmtTime(S.daily.best) : 'Ny i dag', 'Dagens utmaning', 'Samma bana, bil och väder för alla – egen topplista', 'c1')}
+      ${btn('prest', '🏅', `${ACH.filter(a => hasAch(a[0])).length}/${ACH.length}`, 'Prestationer', 'Mål som ger pengar – vinn rent, jokern, alla banor …', 'c2')}
       ${btn('karriar', '🏆', `Nivå ${topLevel() + 1}/4`, 'Karriär', 'Mästerskap med kval, heat och finaler', 'c2')}
       ${btn('garage', '🔧', `${owned} bilar · ${parts} delar`, 'Garage', 'Bilar, motorer, inställningar och däck', 'c3')}
       ${btn('settings', '⚙️', 'System', 'Inställningar', 'Kontroller, ljud, grafik och upplösning', 'c6')}

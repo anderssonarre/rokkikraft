@@ -357,3 +357,20 @@ ol.steps li { margin: 6px 0; line-height: 1.5; }
 .photo-ui .ph-snap { background: var(--hi); color: #111; border-color: var(--hi); font-weight: 800; }
 .photo-ui label { display: flex; align-items: center; gap: 6px; font: 12px var(--mono); opacity: .9; } .photo-ui input[type=range] { width: 110px; }
 .photo-ui small { opacity: .7; font-size: 11px; text-align: center; }
+/* prestationer */
+.achs { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 8px; margin-top: 12px; }
+.ach { display: grid; grid-template-columns: 38px 1fr auto; gap: 10px; align-items: center; padding: 10px 12px; border-radius: 10px; border: 1px solid #ffffff1a; background: #ffffff06; opacity: .7; }
+.ach.on { opacity: 1; border-color: var(--hi); background: #ffd23f12; }
+.ach .ai { font-size: 26px; text-align: center; } .ach b { display: block; } .ach small { display: block; opacity: .8; } .ach small.ok { color: #5ce080; opacity: 1; }
+.ach .rw { font: 600 12px var(--mono); color: var(--hi); } .xpbar.s { height: 5px; margin: 5px 0 2px; }
+/* introduktion */
+.intro-box { position: fixed; top: 74px; left: 50%; transform: translateX(-50%); z-index: 35; width: min(560px, calc(100vw - 24px)); padding: 12px 16px 14px; border-radius: 14px; background: #0c1014e6; border: 2px solid var(--hi); color: #fff; text-align: center; overflow: hidden; pointer-events: none; }
+.intro-box span { display: block; font: 700 11px var(--mono); letter-spacing: .12em; color: var(--hi); }
+.intro-box b { display: block; font-size: 22px; margin: 2px 0 4px; } .intro-box p { margin: 0; font-size: 15px; line-height: 1.4; }
+.intro-box kbd { display: inline-block; min-width: 22px; padding: 1px 6px; border-radius: 5px; border: 1px solid #ffffff50; background: #ffffff18; font: 600 13px var(--mono); }
+.intro-box i { position: absolute; left: 0; bottom: 0; height: 4px; background: var(--hi); transition: width .4s; }
+.introban { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; border-color: var(--hi); }
+.introban h2 { margin: 2px 0 4px; }
+.toast.achtoast { bottom: auto; top: 70px; border-radius: 16px; text-align: center; background: linear-gradient(90deg, #ffd23f, #ffb02e); display: flex; flex-direction: column; align-items: center; gap: 2px; box-shadow: 0 8px 30px #0008; }
+.toast.achtoast span { font: 700 10px var(--mono); letter-spacing: .14em; opacity: .75; }
+.photo-ui[hidden], .photo-btn[hidden], .intro-box[hidden] { display: none !important; }

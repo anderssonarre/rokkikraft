@@ -11,6 +11,7 @@ import { SETUP_UI } from './garage.js';
 import { aiSpec, carModeRow, makeOpps, record, replayBtn, resTable, startRace, withBonus } from './tavling.js';
 import { pid } from './top.js';
 import { render } from '../ui.js';
+import { achieve } from './prestationer.js';
 
 // ---------- online (rumskod) ----------
 // Värden äger rummet: tävlingsinställningar, AI-förare och mästerskapet. Heat med människor körs live (alla heat i en
@@ -53,6 +54,7 @@ export function seasonTick(room) { // när en tävling är klar: värden delar u
     cs.overall.forEach((r, i) => { const nm = r.name || '?'; n.pts[nm] = (n.pts[nm] || 0) + (SEASON_PTS[i] || 0); if (i === 0) n.wins[nm] = (n.wins[nm] || 0) + 1; });
     (S.onSeasons ||= {})[n.id] = n; save(); room.setCfg({ season: n }); }
   else if (!room.isHost) { const o = (S.onSeasons ||= {})[se.id]; if (!o || o.done.length < se.done.length) { S.onSeasons[se.id] = se; save(); } }
+  const fs = room.cfg.season; if (fs && fs.done.length >= fs.rounds) { const top = Object.entries(fs.pts).sort((a, b) => b[1] - a[1])[0]; if (top && top[0] === netName()) achieve('season'); }
 }
 // ---- inbjudningar: se vilka som har spelet öppet och bjud in dem till rummet ----
 export let PRES = null;
@@ -104,7 +106,7 @@ export function netRace(h, grid, cfg, lead, watch) {
   if (watch) { const hum = defs.filter(d => grid.find(g => g.id === d.nid && !g.ai)), first = hum.find(d => d.nid !== room.id) || hum[0] || defs[0], rest = defs.filter(d => d !== first); // börja på en kompis, inte en AI
     startRace({ ...base, opps: rest, player: first, spectate: true, grid: 0, title: '👁 Online', onDone: () => { room.backToLobby(); U.view = 'online'; render(); } }); return; }
   startRace({ ...base, opps: defs, grid: my, title: 'Online – ' + (ON.champ?.heats?.find(x => x.id === h)?.name || 'heat'),
-    onDone: r => { (ON.doneHeats ||= new Set()).add(h); room.backToLobby(); ON.last = r; if (isFinite(r.bestLap)) record(cfg.track, r.bestLap); U.view = 'online'; render(); } });
+    onDone: r => { (ON.doneHeats ||= new Set()).add(h); room.backToLobby(); ON.last = r; achieve('online1'); if (isFinite(r.bestLap)) record(cfg.track, r.bestLap); U.view = 'online'; render(); } });
 }
 // ---- värdens mästerskapsmotor ----
 export function hostStart() {
