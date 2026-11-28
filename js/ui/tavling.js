@@ -102,6 +102,7 @@ export function champCfg() { return S.settings.champ = { perStart: 6, heats: 4, 
 export function evRun(heatId, watch) {
   const ev = U.ev, ch = ev.ch, h = ch.heats.find(x => x.id === heatId) || myHeat(ch, 'me'); if (!h || h.res) return;
   if (!watch && (ev.needKaatoInsp || ev.exhaustLoose)) return;
+  if (!watch) ev.service = null; // servicen stänger när du rullar ut till start
   const defs = h.ids.filter(id => id !== 'me' || watch).map(id => id === 'me' ? null : ev.O[id]).filter(Boolean);
   const title = `${ev.rules.name} – ${heatName(h)}`;
   const done = res => {
@@ -121,10 +122,57 @@ export function evAfter(res, h) {
   ev.mud = res.mud || 0;   ev.maxDmg = Math.max(ev.maxDmg || 0, res.dmg || 0); if (res.pos === 1 && res.finished) ev.heatWins = (ev.heatWins || 0) + 1; if (!res.finished) ev.dnf = true;
   ev.dmg = res.dmg; ev.parts = res.parts || ev.parts; ev.wear = res.wear || ev.wear; ev.radLeak = res.radLeak; ev.exhaustLoose = !!res.exhaustLoose; ev.needKaatoInsp = !!res.kaato;
   ev.last = res; ev.protestable = !!res.sanction;
+  openService(ev);
   ev.hist.push({ stage: heatName(h), pos: res.pos, flag: res.flag });
   if (isFinite(res.bestLap)) record(ev.e.track, res.bestLap);
   if (h.round === 'semi' && ev.rules.saleFrom === 'semi') ev.saleEligible = true;
   if (res.sanction) { ev.cleanDay = false; S.warnings = (S.warnings || 0) + 1; if (S.warnings >= 3) { S.lippumies = 1; S.warnings = 0; toast('3 varningar → hylkäys + lippumiespesti.'); } save(); }
+}
+// ---------- servicepaus mellan heaten ----------
+// Efter varje heat öppnar depån: 30 serviceminuter (speltid) och ca 2 minuter verklig tid tills startkallelsen.
+// Varje jobb tar tid och kostar pengar – hinner du inte allt får du välja vad som är viktigast.
+export const SV_MIN = 30, SV_REAL = 120;
+export function svJobs(ev) {
+  const P = ev.parts || {}, J = [];
+  if (ev.dmg > 1) J.push({ id: 'body', n: '🔨 Riktning av kaross', d: `Skador ${Math.round(ev.dmg)} % → ${Math.round(Math.max(0, ev.dmg - 30))} %`, min: 6, cost: Math.ceil(Math.min(30, ev.dmg) * 1.0) });
+  if (ev.radLeak) J.push({ id: 'rad', n: '💧 Täta kylaren', d: 'Kylaren läcker – motorn blir varm', min: 7, cost: 20 });
+  if (ev.exhaustLoose) J.push({ id: 'exh', n: '🔩 Fäst avgasröret', d: 'Krävs för att få starta (110 dB)', min: 3, cost: 15, must: 1 });
+  if ((P.steer || 0) > 2) J.push({ id: 'steer', n: '🎯 Rikta styrningen', d: `Styrningen ${Math.round(P.steer)} % sned`, min: 9, cost: Math.ceil(P.steer * 0.6) });
+  if ((P.gear || 0) > 2) J.push({ id: 'gear', n: '⚙️ Laga växellådan', d: `Växellådan ${Math.round(P.gear)} % skadad`, min: 14, cost: Math.ceil(P.gear * 0.9) });
+  if (ev.wear && ev.wear[0] + ev.wear[1] > 10) J.push({ id: 'tyres', n: '🛞 Byt däck', d: `Slitage ${Math.round(ev.wear[0])} / ${Math.round(ev.wear[1])} %`, min: 5, cost: 40 });
+  return J;
+}
+export function openService(ev) { ev.service = { left: SV_MIN, until: Date.now() + SV_REAL * 1000, log: [] }; startSvClock(); }
+const svOpen = sv => sv && sv.left > 0 && Date.now() < sv.until;
+export function svDo(ev, id) {
+  const sv = ev.service, j = svJobs(ev).find(x => x.id === id); if (!j || !svOpen(sv)) return false;
+  if (j.min > sv.left) { toast(`⏱ ${j.n.slice(2).trim()} tar ${j.min} min – bara ${sv.left} min kvar av servicen.`); return false; }
+  if (S.money < j.cost) { toast(`Du har inte råd (${eur(j.cost)}).`); return false; }
+  S.money -= j.cost; sv.left -= j.min; sv.log.push(j.n);
+  if (id === 'body') ev.dmg = Math.max(0, ev.dmg - 30); else if (id === 'rad') ev.radLeak = false; else if (id === 'exh') ev.exhaustLoose = false;
+  else if (id === 'steer') ev.parts = { ...ev.parts, steer: 0 }; else if (id === 'gear') ev.parts = { ...ev.parts, gear: 0 }; else if (id === 'tyres') ev.wear = [0, 0];
+  save(); return true;
+}
+let SVT = null;
+function startSvClock() {
+  if (SVT) return; SVT = setInterval(() => {
+    const ev = U.ev, sv = ev?.service, el = document.getElementById('svClock');
+    if (!sv || U.view !== 'event') return;
+    const t = Math.max(0, Math.ceil((sv.until - Date.now()) / 1000));
+    if (el) el.textContent = `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`;
+    if (t <= 0 && !sv.closed) { sv.closed = 1; toast('📣 Startkallelse! Servicen är stängd – bilen rullar som den är.'); render(); }
+  }, 500);
+}
+export function servicePanel(ev) {
+  const sv = ev.service; if (!sv) return '';
+  const J = svJobs(ev), open = svOpen(sv), t = Math.max(0, Math.ceil((sv.until - Date.now()) / 1000));
+  if (!J.length && !sv.log.length) return '';
+  return `<section class="panel service ${open ? '' : 'closed'}"><div class="lv-head"><h2>🔧 Servicepaus</h2><span>${open ? `Startkallelse om <b id="svClock">${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}</b>` : 'Servicen är stängd'}</span></div>
+    <div class="svbar"><i style="width:${sv.left / SV_MIN * 100}%"></i><span>${sv.left} / ${SV_MIN} serviceminuter kvar</span></div>
+    ${J.length ? `<div class="svjobs">${J.map(j => `<button class="svjob ${j.must ? 'must' : ''}" data-act="sv-job" data-arg="${j.id}" ${!open || j.min > sv.left || S.money < j.cost ? 'disabled' : ''}><b>${j.n}</b><small>${j.d}</small><span>⏱ ${j.min} min · ${eur(j.cost)}</span></button>`).join('')}</div>`
+      : '<p class="okbox">✓ Bilen är i skick – inget mer att göra.</p>'}
+    ${sv.log.length ? `<p class="dim">Gjort: ${sv.log.join(' · ')}</p>` : ''}
+    <p class="dim">Du har ${SV_MIN} min i depån och ungefär ${SV_REAL / 60} minuter innan startkallelsen. Kaross lagas 30 % åt gången. Hinner du inte allt – välj det som kostar mest tid på banan.</p></section>`;
 }
 // Simulera resten av omgången (när man själv inte kör i den) och gå vidare
 export function evNext() {
@@ -183,6 +231,7 @@ export function eventView() {
 
   const mine = myHeat(ch, 'me'), rd = roundDone(ch);
   const isFinalRound = ch.round === 'final';
+  h += servicePanel(ev);
   h += `<section class="panel next"><h2>${isFinalRound ? `${ch.letter}-finalen` : ROUND[ch.round]}${!isFinalRound && ch.heats.length > 1 ? ` – ${ch.heats.length} heat startar samtidigt (separata lopp på samma bana)` : ''}</h2>
     ${isFinalRound ? `<p class="dim">Finalerna körs i ordning F → A. ${mine ? 'Det är din tur nu.' : 'Du väntar på din final – titta på eller simulera den här först.'}</p>` : ''}
     ${ev.needKaatoInsp ? `<div class="warnbox">⚠ <b>KAATOKATSASTUS KRÄVS</b> efter rullningen.<div class="row" style="margin-top:6px"><button class="btn small" data-act="ev-kaato">🔧 Kaatokatsastus (40 €)</button></div></div>` : ''}
@@ -194,8 +243,7 @@ export function eventView() {
       ${x.res ? '' : x.ids.includes('me') ? `<div class="row"><button class="btn small" data-act="ev-run" data-arg="${x.id}" ${ev.needKaatoInsp || ev.exhaustLoose ? 'disabled' : ''}>🏁 Kör ditt heat</button>${canSkip(ch, 'me') ? `<button class="btn small ghost" data-act="ev-skip">KESKÖIDÄ</button>` : ''}</div>` : `<div class="row"><button class="btn small ghost" data-act="ev-watch" data-arg="${x.id}">👁 Titta</button></div>`}</div>`).join('')}</div>
     ${canSkip(ch, 'me') ? `<p class="dim">KESKÖIDÄ: hoppa över ${ch.round === 'alku' ? 'Alkuerä och gå direkt till Keräilyerä' : 'Keräilyerä och gå direkt till Last Call'}. Last Call, semifinal och finaler kan inte hoppas över.</p>` : ''}
     <div class="row wrap">${rd ? `<button class="btn" data-act="ev-next">Vidare till nästa omgång →</button>` : !mine ? `<button class="btn" data-act="ev-next">${isFinalRound ? 'Simulera finalen' : 'Simulera omgången'} och gå vidare →</button>` : ''}
-      ${cost > 0 ? `<button class="btn ghost" data-act="ev-repair" ${S.money >= cost ? '' : 'disabled'}>🔧 Laga bilen (${eur(cost)})</button>` : ''}
-      ${ev.wear && ev.wear[0] + ev.wear[1] > 10 ? `<button class="btn ghost" data-act="ev-tyres" ${S.money >= 40 ? '' : 'disabled'}>🛞 Nya däck (${eur(40)})</button>` : ''}
+      ${!ev.service && cost > 0 ? `<button class="btn ghost" data-act="ev-repair" ${S.money >= cost ? '' : 'disabled'}>🔧 Laga bilen (${eur(cost)})</button>` : ''}
       ${ev.rules.salePrice > 0 ? `<button class="btn ghost" data-act="ev-buy-arpa" ${S.money >= 20 ? '' : 'disabled'}>🎟 Köp lott (20 €)</button>` : ''}
       <button class="btn ghost danger" data-act="ev-quit">${ev.hist.length === 0 && ev.feePaid > 0 ? 'Bryt före 1:a heatet (få hyvityskuitti)' : 'Avbryt dagen'}</button></div>
     <div class="pills"><div class="${ev.dmg > 65 ? 'bad' : ''}"><span>Skador</span><b>${Math.round(ev.dmg)} %</b></div><div><span>Däckslitage</span><b>${Math.round(ev.wear ? ev.wear[0] : 0)} / ${Math.round(ev.wear ? ev.wear[1] : 0)} %</b><small>fram / bak</small></div><div><span>Lotter</span><b>${ev.arvat} st</b></div></div></section>`;
@@ -293,6 +341,7 @@ export const ACT_TAVLING = {
   'ev-watch'(a) { evRun(a, true); return false; },
   'ev-skip'() { const ev = U.ev; if (ev && chSkip(ev.ch, 'me')) { toast('KESKÖIDÄ – du hoppar över ' + (ev.ch.round === 'alku' ? 'Alkuerä' : 'Keräilyerä') + '.'); } },
   'ev-next'() { evNext(); window.scrollTo(0, 0); },
+  'sv-job'(a) { const ev = U.ev; if (ev) svDo(ev, a); },
   'ev-tyres'() { const ev = U.ev; if (ev && S.money >= 40) { S.money -= 40; ev.wear = [0, 0]; save(); toast('Fräscha däck monterade.'); } },
   'ev-repair'() {
     const ev = U.ev, cost = Math.ceil(ev.dmg * 1.0 + (ev.radLeak ? 20 : 0) + (ev.exhaustLoose ? 15 : 0) + (ev.parts ? Math.round((ev.parts.steer || 0) * 0.6 + (ev.parts.gear || 0) * 0.9) : 0));

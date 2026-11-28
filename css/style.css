@@ -336,3 +336,12 @@ ol.steps li { margin: 6px 0; line-height: 1.5; }
 .se-tab td.pl { text-align: center; font-family: var(--mono); }
 .se-tab td.p1 { color: #ffd23f; font-weight: 700; } .se-tab td.p2 { color: #d9dee3; font-weight: 700; } .se-tab td.p3 { color: #e0a060; font-weight: 700; }
 .se-tab th:first-child, .se-tab td:first-child { width: 2.5em; } .se-tab td:nth-child(2) { width: auto; white-space: nowrap; }
+/* servicepaus */
+.service .svbar { position: relative; height: 26px; border-radius: 8px; background: #ffffff10; overflow: hidden; margin: 6px 0 10px; }
+.service .svbar i { position: absolute; inset: 0 auto 0 0; background: linear-gradient(90deg, #ffd23f, #ff9a3d); transition: width .3s; }
+.service .svbar span { position: relative; display: block; text-align: center; line-height: 26px; font: 600 13px var(--mono); color: #fff; text-shadow: 0 1px 3px #000, 0 0 6px #000; }
+.svjobs { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 8px; }
+.svjob { text-align: left; display: flex; flex-direction: column; gap: 3px; padding: 10px 12px; border-radius: 10px; border: 1px solid #ffffff22; background: #ffffff08; color: inherit; cursor: pointer; }
+.svjob:hover:not(:disabled) { border-color: var(--hi); } .svjob:disabled { opacity: .45; cursor: default; }
+.svjob small { opacity: .75; } .svjob span { font: 12px var(--mono); color: var(--hi); } .svjob.must { border-color: #ff6a3d; }
+.service.closed { opacity: .75; } #svClock { font-family: var(--mono); color: var(--hi); }
