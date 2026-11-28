@@ -19,7 +19,7 @@ Spelet är en statisk webbsida utan byggsteg. Alla moduler är vanliga ES-module
           view3.js ──► gfx.js (grafiknivåer, texturer, himmel, gräs, spår)
           (3D-scen, bilar, kupé)
                ▲
-   ui.js ──────┘  (menyer, garage, karriär, tävlingsdag)  ──► champ.js (heat/finaler)
+   ui.js ──────┘  (styrning; vyerna i ui/*.js)  ──► champ.js (heat/finaler)
      │                                                     ──► net.js   (online via MQTT)
      └──► state.js (sparning i localStorage)
 ```
@@ -36,9 +36,17 @@ Spelet är en statisk webbsida utan byggsteg. Alla moduler är vanliga ES-module
 | `view3.js` | 3D-scenen: terräng, skog, publik, bilar (`addCar`, `poseCar`, `damageCar`), kupé, väder, effekter. |
 | `gfx.js` | Grafiknivåer Low–Ultra + Auto (dynamisk upplösning), procedurella PBR-texturer, himmel, gräs, däckspår. |
 | `input.js` | Kontroller med ombindning, deadzone och styrkurvor för tangentbord, handkontroll, ratt och pekskärm. |
-| `ui.js` | Alla menyer och tävlingsdagens flöde. Startar heat med `startRace(opts)`. |
+| `ui.js` | Styrningen: `render()` väljer vy, `ACT` = alla knappars åtgärder (`data-act`), `INP` = reglage (`data-in`). Vyerna ligger i `js/ui/`. |
+| `ui/core.js` | Gemensamt: UI-tillståndet `U`, `spec()`, `esc`, `eur`, `toast`, statistik. |
+| `ui/menu.js` · `ui/karriar.js` | Huvudmenyn · karriär, snabbstart och banprofil. |
+| `ui/tavling.js` | Tävlingsdagen: AI-fält (`makeOpps`, fasta förarfält per säsong), mästerskap, **servicepaus** (`svJobs`, `servicePanel`), XP och `startRace(opts)`. |
+| `ui/online.js` | Online-rummet: chatt, säsong, inbjudningar, värdens mästerskapsmotor och "en till med samma gäng". |
+| `ui/garage.js` · `ui/skola.js` · `ui/komp.js` · `ui/top.js` | Garage/trimning/inställningar · Motorskola och räknebänken · kompendium och inställningar · namn och topplista. |
+| `ui/dag.js` | Dagens utmaning: upplägget räknas fram ur datumet (`dayCfg`), egen topplista per dag (`DayBoard`). |
+| `ui/prestationer.js` | Prestationer (`ACH`), `achieve(id)` vid händelser och `checkAch()` för mål som räknas ur statistiken. |
+| `ui/intro.js` | Introduktionen för nya förare. Själva stegen (`INTRO`) och kontrollerna ligger i `race.js`. |
 | `champ.js` | Tävlingsformatet (alkuerä → … → finaler), används av både karriär och online. |
-| `net.js` | `Room` (online-rum), `Board` (topplista), `Presence` (vilka som är online, inbjudningar). |
+| `net.js` | `Room` (online-rum), `Board` (topplista), `DayBoard` (dagens utmaning), `Presence` (vilka som är online, inbjudningar). Rummets länkar har vakthund + återanslutning; en förare som tappar nätet står kvar på banan i upp till 90 s (`NET_GRACE` i race.js). |
 
 ## Lägga till en bil
 

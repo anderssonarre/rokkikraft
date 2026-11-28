@@ -371,7 +371,7 @@ ol.steps li { margin: 6px 0; line-height: 1.5; }
 .intro-box i { position: absolute; left: 0; bottom: 0; height: 4px; background: var(--hi); transition: width .4s; }
 .introban { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; border-color: var(--hi); }
 .introban h2 { margin: 2px 0 4px; }
-.toast.achtoast { bottom: auto; top: 70px; border-radius: 16px; text-align: center; background: linear-gradient(90deg, #ffd23f, #ffb02e); display: flex; flex-direction: column; align-items: center; gap: 2px; box-shadow: 0 8px 30px #0008; }
+.toast.achtoast { bottom: auto; top: 70px; border-radius: 16px; text-align: center; white-space: nowrap; max-width: calc(100vw - 24px); background: linear-gradient(90deg, #ffd23f, #ffb02e); display: flex; flex-direction: column; align-items: center; gap: 2px; box-shadow: 0 8px 30px #0008; }
 .toast.achtoast span { font: 700 10px var(--mono); letter-spacing: .14em; opacity: .75; }
 .photo-ui[hidden], .photo-btn[hidden], .intro-box[hidden] { display: none !important; }
 .rematch { border-color: var(--hi); }
