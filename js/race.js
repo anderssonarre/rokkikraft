@@ -568,7 +568,11 @@ export class Race {
         <div class="hud-center-wrap">
           <div class="hud-msg" id="hMsg"></div>
           <div class="hud-off" id="hOff" hidden></div>
-          <div class="hud-watch" id="hWatch" hidden><button type="button" id="hWPrev">◀</button><span>👁 TITTAR PÅ<b id="hWName"></b></span><button type="button" id="hWNext">▶</button></div>
+          <div class="photo-ui" id="hPhoto" hidden><div class="ph-row"><button type="button" data-ph="back" title="Bakåt 0,5 s">⏪</button><button type="button" data-ph="fwd" title="Framåt 0,5 s">⏩</button><button type="button" data-ph="zin" title="Närmare">＋</button><button type="button" data-ph="zout" title="Längre bort">－</button>
+          <label>Brännvidd<input type="range" id="hPhFov" min="0.25" max="1.4" step="0.01" value="0.8"></label><label>Höjd<input type="range" id="hPhH" min="0.1" max="2.5" step="0.05" value="0.65"></label></div>
+          <div class="ph-row"><button type="button" class="ph-snap" data-ph="snap">📸 Spara bild</button><button type="button" data-ph="hide">🙈 Dölj knappar</button><button type="button" data-ph="close">✕ Stäng fotoläget</button></div>
+          <small>Dra för att vrida kameran · scrolla eller nyp för att zooma</small><div class="ph-row"><button type="button" data-ph="prev">◀ Förra bilen</button><button type="button" data-ph="next">Nästa bil ▶</button></div></div>
+        <button type="button" class="photo-btn" id="hPhotoBtn" hidden>📷 FOTOLÄGE [F]</button><div class="hud-watch" id="hWatch" hidden><button type="button" id="hWPrev">◀</button><span>👁 TITTAR PÅ<b id="hWName"></b></span><button type="button" id="hWNext">▶</button></div>
           <canvas id="hRadar" width="120" height="120"></canvas>
         </div>
 
@@ -766,6 +770,7 @@ export class Race {
     this.$('hPause').onclick = () => this.togglePause();
     this.$('hResume').onclick = () => this.togglePause();
     this.$('hWPrev').onclick = () => this.shift(-1); this.$('hWNext').onclick = () => this.shift(1);
+    this.bindPhoto();
     this.$('hQuit').onclick = () => {
       if (this.replay) { this.done = true; this.destroy(); return this.cfg.onDone(null); } // repris: bara tillbaka
       this.player.retired = true; this.player.flag = 'K';
@@ -775,6 +780,43 @@ export class Race {
     };
   }
 
+  // ---------- fotoläge (i repriset): frys bilden, kretsa fritt runt bilen och spara en bild ----------
+  bindPhoto() {
+    const btn = this.$('hPhotoBtn'), box = this.$('hPhoto'); if (!btn || !box) return;
+    btn.hidden = !this.cfg.replay; btn.onclick = () => this.togglePhoto();
+    this.kPh = e => { if (this.replay && e.code === 'KeyF' && !e.repeat) { e.preventDefault(); this.togglePhoto(); } else if (this.photo && e.code === 'Escape') this.togglePhoto(); };
+    window.addEventListener('keydown', this.kPh);
+    box.onclick = e => { const a = e.target.closest('[data-ph]')?.dataset.ph, P = this.photo; if (!a || !P) return;
+      if (a === 'back' || a === 'fwd') { this.rt = Math.max(0, (this.rt || 0) + (a === 'back' ? -0.5 : 0.5)); this.playReplay(0); }
+      else if (a === 'zin') P.dist = Math.max(1.8, P.dist * 0.8); else if (a === 'zout') P.dist = Math.min(60, P.dist * 1.25);
+      else if (a === 'prev' || a === 'next') this.shift(a === 'prev' ? -1 : 1);
+      else if (a === 'snap') this.snapReq = true; else if (a === 'hide') { this.host.classList.add('photo-clean'); this.msg('Tryck var som helst för att visa knapparna igen', 2); }
+      else if (a === 'close') this.togglePhoto(); };
+    this.$('hPhFov').oninput = e => { if (this.photo) this.photo.fov = +e.target.value; };
+    this.$('hPhH').oninput = e => { if (this.photo) this.photo.h = +e.target.value; };
+    const pts = new Map(); let pinch0 = 0, dist0 = 0;
+    this.cv.addEventListener('pointerdown', e => { if (!this.photo) return; if (this.host.classList.contains('photo-clean')) { this.host.classList.remove('photo-clean'); return; } pts.set(e.pointerId, [e.clientX, e.clientY]); this.cv.setPointerCapture?.(e.pointerId); if (pts.size === 2) { const [a, b] = [...pts.values()]; pinch0 = Math.hypot(a[0] - b[0], a[1] - b[1]); dist0 = this.photo.dist; } });
+    this.cv.addEventListener('pointermove', e => { const P = this.photo; if (!P || !pts.has(e.pointerId)) return; const o = pts.get(e.pointerId); pts.set(e.pointerId, [e.clientX, e.clientY]);
+      if (pts.size === 2) { const [a, b] = [...pts.values()], d = Math.hypot(a[0] - b[0], a[1] - b[1]); if (pinch0 > 0) P.dist = Math.max(1.8, Math.min(60, dist0 * pinch0 / Math.max(1, d))); return; }
+      P.yaw += (e.clientX - o[0]) * 0.008; P.pitch = Math.max(-0.05, Math.min(1.45, P.pitch + (e.clientY - o[1]) * 0.006)); });
+    const up = e => { pts.delete(e.pointerId); if (pts.size < 2) pinch0 = 0; };
+    this.cv.addEventListener('pointerup', up); this.cv.addEventListener('pointercancel', up);
+    this.cv.addEventListener('wheel', e => { if (!this.photo) return; e.preventDefault(); this.photo.dist = Math.max(1.8, Math.min(60, this.photo.dist * Math.exp(e.deltaY * 0.0012))); }, { passive: false });
+  }
+  togglePhoto() {
+    if (!this.replay) return;
+    if (this.photo) { this.photo = null; this.host.classList.remove('photo-on', 'photo-clean'); this.$('hPhoto').hidden = true; this.$('hPhotoBtn').hidden = false; return; }
+    const p = this.watched() || this.player; this.photo = { yaw: p.h + Math.PI * 0.75, pitch: 0.22, dist: 6.5, fov: 0.8, h: 0.65 };
+    this.$('hPhFov').value = 0.8; this.$('hPhH').value = 0.65;
+    this.host.classList.add('photo-on'); this.$('hPhoto').hidden = false; this.$('hPhotoBtn').hidden = true;
+  }
+  snap() {
+    this.snapReq = false; const name = `rokkikraft-${new Date().toISOString().slice(0, 19).replace(/[T:]/g, '-')}.png`;
+    try { this.cv.toBlob(async b => { if (!b) return this.msg('Kunde inte spara bilden', 2, 'warn'); const f = new File([b], name, { type: 'image/png' });
+      try { if (navigator.canShare?.({ files: [f] }) && matchMedia('(pointer: coarse)').matches) { await navigator.share({ files: [f], title: 'Rokkikraft' }); return; } } catch (e) { if (e?.name === 'AbortError') return; }
+      const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+      this.msg('📸 Bilden sparad!', 1.6); }, 'image/png'); } catch (e) { this.msg('Kunde inte spara bilden', 2, 'warn'); }
+  }
   togglePause() { if (this.done) return; this.paused = !this.paused; this.$('hPauseBox').hidden = !this.paused; this.last = performance.now(); if (this.gain) this.gain.gain.value = 0; if (this.fxGain) this.fxGain.gain.value = this.paused ? 0 : (this.vol || 0); if (this.paused) this.ctl?.stopRumble?.(); }
   shift(d) { if (this.replay) { const i = (this.cars.indexOf(this.camCar || this.player) + d + this.cars.length) % this.cars.length; this.camCar = this.cars[i]; this.camH = this.camCar.h; this.watchCam(); return; }
     if (!this.spectate && (this.player.finished || this.player.retired) && this.cars.length > 1) { // i mål/utgått: E/Q byter vilken bil kameran följer
@@ -1417,7 +1459,7 @@ export class Race {
   }
 
   destroy() {
-    cancelAnimationFrame(this.raf); window.removeEventListener('keydown', this.kd); window.removeEventListener('keyup', this.ku); window.removeEventListener('resize', this.rs);
+    cancelAnimationFrame(this.raf); window.removeEventListener('keydown', this.kd); if (this.kPh) window.removeEventListener('keydown', this.kPh); window.removeEventListener('keyup', this.ku); window.removeEventListener('resize', this.rs);
     try { const V = this.view; if (this.QL?.auto && V?.fN > 300) { if (V.dyn < 0.72 && this.QL.level > 0) rememberAuto(this.QL.level - 1); else if (V.dyn >= 1 && V.fAvg < 12 && this.QL.level < 3) rememberAuto(this.QL.level + 1); else rememberAuto(this.QL.level); } } catch (e) { } // Auto lär sig enhetens nivå
     try { this.fx?.stop(); } catch (e) { } try { this.ctl?.stopRumble?.(); } catch (e) { }
     try { if (this.ac) this.ac.close(); } catch (e) { } this.dead = true; if (this.net && this.net.race === this) this.net.race = null; if (this.view) this.view.dispose();
@@ -1431,7 +1473,7 @@ export class Race {
     if (this.ctl) this.controlEvents();
     if (this.net) this.netTick();
     { const tn = performance.now(), sdt = this.steerT ? Math.min(0.5, (tn - this.steerT) / 1000) : 0; this.steerT = tn; if (!this.paused || this.net) this.steerRamp(sdt); } // ratten följer riktiga klockan
-    if (this.replay) { if (!this.paused) { this.playReplay(dt); this.particlesStep(dt); this.audio(dt); } this.render(dt); this.hud(dt); return; }
+    if (this.replay) { if (!this.paused && !this.photo) { this.playReplay(dt); this.particlesStep(dt); this.audio(dt); } this.render(dt); if (this.snapReq) this.snap(); this.hud(dt); return; }
     if (!this.paused || this.net) { this.acc += dt; let k = 0; while (this.acc >= DT && k++ < 14 * sp) { this.step(DT); this.acc -= DT; if (this.done) return; } if (this.acc > DT * 4) this.acc = 0; this.particlesStep(dt); this.audio(dt); }
     if (this.state === 'run' && !this.done) this.recTick();
     this.render(dt); this.hud(dt);
@@ -1584,13 +1626,18 @@ export class Race {
     for (const c of this.cars) if (c.obj) { if (c.sb) { if (c.sb.ver) this.view.softDeform(c.obj, c.sb, c.dmg || 0); } else if ((c.dmg || 0) > 4 || c.dentV) this.view.damageCar(c.obj, c.dmg || 0, c.dents, c.dentV || 0); }
     if (this.cfg.mode === 'time') this.ghostPose();
     if (this.view.setMud && (this.mudT = (this.mudT || 0) + 1) % 6 === 0) for (const c of this.cars) if (c.obj) this.view.setMud(c.obj, Math.min(1, (c.mud || 0) * 1.1));
-    for (const c of this.cars) this.view.poseCar(c.obj, c.x, c.y, c.z, c.h, c.tRoll || 0, c.tPitch || 0, c.steer, c.wheelSpin ?? c.wspin, c.brk > 0.1, !(c === p && (this.cam === 0 || this.cam === 1 || this.cam === DEFAULT_CAM)), (c.bodyRoll || 0) + (c.vR || 0), (c.bodyPitch || 0) + (c.vP || 0), (c.bY || 0) + (c.suspY || 0), c);
+    for (const c of this.cars) this.view.poseCar(c.obj, c.x, c.y, c.z, c.h, c.tRoll || 0, c.tPitch || 0, c.steer, c.wheelSpin ?? c.wspin, c.brk > 0.1, !(c === p && !this.photo && (this.cam === 0 || this.cam === 1 || this.cam === DEFAULT_CAM)), (c.bodyRoll || 0) + (c.vR || 0), (c.bodyPitch || 0) + (c.vP || 0), (c.bY || 0) + (c.suspY || 0), c);
     let cockpit = null;
     if (this.cam === 0) { const sway = clamp((p.ay || 0) * 0.045 + Math.sin(this.t * 6.0) * 0.03, -0.45, 0.45);
       cockpit = [pMat, M4.mul(pMat, M4.localRotX(0.16, 0.78, -0.31, 0.22, p.steer * 0.85)), M4.mul(pMat, M4.localRotX(0.30, 1.06, -0.02, 0.0, sway)), null]; }
     if (this.cam === DEFAULT_CAM) {
       const m = pMat;
       cockpit = [null, M4.mul(m, M4.localRotX(0.16, 0.78, -0.31, 0.22, p.steer * 0.85)), null, m];
+    }
+    if (this.photo) { // FOTOLÄGE: fri kamera som kretsar runt bilen
+      const P = this.photo, tx = p.x, ty = pY + P.h, tz = p.z, cp = Math.cos(P.pitch);
+      eye = [tx + Math.cos(P.yaw) * cp * P.dist, ty + Math.sin(P.pitch) * P.dist, tz + Math.sin(P.yaw) * cp * P.dist];
+      eye[1] = Math.max(eye[1], this.trk.heightAt(eye[0], eye[2]) + 0.25); at = [tx, ty, tz]; up = [0, 1, 0]; fov = P.fov; cockpit = null;
     }
     this.view.frame({ eye, at, up, fov, dt, t: this.t, focus: [p.x, pY, p.z], particles: this.pl, dust: this.trk.surf.dust, cockpit, gauges: { rpm: p.rpm || 0, max: (p.spec?.redline || 7000) + 500, kmh: Math.hypot(p.vx, p.vy) * 3.6, temp: p.temp || 80 } });
   }

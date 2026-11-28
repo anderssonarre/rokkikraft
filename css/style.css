@@ -345,3 +345,15 @@ ol.steps li { margin: 6px 0; line-height: 1.5; }
 .svjob:hover:not(:disabled) { border-color: var(--hi); } .svjob:disabled { opacity: .45; cursor: default; }
 .svjob small { opacity: .75; } .svjob span { font: 12px var(--mono); color: var(--hi); } .svjob.must { border-color: #ff6a3d; }
 .service.closed { opacity: .75; } #svClock { font-family: var(--mono); color: var(--hi); }
+/* fotoläge i repriset */
+.photo-btn { position: fixed; right: 14px; bottom: 90px; z-index: 30; pointer-events: auto; padding: 8px 14px; border-radius: 999px; border: 1px solid #ffffff40; background: #0c1014cc; color: #fff; font: 700 12px var(--mono); letter-spacing: .06em; cursor: pointer; }
+.photo-on #hHudRoot *, .photo-on .touch, .photo-on .touch * { visibility: hidden !important; }
+.photo-on #hHudRoot .photo-ui, .photo-on #hHudRoot .photo-ui * { visibility: visible !important; }
+.photo-clean #hHudRoot .photo-ui, .photo-clean #hHudRoot .photo-ui * { visibility: hidden !important; }
+.photo-on canvas { cursor: grab; touch-action: none; }
+.photo-ui { position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%); z-index: 40; pointer-events: auto; display: flex; flex-direction: column; gap: 6px; align-items: center; padding: 10px 12px; border-radius: 14px; background: #0c1014d9; border: 1px solid #ffffff2a; color: #fff; max-width: calc(100vw - 20px); }
+.photo-ui .ph-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; justify-content: center; }
+.photo-ui button { min-width: 40px; height: 36px; padding: 0 10px; border-radius: 9px; border: 1px solid #ffffff30; background: #ffffff12; color: #fff; font: 600 14px system-ui; cursor: pointer; }
+.photo-ui .ph-snap { background: var(--hi); color: #111; border-color: var(--hi); font-weight: 800; }
+.photo-ui label { display: flex; align-items: center; gap: 6px; font: 12px var(--mono); opacity: .9; } .photo-ui input[type=range] { width: 110px; }
+.photo-ui small { opacity: .7; font-size: 11px; text-align: center; }
