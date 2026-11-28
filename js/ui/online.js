@@ -19,7 +19,7 @@ import { achieve } from './prestationer.js';
 export const ON = { code: '', room: null, last: null, copied: 0, ch: null, O: {} };
 export function netMe() {
   const cs = activeCar(), insp = currentInsp(), s = insp.spec;
-  return { name: netName(), car: { spec: s, paint: paintOf(cs.paint).rgb, bw: cs.bw || 'wb', num: formatCarNum(cs.num, insp.cls), model: carById(S.active).name, hp: Math.round(curve(s).hp), kgHp: curve(s).kgHp, cls: insp.rules.name, tune: { ...defaultTune(), ...(cs.tune || {}) } } };
+  return { name: netName(), again: ON.againFor || 0, car: { spec: s, paint: paintOf(cs.paint).rgb, bw: cs.bw || 'wb', num: formatCarNum(cs.num, insp.cls), model: carById(S.active).name, hp: Math.round(curve(s).hp), kgHp: curve(s).kgHp, cls: insp.rules.name, tune: { ...defaultTune(), ...(cs.tune || {}) } } };
 }
 // ---- chatt i online-rummet ----
 export const QUICK = ['GG', 'En till?', 'Lycka till! 🍀', 'Vänta lite', 'Redo!', 'Haha 😂', 'Bra kört 👏', 'Revansch!'];
@@ -124,7 +124,7 @@ export function hostStart() {
   ON.ch = ents.length <= cfg.perStart
     ? { single: 1, cfg: { perStart: cfg.perStart, laps: cfg.laps, joker: cfg.joker, trackLen: trkLen }, E: Object.fromEntries(ents.map(e => [e.id, e])), round: 'heat', heats: [{ id: 'h1', round: 'heat', no: 1, count: 1, ids: shuffle(ents.map(e => e.id)), res: null }], history: [], done: false }
     : newChamp({ perStart: cfg.perStart, heats: Math.ceil(ents.length / cfg.perStart), laps: cfg.laps, joker: cfg.joker, trackLen: trkLen }, ents);
-  ON.ch.cfgRoom = { ...cfg }; ON.ch.n = 0;
+  ON.ch.cfgRoom = { ...cfg }; ON.ch.n = 0; ON.ch.uid = Date.now(); ON.againFor = 0;
   hostRound();
 }
 export const hName = h => h.round === 'heat' ? 'Heat' : heatName(h);
@@ -155,7 +155,7 @@ export function hostNext() { const ch = ON.ch; if (!ch || ch.done || !ch.heats.e
 export function pushChamp() {
   const ch = ON.ch, room = ON.room; if (!ch || !room) return;
   const pack = h => ({ id: h.id, live: h.live, name: hName(h), ids: h.ids, res: h.res });
-  room.sendChamp({ round: ch.single ? 'heat' : ch.round, letter: ch.letter, single: !!ch.single, done: ch.done, all: ch.heats.every(h => h.res), heats: ch.heats.map(pack),
+  room.sendChamp({ uid: ch.uid, round: ch.single ? 'heat' : ch.round, letter: ch.letter, single: !!ch.single, done: ch.done, all: ch.heats.every(h => h.res), heats: ch.heats.map(pack),
     hist: ch.history.slice(-8).map(r => ({ name: r.round === 'final' ? r.letter + '-final' : ROUND[r.round] || 'Heat', heats: r.heats.map(pack) })),
     names: Object.fromEntries(Object.entries(ch.E).map(([id, e]) => [id, e.name])), overall: ch.overall || null,
     where: Object.fromEntries(room.members.map(m => [m.id, ch.single ? '' : whereIs(ch, m.id)])), skip: room.members.filter(m => !ch.single && canSkip(ch, m.id)).map(m => m.id), cfg: ch.cfgRoom });
@@ -168,6 +168,15 @@ export function hostCarPanel(hm) {
     <table class="stats"><tr><td>Däck</td><td>${esc(TYRES[t.tyre]?.name || t.tyre)}</td></tr><tr><td>Bränsle</td><td>${esc(fuelById(t.fuel)?.name || t.fuel)} · λ ${fmt(t.lambda, 2)} · tändning ${t.ign > 0 ? '+' : ''}${fmt(t.ign || 0, 1)}°</td></tr>
     ${SETUP_UI.map(([n, k, , , , f]) => `<tr><td>${n}</td><td>${['spring', 'damper'].includes(k) ? t[k] + ' · ' : ''}${f(t[k])}</td></tr>`).join('')}</table>
     <div class="row"><button class="btn small" data-act="copy-setup">📋 Använd samma chassiinställningar på min bil</button></div><p class="dim">Kopierar de gratis justeringarna (fjädring, dämpare, tryck, camber, toe, höjder, växlar och bromsar) – inte däck och fälgar.</p></section>`;
+}
+// ---- nytt race med samma gäng: alla kan säga "en till", värden startar med ett klick ----
+function rematchPanel(room, cs, H) {
+  const humans = room.members, yes = humans.filter(m => m.host || (m.again && m.again === cs.uid)), meYes = ON.againFor === cs.uid;
+  const se = room.cfg.season, seLeft = se && se.done.length < se.rounds;
+  return `<section class="panel rematch"><h2>🔁 En till med samma gäng?</h2>
+    <p>${yes.length} av ${humans.length} vill köra igen: ${yes.map(m => `<b>${esc(m.name)}</b>`).join(', ')}${seLeft ? ` · nästa omgång i säsongen (${se.done.length + 1}/${se.rounds})` : ''}</p>
+    ${H ? `<div class="row"><button class="btn" data-act="on-again">🔁 Starta nytt race – samma förare och inställningar</button></div><p class="dim">Alla i rummet startar direkt. Vill du ändra bana eller väder först gör du det här nedanför och trycker Starta.</p>`
+      : `<div class="row"><button class="btn ${meYes ? 'ghost' : ''}" data-act="on-vote">${meYes ? '✓ Du vill köra igen – ångra' : '🔁 Jag vill köra igen'}</button></div><p class="dim">Värden ser vem som vill köra igen och startar med ett klick.</p>`}</section>`;
 }
 export function online() {
   const room = ON.room;
@@ -195,6 +204,7 @@ export function online() {
     <section class="panel"><h2>Förare i rummet (${room.members.length}/8)</h2><table class="stats">
       ${room.members.map(m => `<tr><td><span class="dot" style="background:${hex(m.car?.paint || [.5, .5, .5])}"></span><b>${esc(m.name)}</b>${m.host ? ' · värd' : ''}${m.id === room.id ? ' · du' : ''}</td><td>#${esc(m.car?.num)} ${esc(m.car?.model)} · ${esc(m.car?.hp)} hk</td><td>${cs?.where?.[m.id] ? esc(cs.where[m.id]) : ''}</td></tr>`).join('')}</table>
       <div class="row"><button class="btn small ghost" data-act="go" data-arg="garage">Byt bil i garaget</button></div></section>`;
+  if (cs?.done) h += rematchPanel(room, cs, H);
   h += chatPanel(room) + seasonPanel(room);
   if (room.status === 'lobby' || room.status === 'race') h += invitePanel(room); // bjud in andra som har spelet öppet
   if (U.lastReplay && room.status === 'lobby') h += `<section class="panel"><div class="row">${replayBtn()}</div></section>`;
@@ -264,6 +274,8 @@ export const ACT_ONLINE = {
   'on-cfg'(a) { const [k, v] = a.split(':'); ON.room?.setCfg({ [k]: k === 'track' || k === 'weather' || k === 'tod' ? v : +v }); return false; },
   'on-copy'() { const l = roomLink(ON.room.code); try { navigator.clipboard.writeText(l); } catch (e) { } ON.copied = 1; setTimeout(() => { ON.copied = 0; if (U.view === 'online') render(); }, 1800); },
   'on-start'() { hostStart(); return false; },
+  'on-again'() { const r = ON.room; if (!r?.isHost) return; ON.ch = null; r.champ = null; hostStart(); return false; },
+  'on-vote'() { const r = ON.room, cs = r?.champ; if (!r || !cs?.uid) return; ON.againFor = ON.againFor === cs.uid ? 0 : cs.uid; r.setMe(netMe()); if (ON.againFor) r.say(netName(), 'En till? 🔁'); },
   'on-next'() { hostNext(); return false; },
   'on-reset'() { ON.ch = null; ON.room.champ = null; ON.room.sendChamp(null); },
   'on-skip'() { const r = ON.room; if (!r) return; if (r.isHost) r.onSkip(r.id); else r.send({ k: 'skip' }); toast('KESKÖIDÄ skickat.'); },

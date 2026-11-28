@@ -491,6 +491,7 @@ const INTRO = [
   { t: 'Utanför vägen', k: 'Hamnar du utanför vägen räknar en klocka ner från 3 och bilen sätts tillbaka. <kbd>R</kbd> återställer direkt. <kbd>E</kbd>/<kbd>Q</kbd> växlar manuellt.', m: 'Hamnar du utanför vägen räknar en klocka ner från 3 och bilen sätts tillbaka på vägen.', ok: (p, v, I) => I.t > 6 },
   { t: 'Kör i mål', k: 'Kör runt och passera mållinjen – då har du klarat introduktionen!', m: 'Kör runt och passera mållinjen – då har du klarat introduktionen!', ok: p => p.finished },
 ];
+const NET_GRACE = 90; // sekunder en förare som tappat nätet får vara borta innan bilen räknas som bruten (K)
 export class Race {
   constructor(host, cfg) {
     this.host = host; this.cfg = cfg; this.trk = getTrack(cfg.trackId); const trk = this.trk;
@@ -1306,7 +1307,7 @@ export class Race {
       if (Math.abs(A.x - B.x) > 6 || Math.abs(A.z - B.z) > 6) continue;
       let rm = null, sv;
       if (this.net) {
-        if (A.remote && B.remote) continue;
+        if (A.remote && B.remote) continue; if (A.lost || B.lost) continue;
         const parked = c => (c.finished || c.retired) && Math.abs(c.vx) < 2; if (parked(A) || parked(B)) continue; // målgångna/brutna bilar spökar inte banan
         rm = A.remote ? A : B.remote ? B : null; if (rm) sv = [rm.x, rm.z, rm.h, rm.vx, rm.vy, rm.r];
       }
@@ -1431,7 +1432,7 @@ export class Race {
     if (this.leadT !== undefined && !this.player.finished && !this.player.retired) { const left = Math.ceil(30 - (this.t - this.leadT)); if (left <= 10 && left > 0 && left !== this.leftShown) { this.leftShown = left; this.msg(`⏱ ${left} s kvar av heatet`, 1.1, 'warn'); } }
     if (!this.netLead || this.state === 'grid') return;
     const wall = Date.now();
-    for (const c of this.cars) if (c.remote && !c.finished && !c.retired && wall - c.seenT > 8000) c.retired = true; // tappad anslutning = K
+    for (const c of this.cars) if (c.remote && !c.finished && !c.retired && wall - c.seenT > NET_GRACE * 1000) c.retired = true; // borta längre än NET_GRACE s = K (kortare avbrott: bilen står kvar och väntar)
     if (this.endAt === undefined) {
       let first = Infinity; for (const c of this.cars) if (c.finished && c.finishT < first) first = c.finishT;
       if (this.cars.every(c => c.finished || c.retired)) this.endAt = this.t + 2.5;
@@ -1455,6 +1456,10 @@ export class Race {
   // Fjärrbil: följ senaste lägesrapporten, framräknad med dess hastighet så att bilen inte hackar eller släpar efter
   netCar(c, dt) {
     const s = c.snap; if (!s) return;
+    // tappad anslutning: bilen stannar där den är (och spökar igenom de andra) tills föraren är tillbaka
+    const lost = !c.finished && !c.retired && Date.now() - (c.seenT || 0) > 1500;
+    if (lost !== !!c.lost) { c.lost = lost; if (lost) this.msg(`📶 ${c.name.split(' ')[0]} tappade anslutningen – bilen väntar på banan`, 2.2, 'warn'); else this.msg(`📶 ${c.name.split(' ')[0]} är tillbaka!`, 1.6, 'go'); }
+    if (lost) { c.vx = c.vy = c.r = 0; c.thr = 0; c.wheelSpin = c.wspin; return; }
     const age = clamp((this.net.now() - s.t) / 1000, 0, 0.4), ch = Math.cos(s.h), sh = Math.sin(s.h), wx = s.vx * ch - s.vy * sh, wz = s.vx * sh + s.vy * ch;
     const tx = s.x + wx * age, tz = s.z + wz * age, th = s.h + s.r * age, k = Math.min(1, dt * 10);
     if (Math.abs(tx - c.x) + Math.abs(tz - c.z) > 18) { c.x = tx; c.z = tz; c.h = th; }
@@ -1463,6 +1468,9 @@ export class Race {
     c.wspin += c.vx / 0.31 * dt; c.wheelSpin = c.wspin; c.steerVis = c.steer * 0.45; c.brakeGlow = c.brk > 0.1 ? 0.5 : 0; c.airY = 0; c.bodyPitch = c.bPitch = 0; c.bodyRoll = c.bRoll = 0;
   }
   netEnd(order) { this.finish(order); }
+  // vår egen anslutning: tappad → kör vidare lokalt, rapporterna skickas igen när nätet är tillbaka
+  netDown() { if (!this.done) { this.netLost = true; this.msg('📶 Anslutningen tappades<br><small>Kör vidare – vi återansluter automatiskt</small>', 3.5, 'warn'); } }
+  netBack() { if (!this.done && this.netLost) { this.netLost = false; this.msg('📶 Ansluten igen!', 1.6, 'go'); } }
   netGone(id) { const c = this.cars.find(x => x.remote && x.nid === id); if (c && !c.finished) c.retired = true; }
   netHostLost() { if (this.done) return; this.finish(); }
 
@@ -1725,7 +1733,7 @@ export class Race {
         const gapS = i === 0 ? 'ledare' : '+' + fmt(Math.max(0, (leaderProg - c.prog) * this.trk.ds / vRef), 1);
         const jTag = this.useJoker && c.jokerDone && !c.coneDown ? ' <b style="color:#34d399">L</b>' : '';
         const sTag = c.sanction ? ` <b style="color:#fb7185">${c.sanction}</b>` : '';
-        return `<div class="${c.isPlayer ? 'me' : ''}"><span class="lb-l"><em class="num">${i + 1}</em><i class="dot" style="background:${col}"></i>${c.name.split(' ')[0]}${jTag}${sTag}</span><span>${gapS}</span></div>`;
+        return `<div class="${c.isPlayer ? 'me' : ''}"><span class="lb-l"><em class="num">${i + 1}</em><i class="dot" style="background:${col}"></i>${c.name.split(' ')[0]}${jTag}${sTag}${c.lost ? ' <b style="color:#fbbf24" title="Tappad anslutning">📶</b>' : ''}</span><span>${c.lost ? 'väntar' : gapS}</span></div>`;
       }).join('');
       if (myPos > 1) {
         const ahead = live[myPos - 2];

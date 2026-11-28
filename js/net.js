@@ -27,16 +27,22 @@ function packet(type, ...parts) {
 }
 
 class Mqtt {
-  constructor(url, topic, onMsg, onState) {
-    this.url = url; this.topic = topic; this.onMsg = onMsg; this.onState = onState; this.open = false; this.dead = false; this.buf = new Uint8Array(0); this.retry = 0;
+  // watch = rummets länkar: en tyst länk (inga meddelanden på 9 s, inte ens våra egna) räknas som död och kopplas upp på nytt
+  constructor(url, topic, onMsg, onState, watch = false) {
+    this.url = url; this.topic = topic; this.onMsg = onMsg; this.onState = onState; this.open = false; this.dead = false; this.buf = new Uint8Array(0); this.retry = 0; this.rx = Date.now();
     this.connect();
+    // nätet tillbaka (t.ex. mobilen bytte från wifi till 4G): försök direkt i stället för att vänta på nästa backoff
+    this.onl = () => { if (!this.dead && !this.open) { clearTimeout(this.rt); this.retry = 0; this.connect(); } };
+    this.offl = () => { try { this.ws?.close(); } catch (e) { } };
+    try { window.addEventListener('online', this.onl); window.addEventListener('offline', this.offl); } catch (e) { }
+    if (watch) this.wd = setInterval(() => { if (this.open && Date.now() - this.rx > 9000) { this.rx = Date.now(); try { this.ws.close(); } catch (e) { } } }, 2000);
   }
   connect() {
     if (this.dead) return;
     let ws; try { ws = new WebSocket(this.url, 'mqtt'); } catch (e) { this.again(); return; }
     this.ws = ws; ws.binaryType = 'arraybuffer'; this.buf = new Uint8Array(0);
     ws.onopen = () => ws.send(packet(0x10, str('MQTT'), new Uint8Array([4, 2, 0, 30]), str('rk' + rid() + rid())));
-    ws.onmessage = e => this.feed(new Uint8Array(e.data));
+    ws.onmessage = e => { this.rx = Date.now(); this.feed(new Uint8Array(e.data)); };
     ws.onclose = () => { if (this.ws !== ws) return; const was = this.open; this.open = false; clearInterval(this.ping); if (was) this.onState(); this.again(); };
     ws.onerror = () => { try { ws.close(); } catch (e) { } };
   }
@@ -61,7 +67,7 @@ class Mqtt {
     else if (type === 3) { const tl = (body[0] << 8) | body[1]; try { this.onMsg(JSON.parse(dec.decode(body.subarray(2 + tl)))); } catch (e) { } }
   }
   send(bytes) { if (this.open && this.ws.readyState === 1 && this.ws.bufferedAmount < 60000) this.ws.send(bytes); }
-  close() { this.dead = true; clearInterval(this.ping); clearTimeout(this.rt); try { this.ws.close(); } catch (e) { } }
+  close() { this.dead = true; clearInterval(this.ping); clearInterval(this.wd); try { window.removeEventListener('online', this.onl); window.removeEventListener('offline', this.offl); } catch (e) { } clearTimeout(this.rt); try { this.ws.close(); } catch (e) { } }
 }
 
 // ---------- rum ----------
@@ -75,7 +81,7 @@ export class Room {
     this.live = {}; // pågående heat: { grid, cfg, lead, goAt, ready, done, order }
     this.offset = 0; this.rtt = Infinity; this.seen = new Map(); this.last = new Map(); this.n = 0; this.hostSeen = Date.now(); this.race = null; this.lastResult = null; this.hostId = host ? this.id : null;
     this.topicBytes = str(`rokkikraft/p${PROTO}/${code}`);
-    this.links = brokers().map(u => new Mqtt(u, `rokkikraft/p${PROTO}/${code}`, m => this.recv(m), () => this.linkState()));
+    this.links = brokers().map(u => new Mqtt(u, `rokkikraft/p${PROTO}/${code}`, m => this.recv(m), () => this.linkState(), true));
     this.t0 = Date.now();
     this.tick = setInterval(() => this.beat(), 1000);
     this.unload = () => this.leave(); window.addEventListener('pagehide', this.unload);
@@ -84,14 +90,23 @@ export class Room {
   now() { return Date.now() + this.offset; } // värdens klocka
   send(o) { o.f = this.id; o.n = ++this.n; const bytes = packet(0x30, this.topicBytes, enc.encode(JSON.stringify(o))); for (const l of this.links) l.send(bytes); }
   linkState() {
+    const up = this.connected > 0;
+    if (up && this.wasDown && !this.isHost) { this.hostSeen = Date.now(); this.hello(); this.send({ k: 'pg', t0: Date.now() }); } // tillbaka efter avbrott: hälsa direkt
+    if (up && this.wasDown && this.race) this.race.netBack?.();
+    if (!up && !this.wasDown && this.race) this.race.netDown?.();
+    this.wasDown = !up;
     if (this.status === 'connecting' && this.connected) {
       if (this.isHost) { this.status = 'lobby'; this.sendRoom(); }
       else { this.hello(); this.joinT = Date.now(); }
     }
     this.onChange();
   }
-  hello() { this.send({ k: 'hi', name: this.me.name, car: this.me.car }); }
-  sendRoom() { this.send({ k: 'room', cfg: this.cfg, m: this.members, st: this.status, ht: Date.now() }); }
+  hello() { this.send({ k: 'hi', name: this.me.name, car: this.me.car, again: this.me.again || 0 }); }
+  sendRoom() {
+    // avslutade heat skickas med, så att den som tappat nätet under målgången ändå får resultatet när den är tillbaka
+    const ends = {}; for (const [h, L] of Object.entries(this.live)) if (L.done && L.order) ends[h] = L.order;
+    this.send({ k: 'room', cfg: this.cfg, m: this.members, st: this.status, ht: Date.now(), ends });
+  }
   setCfg(p) { if (!this.isHost) return; Object.assign(this.cfg, p); this.sendRoom(); this.onChange(); }
   setMe(me) { this.me = me; if (this.isHost) { const m = this.members.find(x => x.id === this.id); if (m) { m.name = me.name; m.car = me.car; } this.sendRoom(); } else this.hello(); }
   beat() {
@@ -100,7 +115,7 @@ export class Room {
     if (this.status === 'offline') { this.status = 'connecting'; this.linkState(); }
     if (this.isHost) {
       let ch = false;
-      this.members = this.members.filter(m => { const ok = m.id === this.id || now - (this.last.get(m.id) || 0) < (this.status === 'race' ? 15000 : 7000); if (!ok) ch = true; return ok; });
+      this.members = this.members.filter(m => { const ok = m.id === this.id || now - (this.last.get(m.id) || 0) < (this.status === 'race' ? 120000 : 7000); /* under racet hålls platsen i 2 min för den som tappat nätet */ if (!ok) ch = true; return ok; });
       if (ch || this.bn % 3 === 0) this.sendRoom();
       if (ch) this.onChange();
     } else {
@@ -108,7 +123,7 @@ export class Room {
       if (this.status === 'lobby' || this.status === 'race' || this.status === 'connecting') {
         if (this.bn % 2 === 0) this.hello();
         if ((this.rtt > 60 && this.bn < 20) || this.bn % 10 === 0) this.send({ k: 'pg', t0: now });
-        if (this.status !== 'connecting' && now - this.hostSeen > 15000) { this.status = 'closed'; this.onChange(); if (this.race) this.race.netHostLost(); }
+        if (this.status !== 'connecting' && now - this.hostSeen > (this.status === 'race' ? 60000 : 15000)) { /* under ett race väntar vi längre – värden kan ha tappat nätet en stund */ this.status = 'closed'; this.onChange(); if (this.race) this.race.netHostLost(); }
       }
     }
   }
@@ -121,7 +136,7 @@ export class Room {
       case 'hi': if (this.isHost) {
         let e = this.members.find(x => x.id === m.f); const isNew = !e;
         if (isNew) { if (this.members.length >= 8) return; e = { id: m.f }; this.members.push(e); }
-        const ch = isNew || e.name !== m.name || JSON.stringify(e.car) !== JSON.stringify(m.car); e.name = String(m.name || 'Förare').slice(0, 24); e.car = m.car;
+        const ch = isNew || e.name !== m.name || (e.again || 0) !== (+m.again || 0) || JSON.stringify(e.car) !== JSON.stringify(m.car); e.name = String(m.name || 'Förare').slice(0, 24); e.car = m.car; e.again = +m.again || 0;
         if (ch) { this.sendRoom(); this.onChange(); }
       } break;
       case 'room': if (!this.isHost) {
@@ -129,6 +144,7 @@ export class Room {
         this.hostId = m.f; this.hostSeen = Date.now(); this.cfg = m.cfg; this.members = m.m || [];
         if (this.status === 'connecting' || this.status === 'notfound') { this.status = 'lobby'; this.send({ k: 'pg', t0: Date.now() }); }
         if (m.st === 'lobby' && this.status === 'race' && !this.race) this.status = 'lobby';
+        if (m.ends) for (const [h, order] of Object.entries(m.ends)) { const L = this.live[h]; if (L && !L.done) { L.done = true; L.order = order; if (this.race && this.race.heatId === h) this.race.netEnd(order); if (this.onHeatEnd) this.onHeatEnd(h, order); } }
         this.roomSt = m.st; this.onChange();
       } break;
       case 'pg': if (this.isHost) this.send({ k: 'po', to: m.f, t0: m.t0, ht: Date.now() }); break;
