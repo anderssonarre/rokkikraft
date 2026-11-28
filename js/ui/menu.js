@@ -31,6 +31,7 @@ export function menu() {
     <nav class="mgrid">
       ${btn('play', '🏁', 'Snabbstart', 'Spela', 'Välj bana, varv, väder och AI – kör direkt', 'c1')}
       ${btn('online', '🌐', ON.room ? `Rum ${ON.room.code}` : 'Rumskod', 'Online', 'Skapa eller gå med i rum och kör mot kompisar', 'c5')}
+      ${btn('stad', '🏙️', S.city?.earned ? `${eur(S.city.earned)} tjänat` : 'Ny!', 'Stadskörning', 'Fri körning i stan med utmaningar som ger pengar', 'c3')}
       ${btn('dag', '📅', S.daily?.day === today() && S.daily.best ? '✓ ' + fmtTime(S.daily.best) : 'Ny i dag', 'Dagens utmaning', 'Samma bana, bil och väder för alla – egen topplista', 'c1')}
       ${btn('prest', '🏅', `${ACH.filter(a => hasAch(a[0])).length}/${ACH.length}`, 'Prestationer', 'Mål som ger pengar – vinn rent, jokern, alla banor …', 'c2')}
       ${btn('karriar', '🏆', `Nivå ${topLevel() + 1}/4`, 'Karriär', 'Mästerskap med kval, heat och finaler', 'c2')}

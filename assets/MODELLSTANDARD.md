@@ -27,4 +27,9 @@ för alla: lägg filen här och skriv in den i manifestet enligt nedan.
 }
 ```
 
+Fler fält i manifestet: `flip: true` vänder fram/bak, `paint: false` behåller modellens egna färger/texturer,
+`paintMat: "namn"` väljer vilket material som är lacken, `wheels: "regex"` anger hjulnoderna (eller `false` om hjulen sitter
+ihop med karossen – då döljs spelets egna hjul), `lift` höjer modellen (m). Kontrollera alla bilar i `tests/modeller.html`
+(fronten ska peka åt höger).
+
 Saknas manifestet eller en post används den inbyggda bilen. Fysiken använder alltid spelets egna mått – modellen är bara utseende.

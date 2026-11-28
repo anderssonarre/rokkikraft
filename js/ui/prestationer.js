@@ -28,6 +28,9 @@ export const ACH = [
   ['skola5', '🎓', 'Plugghäst', '5 rätt i Motorskolan', 150, () => [skOk(), 5]],
   ['skolaAll', '📐', 'Motoringenjör', `${SK_GOAL} rätt i alla ${LESSONS.length} lektioner`, 800, () => [LESSONS.filter(l => (S.skola?.[l.id]?.ok || 0) >= SK_GOAL).length, LESSONS.length]],
   ['exam', '📝', 'Godkänd', 'Minst 5 av 6 rätt i provläget', 300, () => [S.skola?.best || 0, 5]],
+  ['city1', '🏙️', 'Stadsbo', 'Klara en utmaning i stadskörningen', 100],
+  ['city10', '🌆', 'Stadens kung', 'Klara 10 utmaningar i stan', 500, () => [S.city?.done || 0, 10]],
+  ['cityspeed', '📸', 'Fartdåre', 'Blixtra en fartkamera i stan i minst 120 km/h', 250],
   ['rich', '💰', 'Tjock plånbok', 'Ha 10 000 € på kontot', 200, () => [Math.floor(S.money), 10000]],
 ];
 const byId = Object.fromEntries(ACH.map(a => [a[0], a]));

@@ -44,6 +44,8 @@ Spelet är en statisk webbsida utan byggsteg. Alla moduler är vanliga ES-module
 | `ui/garage.js` · `ui/skola.js` · `ui/komp.js` · `ui/top.js` | Garage/trimning/inställningar · Motorskola och räknebänken · kompendium och inställningar · namn och topplista. |
 | `ui/dag.js` | Dagens utmaning: upplägget räknas fram ur datumet (`dayCfg`), egen topplista per dag (`DayBoard`). |
 | `ui/prestationer.js` | Prestationer (`ACH`), `achieve(id)` vid händelser och `checkAch()` för mål som räknas ur statistiken. |
+| `city.js` · `ui/stad.js` | Stadskörning: klassen `City` laddar `assets/city/city.glb` (skala 18 m/enhet vågrätt, 11 lodrätt), bygger ett kollisions- och höjdrutnät (0,5 m) ur trianglarna, hittar vägarnas mittlinjer för trafiken och kör utmaningarna (stadsrace, fartkamera, driftzon, leverans). Samma `phys()` som på banorna. |
+| `assets/models/` | Bilarnas GLB-modeller + `manifest.json` (bil-id → fil, `flip`, `paint`, `paintMat`, `wheels`). Utvecklarvy: `tests/modeller.html` visar alla från sidan. |
 | `ui/intro.js` | Introduktionen för nya förare. Själva stegen (`INTRO`) och kontrollerna ligger i `race.js`. |
 | `champ.js` | Tävlingsformatet (alkuerä → … → finaler), används av både karriär och online. |
 | `net.js` | `Room` (online-rum), `Board` (topplista), `DayBoard` (dagens utmaning), `Presence` (vilka som är online, inbjudningar). Rummets länkar har vakthund + återanslutning; en förare som tappar nätet står kvar på banan i upp till 90 s (`NET_GRACE` i race.js). |

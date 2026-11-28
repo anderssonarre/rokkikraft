@@ -23,6 +23,11 @@ console.log('Mjukkropp (BeamNG-läge)');
   const c = (() => { const sb = new SoftBody(); sb.impact(0.7, 0.7, 10); for (let i = 0; i < 480 && sb.awake > 0; i++) sb.step(1 / 240); return sb.state(); })();
   Math.abs(c.toeF) > 0.01 ? good() : bad('hörnsmäll påverkar inte hjulinställningen');
   const p = new SoftBody(); p.impact(1, 0, 15); for (let i = 0; i < 2000; i++) p.step(1 / 240); [...p.p].every(Number.isFinite) && p.awake <= 0 ? good() : bad('mjukkroppen blir instabil eller somnar aldrig'); }
+console.log('3D-modeller (manifest + GLB-filer)');
+{ const fs = await import('fs'), man = JSON.parse(fs.readFileSync(new URL('../assets/models/manifest.json', import.meta.url))), ids = new Set(D.CARS.map(c => c.id));
+  for (const [id, def] of Object.entries(man.cars || {})) { ids.has(id) ? good() : bad(`manifest: okänt bil-id ${id}`);
+    try { const b = fs.readFileSync(new URL('../assets/models/' + def.file, import.meta.url)); b.readUInt32LE(0) === 0x46546C67 && b.length < 4e6 ? good() : bad(`${def.file}: inte en GLB eller större än 4 MB`); } catch (e) { bad(`${def.file} saknas`); } }
+  try { const b = fs.readFileSync(new URL('../assets/city/city.glb', import.meta.url)); b.readUInt32LE(0) === 0x46546C67 ? good() : bad('city.glb är inte en GLB'); } catch (e) { bad('assets/city/city.glb saknas'); } }
 console.log('Banor + AI-varv');
 const G = 9.81;
 for (const tr of D.TRACKS) {

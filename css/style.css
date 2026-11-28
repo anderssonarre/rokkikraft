@@ -375,3 +375,20 @@ ol.steps li { margin: 6px 0; line-height: 1.5; }
 .toast.achtoast span { font: 700 10px var(--mono); letter-spacing: .14em; opacity: .75; }
 .photo-ui[hidden], .photo-btn[hidden], .intro-box[hidden] { display: none !important; }
 .rematch { border-color: var(--hi); }
+/* stadskörning */
+.city { position: fixed; inset: 0; background: #000; overflow: hidden; user-select: none; -webkit-user-select: none; }
+.city-cv { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+.city .c-top { position: absolute; top: 10px; left: 10px; right: 10px; display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; pointer-events: none; }
+.c-money, .c-task, .c-speed { background: #0c1014d9; border: 1px solid #ffffff26; border-radius: 12px; color: #fff; padding: 8px 12px; }
+.c-money span, .c-task span { display: block; font: 700 10px var(--mono); letter-spacing: .12em; opacity: .75; } .c-money b { font: 800 22px var(--mono); color: var(--hi); } .c-money small, .c-task small { display: block; font-size: 12px; opacity: .8; }
+.c-task { text-align: center; border-color: var(--hi); min-width: 180px; } .c-task b { display: block; font: 800 26px var(--mono); }
+.c-btns { display: flex; gap: 6px; pointer-events: auto; } .c-btns button { padding: 7px 10px; border-radius: 9px; border: 1px solid #ffffff30; background: #0c1014cc; color: #fff; font: 700 11px var(--mono); cursor: pointer; }
+.c-msg { position: absolute; top: 22%; left: 50%; transform: translateX(-50%); padding: 10px 18px; border-radius: 12px; background: #0c1014e0; color: #fff; font: 700 17px system-ui; text-align: center; opacity: 0; transition: opacity .25s; pointer-events: none; max-width: 90vw; }
+.c-msg.show { opacity: 1; } .c-msg.go { border: 2px solid #5ce080; } .c-msg.warn { border: 2px solid #ff6a3d; } .c-msg b { color: var(--hi); font-size: 24px; }
+.c-arrow { position: absolute; top: 74px; left: 50%; transform: translateX(-50%); font-size: 46px; color: var(--hi); text-shadow: 0 0 8px #000; pointer-events: none; transform-origin: 50% 50%; }
+.c-map { position: absolute; right: 10px; bottom: 10px; width: 180px; height: 180px; border-radius: 12px; border: 2px solid #ffffff40; background: #111; }
+.c-speed { position: absolute; left: 10px; bottom: 10px; display: grid; grid-template-columns: auto auto; gap: 0 8px; align-items: baseline; }
+.c-speed b { font: 800 34px var(--mono); } .c-speed span { font: 12px var(--mono); opacity: .7; } .c-speed small { font: 700 14px var(--mono); color: var(--hi); } .c-speed i { font: 11px var(--mono); opacity: .75; font-style: normal; }
+.c-load { position: absolute; inset: 0; display: grid; place-items: center; color: #fff; font: 700 20px system-ui; background: #0c1014; }
+.city .touch { position: absolute; left: 0; right: 0; bottom: 0; }
+@media (pointer: coarse) { .c-map { width: 120px; height: 120px; top: 70px; bottom: auto; } .c-speed { bottom: 172px; } }
