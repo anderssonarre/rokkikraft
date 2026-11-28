@@ -1,0 +1,21 @@
+<!doctype html><html lang="sv"><head><meta charset="utf-8"><title>Rokkikraft – alla bilmodeller</title>
+<style>body{margin:0;background:#111;color:#eee;font:13px system-ui}.g{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:6px;padding:6px}
+.c{background:#1b1f24;border-radius:8px;overflow:hidden}.c div.v{height:190px}.c b{display:block;padding:4px 8px}</style>
+<script src="../js/vendor/three.min.js"></script></head><body>
+<p style="padding:6px 10px">Utvecklarvy: alla GLB-bilar i manifestet, sedda från sidan (fronten ska peka åt <b>höger</b>). Lägg till <code>?ang=0.6</code> för snedvy.</p>
+<div class="g" id="g"></div>
+<script type="module">
+import { Showroom } from '../js/view3.js';
+import { CARS } from '../js/data.js';
+const ang = +(new URLSearchParams(location.search).get('ang') || 0), only = new URLSearchParams(location.search).get('car');
+// Fast vinkel i stället för snurrande skivspelare (sidvy: bilens +X åt höger)
+Showroom.prototype.loop = function () {
+  if (!this.canvas.isConnected) return; const w = this.canvas.clientWidth, h = this.canvas.clientHeight;
+  if (w && h && (w !== this.w || h !== this.h)) { this.w = w; this.h = h; this.r.setSize(w, h, false); this.cam.aspect = w / h; this.cam.updateProjectionMatrix(); }
+  this.turn.rotation.y = ang; this.cam.position.set(0, 1.0, 7.2); this.cam.lookAt(0, 0.65, 0); this.r.render(this.scene, this.cam); requestAnimationFrame(this.loop);
+};
+const man = await (await fetch('../assets/models/manifest.json', { cache: 'no-cache' })).json();
+for (const [id, def] of Object.entries(man.cars)) { if (only && id !== only) continue;
+  const car = CARS.find(c => c.id === id); const el = document.createElement('div'); el.className = 'c'; el.innerHTML = `<b>${id} · ${def.file}</b><div class="v"></div>`; document.getElementById('g').appendChild(el);
+  const S = new Showroom(); S.setCar({ model: id, body: car?.body || 'sedan', paint: [0.95, 0.75, 0.1], num: '26', bw: 'wb', bars: false, mirrors: false }); S.mount(el.querySelector('.v')); }
+</script></body></html>

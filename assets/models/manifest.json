@@ -1,4 +1,117 @@
 {
-  "_info": "Lägg GLB-filer i den här mappen och lista dem under cars med spelets bil-id (t.ex. passat_rx, mazda626, bmw325). Se graphics/assets/MODELLSTANDARD.md. Tom lista = de inbyggda bilarna används.",
-  "cars": {}
+ "_info": "GLB-bilar som följer med spelet. Nyckel = bil-id i js/data.js. Filerna är optimerade (≤ ~50 000 trianglar, texturer ≤ 1024–2048 px). flip = vänd fram/bak, rotY = vridning, paint = byt lacken mot spelarens färg, paintMat = materialnamn för lacken, wheels = regex för hjulnoder (false = hjulen sitter i karossen).",
+ "cars": {
+  "mazda626": {
+   "file": "mazda626_gf.glb",
+   "name": "1997 Mazda 626 GF Sedan",
+   "source": "Uppladdad av spelaren (Sketchfab m.fl.)",
+   "paintMat": "carpaint"
+  },
+  "passat_rx": {
+   "file": "vw_passat.glb",
+   "name": "Volkswagen Passat",
+   "source": "Uppladdad av spelaren (Sketchfab m.fl.)"
+  },
+  "passat_vetari": {
+   "file": "vw_passat.glb",
+   "name": "Volkswagen Passat",
+   "source": "Uppladdad av spelaren (Sketchfab m.fl.)"
+  },
+  "passat_kardaani": {
+   "file": "vw_passat.glb",
+   "name": "Volkswagen Passat",
+   "source": "Uppladdad av spelaren (Sketchfab m.fl.)"
+  },
+  "mondeo_st": {
+   "file": "ford_mondeo.glb",
+   "name": "2003 Ford Mondeo",
+   "source": "Uppladdad av spelaren (Sketchfab m.fl.)",
+   "paint": false
+  },
+  "mondeo": {
+   "file": "ford_mondeo.glb",
+   "name": "2003 Ford Mondeo",
+   "source": "Uppladdad av spelaren (Sketchfab m.fl.)",
+   "paint": false
+  },
+  "sunny": {
+   "file": "volvo_v40.glb",
+   "name": "1995 Volvo V40 Touring",
+   "source": "Uppladdad av spelaren (Sketchfab m.fl.)",
+   "flip": true
+  },
+  "mazda3": {
+   "file": "mazda3.glb",
+   "name": "Mazda 3",
+   "source": "Uppladdad av spelaren (Sketchfab m.fl.)",
+   "paintMat": "matre_maine",
+   "wheels": "^matre_wheel|^matre_tire|^matre_hub"
+  },
+  "kadett": {
+   "file": "opel_astra_g.glb",
+   "name": "Opel Astra G",
+   "source": "Uppladdad av spelaren (Sketchfab m.fl.)",
+   "paintMat": "primary"
+  },
+  "civic": {
+   "file": "volvo_850.glb",
+   "name": "Volvo 850 Wagon 1995 (low poly)",
+   "source": "Uppladdad av spelaren (Sketchfab m.fl.)",
+   "flip": true,
+   "paint": false
+  },
+  "v343": {
+   "file": "opel_kadett.glb",
+   "name": "Stylized Opel Kadett",
+   "source": "Uppladdad av spelaren (Sketchfab m.fl.)",
+   "paint": false
+  },
+  "sierra": {
+   "file": "ford_sierra.glb",
+   "name": "Ford Sierra",
+   "source": "Uppladdad av spelaren (Sketchfab m.fl.)"
+  },
+  "v940": {
+   "file": "volvo_740.glb",
+   "name": "Volvo 740 HD",
+   "source": "Uppladdad av spelaren (Sketchfab m.fl.)",
+   "paintMat": "volvo740__env_15_spec",
+   "flip": true
+  },
+  "bmw325": {
+   "file": "bmw_e36.glb",
+   "name": "BMW E36 M3",
+   "source": "Uppladdad av spelaren (Sketchfab m.fl.)"
+  },
+  "starlet_super": {
+   "file": "toyota_starlet.glb",
+   "name": "Toyota Starlet KP61",
+   "source": "Uppladdad av spelaren (Sketchfab m.fl.)"
+  },
+  "ascona_super": {
+   "file": "opel_ascona.glb",
+   "name": "Stylized Opel Ascona",
+   "source": "Uppladdad av spelaren (Sketchfab m.fl.)",
+   "paint": false
+  },
+  "saab9000": {
+   "file": "ford_escort_mk2.glb",
+   "name": "Ford Escort Mk2 Rally Car (Super Rally 3D)",
+   "source": "Uppladdad av spelaren (Sketchfab m.fl.)",
+   "flip": true,
+   "paint": false
+  },
+  "sierra_super": {
+   "file": "ford_sierra.glb",
+   "name": "Ford Sierra",
+   "source": "Uppladdad av spelaren (Sketchfab m.fl.)"
+  },
+  "volvo_v8_super": {
+   "file": "volvo_740.glb",
+   "name": "Volvo 740 HD",
+   "source": "Uppladdad av spelaren (Sketchfab m.fl.)",
+   "paintMat": "volvo740__env_15_spec",
+   "flip": true
+  }
+ }
 }

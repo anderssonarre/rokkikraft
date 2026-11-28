@@ -32,10 +32,10 @@ export async function parseGlb(buf) { const l = await gltfLoader(); return new P
 
 async function sourceFor(modelId) {
   const c = await customModel(modelId);
-  if (c?.buf) { const key = 'custom:' + modelId; if (!cache.has(key)) cache.set(key, parseGlb(c.buf)); return { scene: await cache.get(key), opt: { rot: c.rot || 0, flip: !!c.flip, paint: c.paint !== false, paintMat: c.paintMat || '' } }; }
+  if (c?.buf) { const key = 'custom:' + modelId; if (!cache.has(key)) cache.set(key, parseGlb(c.buf)); return { scene: await cache.get(key), opt: { rot: c.rot || 0, flip: !!c.flip, paint: c.paint !== false, paintMat: c.paintMat || '', gameWheels: true } }; }
   const man = await manifest(), def = man.cars?.[modelId]; if (!def) return null;
   if (!cache.has(def.file)) cache.set(def.file, gltfLoader().then(l => new Promise((res, rej) => l.load(BASE + 'assets/models/' + def.file, g => res(g.scene), undefined, rej))));
-  return { scene: await cache.get(def.file), opt: { rot: def.rotY ? Math.round(def.rotY / (Math.PI / 2)) : 0, flip: !!def.flip, paint: def.paint !== false, scale: def.scale, offset: def.offset } };
+  return { scene: await cache.get(def.file), opt: { rot: def.rotY ? Math.round(def.rotY / (Math.PI / 2)) : 0, flip: !!def.flip, paint: def.paint !== false, paintMat: def.paintMat || '', scale: def.scale, offset: def.offset, wheels: def.wheels, gameWheels: !!def.gameWheels, lift: def.lift || 0 } };
 }
 
 const WHEEL_RE = /wheel|tire|tyre|rim|hjul|rad\b|reifen|rueda|roue/i;
@@ -73,7 +73,7 @@ export async function applyVehicleModel(G, modelId, paint) {
   const L = (U.halfL || 2.2) * 2, s = o.scale || L / Math.max(0.1, sz.x); root.scale.multiplyScalar(s);
   root.updateMatrixWorld(true); box = new THREE.Box3().setFromObject(root); const ctr = box.getCenter(new THREE.Vector3());
   const ground = -(U.bodyBase ?? -0.28); // bodyG ligger 0,28 m lägre i loppet (fjädringens nolläge), i garaget 0
-  root.position.x -= ctr.x; root.position.z -= ctr.z; root.position.y += ground - box.min.y; if (o.offset) { root.position.x += o.offset[0]; root.position.y += o.offset[1]; root.position.z += o.offset[2]; }
+  root.position.x -= ctr.x; root.position.z -= ctr.z; root.position.y += ground - box.min.y + (o.lift || 0); if (o.offset) { root.position.x += o.offset[0]; root.position.y += o.offset[1]; root.position.z += o.offset[2]; }
   root.updateMatrixWorld(true);
   // material: lack + skuggor. Allt som inte är glas/lampor görs ogenomskinligt (många nedladdade modeller har
   // karossen felaktigt markerad som genomskinlig, då syns interiören rakt igenom).
@@ -81,9 +81,11 @@ export async function applyVehicleModel(G, modelId, paint) {
   root.traverse(m => { if (!m.isMesh) return; m.castShadow = true; m.receiveShadow = true; if (!m.geometry.attributes.normal) m.geometry.computeVertexNormals(); // vissa exporter saknar normaler
     for (const mt of (Array.isArray(m.material) ? m.material : [m.material])) if (mt && !GLASS_RE.test(mt.name)) fixOpaque(mt); });
   const stats = materialStats(root), pick = o.paintMat ? stats.find(x => x.name === o.paintMat)?.mat : autoPaint(stats);
-  if (o.paint && pick) root.traverse(m => { if (!m.isMesh) return; const sw = mt => mt === pick ? paintM : mt; m.material = Array.isArray(m.material) ? m.material.map(sw) : sw(m.material); });
+  if (o.paint && pick) root.traverse(m => { if (!m.isMesh) return; const sw = mt => mt === pick || (mt && pick.name && mt.name === pick.name) ? paintM : mt; /* laddaren kan klona samma material */ m.material = Array.isArray(m.material) ? m.material.map(sw) : sw(m.material); });
   // hjul: noder med hjulnamn, grupperade i de fyra hörnen
-  const cand = []; root.traverse(n => { if (n !== root && WHEEL_RE.test(n.name) && !(n.parent && WHEEL_RE.test(n.parent.name))) cand.push(n); });
+  // manifestet kan ange egen regex för hjulnoderna (wheels: "..."), eller wheels: false när hjulen sitter ihop med karossen
+  const WR = o.wheels === false ? null : o.wheels ? new RegExp(o.wheels, 'i') : WHEEL_RE;
+  const cand = []; if (WR) root.traverse(n => { if (n !== root && WR.test(n.name) && !(n.parent && WR.test(n.parent.name))) cand.push(n); });
   const corners = {}; for (const n of cand) { const b = new THREE.Box3().setFromObject(n); if (b.isEmpty()) continue; const c = b.getCenter(new THREE.Vector3()), k = (c.x > 0 ? 'f' : 'r') + (c.z > 0 ? 'R' : 'L'); (corners[k] ||= []).push({ n, b }); }
   holder.updateMatrixWorld(true);
   if (Object.keys(corners).length === 4) {
@@ -95,7 +97,7 @@ export async function applyVehicleModel(G, modelId, paint) {
       U.glbWheels.push({ o: piv, front: k[0] === 'f' });
     }
     for (const w of U.wheels) w.piv.visible = false; // spelets egna hjul behövs inte
-  }
+  } else if (!o.gameWheels) for (const w of U.wheels) w.piv.visible = false; // modellens hjul sitter i karossen (står still), spelets egna döljs
   for (const c of [...U.bodyG.children]) c.visible = false; U.bodyG.add(holder); U.glb = holder;
   return true;
 }
